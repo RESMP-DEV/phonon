@@ -88,8 +88,13 @@ def run_bash(cmd: str, cwd: Path, env: dict) -> str:
 
 def chat(endpoint: str, model: str, messages: list, timeout: int = 900,
          tool_choice: str = "auto") -> dict:
-    body = json.dumps({"model": model, "messages": messages,
-                       "tools": TOOLS, "tool_choice": tool_choice}).encode()
+    # Omit tools entirely when finalizing: some providers ignore
+    # tool_choice "none" and keep calling tools forever.
+    payload = {"model": model, "messages": messages}
+    if tool_choice != "none":
+        payload["tools"] = TOOLS
+        payload["tool_choice"] = tool_choice
+    body = json.dumps(payload).encode()
     url = endpoint.rstrip("/")
     if not url.endswith("/chat/completions"):
         url += "/v1/chat/completions" if not url.endswith("/v1") else "/chat/completions"
@@ -98,7 +103,7 @@ def chat(endpoint: str, model: str, messages: list, timeout: int = 900,
         "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', 'none')}",
     })
     last = None
-    for attempt in range(2):  # retry once on transport errors
+    for attempt in range(5):  # retry on transport errors and rate limits
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
@@ -108,7 +113,8 @@ def chat(endpoint: str, model: str, messages: list, timeout: int = 900,
             last = e
             if attempt == 0:
                 print(f"[rollout] transport error, retrying: {e}", file=sys.stderr)
-                time.sleep(2)
+                wait = 15 if (isinstance(e, urllib.error.HTTPError) and e.code == 429) else 2
+                time.sleep(wait * (attempt + 1))
     raise RuntimeError(f"endpoint failed after retry: {last}")
 
 
@@ -151,8 +157,10 @@ def run_one(persona_dir: Path, endpoint: str, model: str, rdir: Path,
         final_call = turn >= finalize_at
         if final_call and messages[-1].get("role") != "user":
             wrap = {"role": "user", "content":
-                    "Stop exploring. Reply now with your final answer: a single "
-                    "JSON array in a ```json fence and nothing after it."}
+                    "Stop exploring. The bash tool is disabled; do not call it. "
+                    "Approximate counts are acceptable. Reply now with your final "
+                    "answer: a single JSON array in a ```json fence and nothing "
+                    "after it."}
             messages.append(wrap)
             log(wrap)
         resp = chat(endpoint, model, messages,
@@ -168,6 +176,8 @@ def run_one(persona_dir: Path, endpoint: str, model: str, rdir: Path,
         messages.append(clean)
         log(msg)
         calls = msg.get("tool_calls") or []
+        if calls and final_call:
+            calls = []  # tools were not offered; ignore stray calls
         if calls:
             for c in calls:
                 try:
@@ -180,6 +190,8 @@ def run_one(persona_dir: Path, endpoint: str, model: str, rdir: Path,
                 log(tool_msg)
             continue
         answer, status = parse_final(msg.get("content"))
+        if answer is None and final_call and turn + 1 < max_turns:
+            continue  # the finalize wrap is re-sent next turn
         if answer is None and not nudged and turn + 1 < max_turns:
             nudged = True
             nudge = {"role": "user", "content":

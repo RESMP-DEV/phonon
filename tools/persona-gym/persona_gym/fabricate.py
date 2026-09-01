@@ -37,12 +37,21 @@ PERSON_TAILS = [
 ]
 MODEL_ROOTS = [
     "deneb", "qorv", "zelb", "dovak", "mirat", "sarv", "tuln", "veld",
-    "wrex", "yalt", "krov", "plen", "ostr", "brun", "gavr",
+    "wrex", "yalt", "krov", "plen", "ostr", "brun", "gavr", "melv",
+    "torv", "quen", "silb", "narv", "helx", "vorm", "jasp", "rulk",
 ]
 MODEL_SUFFIX = ["ex", "ix", "on", "ar", "ia", "us"]
 MODEL_TAGS = ["rl", "xt", "vl", "mini", "lite", "nano", "moe", "v2", "v3"]
 MODEL_SIZES = ["350M", "1B", "1.3B", "2B", "3B", "7B", "8x2B"]
-TOOL_TAILS = ["trace", "lock", "grid", "cast", "pipe", "kit", "gen", "sync", "ctl", "d"]
+TOOL_TAILS = ["trace", "lock", "grid", "cast", "pipe", "kit", "gen", "sync", "ctl", "d",
+              "scan", "dash", "mux", "hub", "net"]
+
+# Optional middle syllables: multiply the combinator space so 220+ personas
+# of globally unique terms fit. Empty string keeps the original two-part form.
+CODE_MIDS = ["", "", "en", "er", "el", "ar", "ost", "um"]
+MACH_MIDS = ["", "", "a", "o", "u", "ni", "ke"]
+PERSON_MIDS = ["", "", "an", "el", "os", "ur", "in", "ha"]
+TOOL_MIDS = ["", "", "o", "er", "ix", "ana"]
 
 # 25 terms per persona by kind.
 KIND_PLAN = [("project", 6), ("machine", 4), ("person", 5), ("model", 5), ("tool", 5)]
@@ -62,11 +71,11 @@ def is_fake(term: str, words: set[str]) -> bool:
 
 def _one(rng: random.Random, kind: str) -> str:
     if kind == "project":
-        return rng.choice(CODE_HEADS) + rng.choice(CODE_TAILS)
+        return rng.choice(CODE_HEADS) + rng.choice(CODE_MIDS) + rng.choice(CODE_TAILS)
     if kind == "machine":
-        return rng.choice(MACH_HEADS) + rng.choice(MACH_TAILS)
+        return rng.choice(MACH_HEADS) + rng.choice(MACH_MIDS) + rng.choice(MACH_TAILS)
     if kind == "person":
-        name = rng.choice(PERSON_HEADS) + rng.choice(PERSON_TAILS)
+        name = rng.choice(PERSON_HEADS) + rng.choice(PERSON_MIDS) + rng.choice(PERSON_TAILS)
         return name if rng.random() < 0.7 else name.lower()  # handle form
     if kind == "model":
         root = rng.choice(MODEL_ROOTS) + rng.choice(MODEL_SUFFIX)
@@ -74,7 +83,7 @@ def _one(rng: random.Random, kind: str) -> str:
             return f"{root}-{rng.choice(MODEL_TAGS)}"          # deneb-rl style
         return f"{root.capitalize()} {rng.choice(MODEL_SIZES)}"  # Qorvex 2B style
     if kind == "tool":
-        return rng.choice(CODE_HEADS) + rng.choice(TOOL_TAILS)
+        return rng.choice(CODE_HEADS) + rng.choice(TOOL_MIDS) + rng.choice(TOOL_TAILS)
     raise ValueError(kind)
 
 

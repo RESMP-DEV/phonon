@@ -28,9 +28,15 @@ codex.txt; one line per user-authored message).
 Task: mine the personal vocabulary a speech-to-text system would need for this
 user. Find project codenames, machine names, people and handles, model names,
 tool names, and domain jargon that the user actually types. Prefer terms that
-look invented or long-tail over common English. When the logs show a garbled
-spoken version of a term (for example "the neb rl" for "deneb-rl"), record it
-under spoken_forms of the canonical term.
+look invented or long-tail over common English.
+
+Spoken forms matter as much as the terms themselves. The chat logs are
+dictated, so canonical terms appear as garbled variants: split words
+("the neb rl" for "deneb-rl"), phonetic misspellings ("kelmore" for
+"kelmoor"), and wrong casing or spacing ("h 100 fp8" for "H100FP8").
+For every term you keep, grep the logs for likely garblings of it and
+record each variant you find under spoken_forms of the canonical term.
+A term whose garbled forms you missed is only half mined.
 
 Use the bash tool to explore (ls, grep, sort, uniq, awk, head...). Commands
 time out after 15 s and output is truncated to 4 KB, so aggregate instead of

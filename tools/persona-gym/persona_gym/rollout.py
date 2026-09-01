@@ -92,11 +92,15 @@ def run_bash(cmd: str, cwd: Path, env: dict) -> str:
     return f"exit {r.returncode}\n{out}" if out.strip() else f"exit {r.returncode} (no output)"
 
 
+# Extra request fields, e.g. chat_template_kwargs for a no-think candidate.
+EXTRA_BODY: dict = {}
+
+
 def chat(endpoint: str, model: str, messages: list, timeout: int = 900,
          tool_choice: str = "auto") -> dict:
     # Omit tools entirely when finalizing: some providers ignore
     # tool_choice "none" and keep calling tools forever.
-    payload = {"model": model, "messages": messages}
+    payload = {"model": model, "messages": messages, **EXTRA_BODY}
     if tool_choice != "none":
         payload["tools"] = TOOLS
         payload["tool_choice"] = tool_choice
@@ -216,7 +220,9 @@ def run_one(persona_dir: Path, endpoint: str, model: str, rdir: Path,
 
 
 def run(personas: Path, endpoint: str, model: str, out: Path,
-        n_per: int = 1, max_turns: int = 24) -> None:
+        n_per: int = 1, max_turns: int = 24, no_think: bool = False) -> None:
+    if no_think:
+        EXTRA_BODY["chat_template_kwargs"] = {"enable_thinking": False}
     personas = personas.resolve()
     out = out.resolve()
     shim = make_shim(out)

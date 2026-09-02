@@ -37,6 +37,12 @@ def main(argv=None):
     g.add_argument("--personas", required=True)
     g.add_argument("--rollouts", required=True)
 
+    z = sub.add_parser("noise", help="inject realistic repeated-boilerplate noise into persona logs")
+    z.add_argument("--personas", required=True)
+    z.add_argument("--out", help="write logs+gold copies here instead of in place (no repos)")
+    z.add_argument("--seed", type=int, default=0)
+    z.add_argument("--only", help="comma-separated persona names")
+
     a = p.parse_args(argv)
     if a.cmd == "build":
         from . import build
@@ -50,6 +56,10 @@ def main(argv=None):
         from . import sft
         sft.export(Path(a.personas), Path(a.rollouts), Path(a.out),
                    Path(a.strict) if a.strict else None)
+    elif a.cmd == "noise":
+        from . import noise
+        noise.run(Path(a.personas), Path(a.out) if a.out else None, a.seed,
+                  set(a.only.split(",")) if a.only else None)
     elif a.cmd == "grade":
         from . import grade
         grade.run(Path(a.personas), Path(a.rollouts))

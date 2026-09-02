@@ -22,7 +22,7 @@ def main():
 
     with open(terms_path) as f:
         terms = json.load(f)
-    cache = oracle.run(terms, cache_path=workdir / "oracle" / "cache.jsonl", workers=6)
+    cache = oracle.run(terms, cache_path=workdir / "oracle" / "cache.jsonl", workers=int(os.environ.get("PERSONA_GYM_ORACLE_WORKERS", "6")))
     out = {}
     for t in terms:
         diff, forms = oracle.summarize(t, cache.get(t, {}))

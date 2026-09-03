@@ -22,15 +22,17 @@ MIN_COUNT = 2
 # Sources whose lines are bags of identifiers (one line per file): no sentence-initial rule, no n-grams, no evidence.
 BAG_SOURCES = {"code"}
 LOG_SOURCES = ("claude", "codex", "grok")
+CODE_DF_CAP = 100
 
 
 def prior(c):
     """Pre-oracle rank: user-authored mentions weigh most, then code document frequency, then cross-source agreement.
-    Weights picked on the Wispr gold (2026-09-04): top-6000 gold recall 0.71 vs 0.63 for plain count."""
+    Code document frequency saturates at CODE_DF_CAP so common identifiers do not outrank the user's own names.
+    Weights picked on the Wispr gold (2026-09-04): dictionary precision at top-400 0.26 vs 0.21 for the first guess."""
     s = c["sources"]
     logc = sum(s.get(k, 0) for k in LOG_SOURCES)
-    return round(2.0 * math.log1p(logc) + 1.5 * math.log1p(s.get("code", 0)) + 0.3 * math.log1p(s.get("repos", 0))
-                 + 1.5 * (len(s) - 1) + (3.0 if c.get("seed") else 0.0), 4)
+    return round(1.0 * math.log1p(logc) + 0.5 * math.log1p(min(s.get("code", 0), CODE_DF_CAP))
+                 + 0.3 * math.log1p(s.get("repos", 0)) + 1.5 * (len(s) - 1) + (3.0 if c.get("seed") else 0.0), 4)
 CAP_RATIO = 0.3  # English words: share of occurrences that are Capitalized non-initial or ALLCAPS
 
 RE_URL = re.compile(r"(?:https?://|www\.)\S+")
@@ -189,7 +191,7 @@ def run(sources=None, min_count=MIN_COUNT):
                 for m in RE_TOKEN.finditer(text):
                     tok, is_file = strip_ext(m.group())
                     gap = text[prev_end:m.start()]
-                    initial = not bag and (prev_end == 0 or bool(RE_SENT_END.search(gap)))
+                    initial = bag or prev_end == 0 or bool(RE_SENT_END.search(gap))
                     prev_end = m.end()
                     cls = classify(tok, english)
                     key = tok.lower()
@@ -271,7 +273,11 @@ def run(sources=None, min_count=MIN_COUNT):
             continue
         srcs = {s: c[key] for s, c in per_source.items() if c[key]}
         if cls <= {"cap", "caps"} and key in english:
-            # Only the capitalised uses count as evidence of a name ("Warp" the tool, not "warp" the verb).
+            # Only the capitalised uses count as evidence of a name ("Warp" the tool, not "warp" the verb),
+            # and code bags do not count at all: constants and comments capitalise ordinary words (DEBUG, The).
+            srcs = {s: v for s, v in srcs.items() if s not in BAG_SOURCES}
+            if not srcs:
+                continue
             factor = total / max(sum(srcs.values()), 1)
             srcs = {s: max(1, round(v * factor)) for s, v in srcs.items()}
         term = surface[key].most_common(1)[0][0]

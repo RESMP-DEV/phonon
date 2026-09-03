@@ -5,7 +5,7 @@ import sys
 from .common import out_dir, read_json, write_json
 from .oracle import load_cache, summarize
 
-DIFF_WEIGHT = {"phonetic": 1.0, "format": 1.0, "case": 0.2, "same": 0.0}
+DIFF_WEIGHT = {"phonetic": 1.0, "format": 1.0, "case": 1.0, "same": 0.0}  # case kept at 1.0: 43% of the user's gold is case-only (CUDA, vLLM)
 
 
 def score(c):

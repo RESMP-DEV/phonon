@@ -149,8 +149,7 @@ def run(terms, cache_path=None, workers=12, model=None):
 
 
 def prelim_score(c):
-    import math
-    return math.log1p(c["count"]) * (1.0 + 0.5 * max(len(c["sources"]) - 1, 0))
+    return c.get("prior", 0.0)
 
 
 def run_candidates(workers=12, top=6000):
@@ -158,7 +157,7 @@ def run_candidates(workers=12, top=6000):
     cands = read_json(od / "candidates" / "candidates_raw.json")
     ranked = sorted(cands, key=lambda c: (-prelim_score(c), c["key"]))
     keep = ranked[:top] + [c for c in ranked[top:] if c["seed"]]
-    print(f"[oracle] {len(cands)} candidates, oracle budget top {top} by count and breadth "
+    print(f"[oracle] {len(cands)} candidates, oracle budget top {top} by prior "
           f"(+{len(keep) - min(top, len(ranked))} seeds)", file=sys.stderr)
     cands = keep
     terms = [c["term"] for c in cands]

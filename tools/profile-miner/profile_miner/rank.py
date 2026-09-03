@@ -1,6 +1,5 @@
 """Stage 3 output: mined/candidates.json ranked by count and source breadth."""
 
-import math
 import sys
 
 from .common import out_dir, read_json, write_json
@@ -10,8 +9,7 @@ DIFF_WEIGHT = {"phonetic": 1.0, "format": 1.0, "case": 0.2, "same": 0.0}
 
 
 def score(c):
-    breadth = len(c["sources"])
-    return math.log1p(c["count"]) * (1.0 + 0.5 * max(breadth - 1, 0)) * DIFF_WEIGHT[c["diff"]] + (1.0 if c["seed"] else 0.0)
+    return c["prior"] * DIFF_WEIGHT[c["diff"]] + (1.0 if c["seed"] else 0.0)
 
 
 def run():
@@ -31,6 +29,7 @@ def run():
         item = {
             "term": c["term"],
             "count": c["count"],
+            "prior": c.get("prior", 0.0),
             "sources": c["sources"],
             "spoken_forms": forms,
             "diff": diff,

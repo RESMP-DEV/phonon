@@ -8,6 +8,7 @@ chars are dropped. The English list is /usr/share/dict/words, never the user's
 own text.
 """
 
+import math
 import re
 import sys
 import time
@@ -18,6 +19,18 @@ from .common import out_dir, read_json, write_json
 WORDS_PATH = "/usr/share/dict/words"
 MAX_LEN = 40
 MIN_COUNT = 2
+# Sources whose lines are bags of identifiers (one line per file): no sentence-initial rule, no n-grams, no evidence.
+BAG_SOURCES = {"code"}
+LOG_SOURCES = ("claude", "codex", "grok")
+
+
+def prior(c):
+    """Pre-oracle rank: user-authored mentions weigh most, then code document frequency, then cross-source agreement.
+    Weights picked on the Wispr gold (2026-09-04): top-6000 gold recall 0.71 vs 0.63 for plain count."""
+    s = c["sources"]
+    logc = sum(s.get(k, 0) for k in LOG_SOURCES)
+    return round(2.0 * math.log1p(logc) + 1.5 * math.log1p(s.get("code", 0)) + 0.3 * math.log1p(s.get("repos", 0))
+                 + 1.5 * (len(s) - 1) + (3.0 if c.get("seed") else 0.0), 4)
 CAP_RATIO = 0.3  # English words: share of occurrences that are Capitalized non-initial or ALLCAPS
 
 RE_URL = re.compile(r"(?:https?://|www\.)\S+")
@@ -76,10 +89,24 @@ class English:
         return False
 
 
+# Path components that are directory conventions, not vocabulary.
+PATH_STOP = {"usr", "local", "lib", "lib64", "bin", "sbin", "opt", "etc", "var", "tmp", "home", "users", "src", "include",
+             "share", "dev", "proc", "sys", "mnt", "private", "library", "application", "support", "caches", "cache",
+             "site-packages", "dist-packages", "node_modules", "target", "debug", "release", "build", "dist", "out",
+             "python3", "python", "x86_64-linux-gnu", "aarch64-linux-gnu", "__pycache__", "tests", "test", "docs",
+             "scripts", "examples", "assets", "config", "data", "logs", "www", "html", "static", "public"}
+
+
+def _path_words(m):
+    parts = [p for p in re.split(r"[/]+", m.group()) if p and p not in (".", "..", "~")]
+    keep = [p for p in parts if p.lower() not in PATH_STOP]
+    return " " + " ".join(keep) + " " if keep else " "
+
+
 def clean_line(line):
     line = RE_URL.sub(" ", line)
     line = RE_EMAIL.sub(" ", line)
-    line = RE_PATH.sub(" ", line)
+    line = RE_PATH.sub(_path_words, line)
     line = RE_HEX.sub(" ", line)
     line = RE_KEY.sub(" ", line)
     return line
@@ -147,6 +174,7 @@ def run(sources=None, min_count=MIN_COUNT):
     for src in sources:
         cnt = Counter()
         seen_lines = set()
+        bag = src in BAG_SOURCES
         path = od / "extract" / f"{src}.txt"
         with open(path) as f:
             for line in f:
@@ -161,7 +189,7 @@ def run(sources=None, min_count=MIN_COUNT):
                 for m in RE_TOKEN.finditer(text):
                     tok, is_file = strip_ext(m.group())
                     gap = text[prev_end:m.start()]
-                    initial = prev_end == 0 or bool(RE_SENT_END.search(gap))
+                    initial = not bag and (prev_end == 0 or bool(RE_SENT_END.search(gap)))
                     prev_end = m.end()
                     cls = classify(tok, english)
                     key = tok.lower()
@@ -189,7 +217,7 @@ def run(sources=None, min_count=MIN_COUNT):
                         line_keys.add(key)
                     # n-grams: 2 or 3 consecutive special tokens, at least one a candidate.
                     for n in (2, 3):
-                        if i + n > len(toks):
+                        if bag or i + n > len(toks):
                             break
                         grp = toks[i:i + n]
                         if not all(g[2] for g in grp):
@@ -210,7 +238,7 @@ def run(sources=None, min_count=MIN_COUNT):
                         surface[gkey][gsurf] += 1
                         classes[gkey].add("ngram")
                         line_keys.add(gkey)
-                if len(line) <= 160:
+                if len(line) <= 160 and not bag:
                     for key in line_keys:
                         ev = evidence[key]
                         if len(ev) < 2 and line not in ev:
@@ -242,6 +270,10 @@ def run(sources=None, min_count=MIN_COUNT):
         if total < min_count:
             continue
         srcs = {s: c[key] for s, c in per_source.items() if c[key]}
+        if cls <= {"cap", "caps"} and key in english:
+            # Only the capitalised uses count as evidence of a name ("Warp" the tool, not "warp" the verb).
+            factor = total / max(sum(srcs.values()), 1)
+            srcs = {s: max(1, round(v * factor)) for s, v in srcs.items()}
         term = surface[key].most_common(1)[0][0]
         out.append({
             "term": term,
@@ -270,6 +302,9 @@ def run(sources=None, min_count=MIN_COUNT):
     for c in out:
         for k in c["classes"]:
             by_class[k] += 1
+    for c in out:
+        c["prior"] = prior(c)
+    out.sort(key=lambda c: (-c["prior"], c["key"]))
     write_json(od / "candidates" / "candidates_raw.json", out)
     print(f"[candidates] {len(out)} candidates (min_count={min_count}, cap dropped {dropped_cap}) "
           f"from {total_lines} lines in {time.time() - t0:.1f}s; classes {dict(by_class)}", file=sys.stderr)

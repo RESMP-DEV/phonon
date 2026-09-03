@@ -201,11 +201,80 @@ def extract_repos(until, stats):
     write_json(out_dir() / "extract" / "repos.json", sorted(set(names)))
 
 
+# Source files whose identifiers are mined (document frequency: one count per file).
+CODE_EXT = {"py", "rs", "swift", "ts", "tsx", "js", "jsx", "go", "c", "cc", "cpp", "cu", "cuh", "h", "hpp", "sh", "zsh",
+            "toml", "yaml", "yml", "cmake", "mm", "kt", "java", "rb", "lua", "sql", "proto", "md", "txt"}
+CODE_SKIP_SUFFIX = (".min.js", ".lock", "-lock.json", ".ipynb")
+CODE_MAX_BYTES = 400_000
+CODE_MAX_FILES_PER_REPO = 4000
+CODE_MAX_FILES = 120_000
+RE_CODE_TOKEN = re.compile(r"[A-Za-z0-9]+(?:[\-_.][A-Za-z0-9]+)*")
+# Language keywords and builtins that appear in every repo and are never dictionary words.
+CODE_STOP = set("""
+def class return self none true false import from as with pass break continue lambda yield raise global del assert
+print len range int str float bool list dict set tuple super isinstance type object elif else while for if in is not
+and or async await try except finally nonlocal
+fn let mut pub impl struct enum match use mod const static crate where dyn ref move unsafe trait loop
+some ok err vec string option result box usize isize u8 u16 u32 u64 u128 i8 i16 i32 i64 i128 f32 f64 char
+void long double unsigned signed sizeof typedef include define ifdef ifndef endif pragma template typename namespace
+using public private protected virtual override nullptr auto constexpr inline extern static_cast dynamic_cast
+reinterpret_cast const_cast noexcept
+function export default new this null undefined interface implements extends throw catch switch case do
+instanceof typeof console log var require module exports
+guard func init deinit weak strong protocol extension throws rethrows nil self any
+package go chan defer map make range select
+elsif unless begin end then rescue ensure nil
+""".split())
+
+
+def extract_code(until, stats):
+    """Identifiers from source files in every repo; each file contributes each token once."""
+    repos = find_repos()
+    total = 0
+    for repo in repos:
+        if str(repo).startswith(str(PHONON_SUPPORT)) or repo.name.lower() in REPO_DOC_EXCLUDE:
+            continue
+        n_repo = 0
+        for dirpath, dirnames, filenames in os.walk(repo):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in TREE_SKIP]
+            for fname in filenames:
+                if n_repo >= CODE_MAX_FILES_PER_REPO or total >= CODE_MAX_FILES:
+                    dirnames[:] = []
+                    break
+                ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+                if ext not in CODE_EXT or fname.endswith(CODE_SKIP_SUFFIX) or fname.startswith("."):
+                    continue
+                path = os.path.join(dirpath, fname)
+                try:
+                    if os.path.getsize(path) > CODE_MAX_BYTES:
+                        stats["code_files_too_big"] += 1
+                        continue
+                    with open(path, "r", errors="replace") as f:
+                        text = f.read()
+                except OSError:
+                    continue
+                toks = set()
+                for m in RE_CODE_TOKEN.finditer(text):
+                    t = m.group()
+                    if len(t) < 2 or len(t) > 40 or t.lower() in CODE_STOP or not any(c.isalpha() for c in t):
+                        continue
+                    toks.add(t)
+                if not toks:
+                    continue
+                n_repo += 1
+                total += 1
+                stats["code_tokens"] += len(toks)
+                yield " ".join(sorted(toks))
+        stats["code_files"] += n_repo
+    stats["code_repos"] = len(repos)
+
+
 SOURCES = {
     "claude": extract_claude,
     "codex": extract_codex,
     "grok": extract_grok,
     "repos": extract_repos,
+    "code": extract_code,
 }
 
 

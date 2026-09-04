@@ -24,6 +24,12 @@ MIN_COUNT = 2
 BAG_SOURCES = {"code"}
 LOG_SOURCES = ("claude", "codex", "grok")
 CODE_DF_CAP = 100
+# Command names whose lowercase bigrams are units the user dictates: "uv sync", "git rebase", "cargo build".
+COMMAND_STOP = {"and", "the", "for", "with", "into", "only", "but", "not", "that", "this", "then", "also", "when",
+                "from", "which", "what", "app", "cli", "does", "did", "was", "are", "has", "have", "can", "will", "would",
+                "should", "could", "just", "still", "now", "too", "again", "there", "here", "via", "over", "under", "one"}
+TOOL_HEADS = {"uv", "git", "cargo", "brew", "npm", "pnpm", "bun", "pip", "docker", "gh", "kubectl", "make", "just", "ssh",
+              "rsync", "tmux", "conda", "poetry", "ruff", "pytest", "nvcc", "ncu", "nsys", "ollama", "vllm", "claude", "codex"}
 
 
 def prior(c):
@@ -33,7 +39,8 @@ def prior(c):
     s = c["sources"]
     logc = sum(s.get(k, 0) for k in LOG_SOURCES)
     return round(1.0 * math.log1p(logc) + 0.5 * math.log1p(min(s.get("code", 0), CODE_DF_CAP))
-                 + 0.3 * math.log1p(s.get("repos", 0)) + 1.5 * (len(s) - 1) + (3.0 if c.get("seed") else 0.0), 4)
+                 + 0.3 * math.log1p(s.get("repos", 0)) + 1.5 * (len(s) - 1) + (3.0 if c.get("seed") else 0.0)
+                 + (2.0 if "command" in c["classes"] else 0.0), 4)
 CAP_RATIO = 0.3  # English words: share of occurrences that are Capitalized non-initial or ALLCAPS
 
 RE_URL = re.compile(r"(?:https?://|www\.)\S+")
@@ -170,6 +177,7 @@ def run(sources=None, min_count=MIN_COUNT):
         lexicon = frozenset(load_lexicon())
     except (OSError, ValueError):
         lexicon = frozenset()
+    tool_heads = frozenset(k for k in lexicon if " " not in k and k in TOOL_HEADS)
     od = out_dir()
     counts_path = od / "extract" / "counts.json"
     all_sources = [k for k in read_json(counts_path) if k != "until"]
@@ -229,6 +237,15 @@ def run(sources=None, min_count=MIN_COUNT):
                         surface[key][tok] += 1
                         classes[key] |= cls
                         line_keys.add(key)
+                    # Tool commands: "uv sync", "git rebase" are units even though the verb is an English word.
+                    if not bag and tok in tool_heads and i + 1 < len(toks) and RE_ALPHA.fullmatch(toks[i + 1][0]) \
+                            and toks[i + 1][0].islower() and len(toks[i + 1][0]) > 2 and toks[i + 1][1] not in COMMAND_STOP:
+                        nxt = toks[i + 1]
+                        gkey = f"{key} {nxt[1]}"
+                        cnt[gkey] += 1
+                        surface[gkey][f"{tok} {nxt[0]}"] += 1
+                        classes[gkey] |= {"ngram", "command"}
+                        line_keys.add(gkey)
                     # n-grams: 2 or 3 consecutive special tokens, at least one a candidate.
                     for n in (2, 3):
                         if bag or i + n > len(toks):
@@ -242,8 +259,8 @@ def run(sources=None, min_count=MIN_COUNT):
                             continue
                         if any("lower" in g[2] and len(g[2]) == 1 for g in grp) and all(
                             g[2] <= {"lower", "number", "cap_initial", "cap"} for g in grp
-                        ):
-                            continue  # lowercase-only groups are not units
+                        ) and grp[0][1] not in tool_heads:
+                            continue  # lowercase-only groups are not units, unless headed by a tool name (uv sync)
                         if all(g[2] <= {"cap", "cap_initial"} for g in grp) and n == 3:
                             pass
                         gkey = " ".join(g[1] for g in grp)

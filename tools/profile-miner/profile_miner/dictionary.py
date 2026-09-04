@@ -26,10 +26,15 @@ def lexicon_selected(key, entry, cand, english):
     cats = set(entry["cats"])
     if len(key) < MIN_LEN and not cats & CURATED_CATS:
         return False
+    if cats == {"crate"}:
+        return False  # crate names alone: 0 gold, Opus keep rate 0.57 (symlink, addr, hostname, uname)
+    if cats == {"pypi"} and logc < 2:
+        return False  # PyPI names alone need two mentions: 0 gold among 205, keep rate 0.66
     if not cats & STRONG_CATS and logc == 0:
         return False
-    if key in english and cand["term"] != entry["term"]:
-        return False  # Cursor, Signal, Linear: the word only counts when the user writes it the way the name is spelled
+    if key in english and cand["term"] != entry["term"] and not (cats & CURATED_CATS and logc >= 2):
+        return False  # Cursor, Signal, Linear: the word only counts when the user writes it the way the name is spelled,
+        # unless it is a curated name the user mentions twice (codex, llama, triton)
     return logc >= MIN_LOG or s.get("code", 0) >= MIN_CODE
 
 

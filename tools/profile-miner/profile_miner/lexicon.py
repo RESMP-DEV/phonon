@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 LEX_DIR = Path(__file__).resolve().parent.parent / "lexicon"
-WORDS_PATH = "/usr/share/dict/words"
 MIN_LEN, MAX_LEN = 2, 40
 # Model-id tokens that are sizes, variants or noise, not names.
 HF_TOKEN_SKIP = re.compile(r"^(?:\d+(?:\.\d+)?[bBmMkK]?|v\d+(?:\.\d+)*|instruct|chat|base|hf|gguf|awq|gptq|fp8|fp16|bf16|int4|int8|"
@@ -24,10 +23,9 @@ def norm(t: str) -> str:
 
 
 def load_words():
-    try:
-        return {w.strip().lower() for w in open(WORDS_PATH)}
-    except OSError:
-        return set()
+    """The miner's English class: system dictionary plus google-10000 with suffix rules (files, tools, runs)."""
+    from .candidates import English
+    return English()
 
 
 def add(lex, term, cat, english, allow_english=False):

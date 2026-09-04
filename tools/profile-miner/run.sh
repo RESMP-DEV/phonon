@@ -14,7 +14,10 @@ $PY python -m profile_miner seed
 $PY python -m profile_miner candidates
 $PY --with parakeet-mlx==0.5.2 python -m profile_miner oracle --top "$TOP"
 $PY python -m profile_miner rank
+# Lexicon (tools/profile-miner/lexicon/lexicon.json) is built once from public lists: lexicon/fetch.sh, then
+# `profile_miner lexicon build`. The dictionary stage needs it plus oracle results for the present entries.
+$PY python -m profile_miner dictionary --live-top "${LIVE_TOP:-100}"
 if [ "${GEMMA:-1}" = 1 ]; then
   $PY --with mlx-lm==0.31.3 python -m profile_miner gemma --minutes "${GEMMA_MINUTES:-20}" || echo "gemma pass failed (optional)"
 fi
-echo "done: $PHONON_MINER_OUT/mined/candidates.json"
+echo "done: $PHONON_MINER_OUT/mined/dictionary.json (ranked candidates in mined/candidates.json)"

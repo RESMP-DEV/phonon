@@ -21,6 +21,9 @@ def main(argv=None):
     g = sub.add_parser("gemma", help="optional stage 3d: local Gemma pass (needs mlx-lm)")
     g.add_argument("--minutes", type=float, default=20)
     g.add_argument("--top", type=int, default=400)
+    d = sub.add_parser("dictionary", help="stage 5: lexicon present in sources + live names, two tiers")
+    d.add_argument("--live-top", type=int, default=100)
+    d.add_argument("--oracle-cache", default=None)
     lx = sub.add_parser("lexicon", help="tech lexicon: build from public lists")
     lx.add_argument("action", choices=["build"])
     lx.add_argument("--cache", default=None, help="dir with fetched lists (lexicon/fetch.sh)")
@@ -35,6 +38,10 @@ def main(argv=None):
         seed.run(github=not a.no_github)
     elif a.cmd == "candidates":
         candidates.run(min_count=a.min_count)
+    elif a.cmd == "dictionary":
+        from . import dictionary
+        from pathlib import Path
+        dictionary.run(live_top=a.live_top, oracle_cache=Path(a.oracle_cache) if a.oracle_cache else None)
     elif a.cmd == "lexicon":
         from . import lexicon
         from pathlib import Path

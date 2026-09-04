@@ -129,8 +129,9 @@ def strip_ext(tok):
     return tok, False
 
 
-def classify(tok, english):
-    """Return the set of candidate classes for a token, ignoring position."""
+def classify(tok, english, lexicon=frozenset()):
+    """Return the set of candidate classes for a token, ignoring position. Lexicon terms that are also English
+    words (Triton, Warp, Codex) still classify, so presence in the user's sources can be measured."""
     cls = set()
     if RE_NUMBER.fullmatch(tok):
         return {"number"}
@@ -155,7 +156,7 @@ def classify(tok, english):
             cls.add("caps")
         elif RE_CAP.fullmatch(tok):
             cls.add("cap")
-        elif RE_LOWER.fullmatch(tok) and tok not in english:
+        elif RE_LOWER.fullmatch(tok) and (tok not in english or tok in lexicon):
             cls.add("lower")
     elif re.search(r"[a-z][A-Z]", tok):
         cls.add("camel")
@@ -164,6 +165,11 @@ def classify(tok, english):
 
 def run(sources=None, min_count=MIN_COUNT):
     english = English()
+    try:
+        from .lexicon import load as load_lexicon
+        lexicon = frozenset(load_lexicon())
+    except (OSError, ValueError):
+        lexicon = frozenset()
     od = out_dir()
     counts_path = od / "extract" / "counts.json"
     all_sources = [k for k in read_json(counts_path) if k != "until"]
@@ -199,7 +205,7 @@ def run(sources=None, min_count=MIN_COUNT):
                     gap = text[prev_end:m.start()]
                     initial = bag or prev_end == 0 or bool(RE_SENT_END.search(gap))
                     prev_end = m.end()
-                    cls = classify(tok, english)
+                    cls = classify(tok, english, lexicon)
                     key = tok.lower()
                     if RE_ALPHA.fullmatch(tok):
                         allcount[src][key] += 1
@@ -269,7 +275,7 @@ def run(sources=None, min_count=MIN_COUNT):
             if "cap" in cls and "caps" not in cls and noninit < 2:
                 dropped_cap += 1
                 continue
-            if key in english:
+            if key in english and key not in lexicon:
                 allc = sum(c[key] for c in allcount.values())
                 if allc and (noninit + capsn) / allc < CAP_RATIO:
                     dropped_cap += 1

@@ -2,9 +2,12 @@
 
 Build (dev): python -m profile_miner lexicon build --cache DIR  (DIR holds pypi.json, crates.json,
 hf_models.json, brew_formulae.txt, brew_casks.txt from tools/profile-miner/lexicon/fetch.sh) plus
-lexicon/curated.txt. Writes lexicon/lexicon.json: {key: {"term", "cats"}}.
+lexicon/curated.txt. Writes lexicon/lexicon.json.gz: {key: {"term", "cats"}}.
+Spoken forms for every entry are precomputed once on a Linux GPU box (lexicon/oracle_linux.py) and
+shipped as lexicon/spoken.jsonl.gz, so a first run only oracles the live, non-lexicon candidates.
 Only public lists and the curated glossary go in here, never a user's mined candidates.
 """
+import gzip
 import json
 import re
 import sys
@@ -82,8 +85,9 @@ def build(cache: Path):
             for tok in re.split(r"[-_]", name):
                 if len(tok) >= 3 and not HF_TOKEN_SKIP.match(tok):
                     add(lex, tok, "hf-model", english)
-    out = LEX_DIR / "lexicon.json"
-    json.dump(lex, open(out, "w"), indent=0, ensure_ascii=False)
+    out = LEX_DIR / "lexicon.json.gz"
+    with gzip.open(out, "wt", compresslevel=9) as f:
+        json.dump(lex, f, indent=0, ensure_ascii=False)
     cats = {}
     for e in lex.values():
         for c in e["cats"]:
@@ -93,4 +97,21 @@ def build(cache: Path):
 
 
 def load():
-    return json.load(open(LEX_DIR / "lexicon.json"))
+    with gzip.open(LEX_DIR / "lexicon.json.gz", "rt") as f:
+        return json.load(f)
+
+
+def load_spoken():
+    """Precomputed oracle results for lexicon terms (lexicon/spoken.jsonl.gz): {term: {voice: heard}}."""
+    path = LEX_DIR / "spoken.jsonl.gz"
+    out = {}
+    if not path.exists():
+        return out
+    with gzip.open(path, "rt") as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+                out[d["term"]] = d["voices"]
+            except (ValueError, KeyError):
+                pass
+    return out

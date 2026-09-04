@@ -8,7 +8,7 @@ Lexicon spoken forms come from the oracle cache; in the product they ship precom
 import sys
 
 from .common import out_dir, read_json, write_json
-from .lexicon import load as load_lexicon
+from .lexicon import load as load_lexicon, load_spoken
 from .oracle import load_cache, summarize
 
 LOG_SOURCES = ("claude", "codex", "grok")
@@ -42,7 +42,10 @@ def run(live_top=100, oracle_cache=None):
     od = out_dir()
     cands = {c["key"]: c for c in read_json(od / "candidates" / "candidates_raw.json")}
     lexicon = load_lexicon()
+    # shipped forms win: the runtime oracle skips lexicon terms, so they are the
+    # only forms a fresh machine has for them
     cache = load_cache(oracle_cache or od / "oracle" / "cache.jsonl")
+    cache.update(load_spoken())
     from .candidates import English
     english = English()
     tier1, tier2 = [], []

@@ -154,8 +154,14 @@ def prelim_score(c):
 def run_candidates(workers=12, top=6000):
     od = out_dir()
     cands = read_json(od / "candidates" / "candidates_raw.json")
-    ranked = sorted(cands, key=lambda c: (-prelim_score(c), c["key"]))
+    try:
+        from .lexicon import load_spoken
+        shipped = load_spoken()
+    except OSError:
+        shipped = {}
+    ranked = sorted((c for c in cands if c["term"] not in shipped), key=lambda c: (-prelim_score(c), c["key"]))
     keep = ranked[:top] + [c for c in ranked[top:] if c["seed"]]
+    print(f"[oracle] {len(cands) - len(ranked)} candidates have shipped lexicon spoken forms", file=sys.stderr)
     print(f"[oracle] {len(cands)} candidates, oracle budget top {top} by prior "
           f"(+{len(keep) - min(top, len(ranked))} seeds)", file=sys.stderr)
     cands = keep

@@ -9,6 +9,7 @@ own text.
 """
 
 import math
+import os
 import re
 import sys
 import time
@@ -56,15 +57,20 @@ SUFFIX_RULES = [
     (lambda t: t[:-1], "s"), (lambda t: t[:-2], "es"), (lambda t: t[:-2], "ed"), (lambda t: t[:-1], "ed"),
     (lambda t: t[:-3], "ing"), (lambda t: t[:-3] + "e", "ing"), (lambda t: t[:-3] + "y", "ies"), (lambda t: t[:-2], "ly"),
     (lambda t: t[:-2], "er"), (lambda t: t[:-3], "ers"), (lambda t: t[:-3], "est"), (lambda t: t[:-4], "ing"),
-    (lambda t: t[:-3], "ed"), (lambda t: t[:-1], "d"),
+    (lambda t: t[:-3], "ed"), (lambda t: t[:-1], "d"), (lambda t: t[:-3] + "y", "ied"),
 ]
 
 
 def load_english():
+    """System dictionary plus a modern frequency list (google-10000-english) for words like debug, byte, html."""
     words = set()
-    with open(WORDS_PATH) as f:
-        for w in f:
-            words.add(w.strip().lower())
+    for path in (WORDS_PATH, os.path.join(os.path.dirname(__file__), "data", "english_extra.txt")):
+        try:
+            with open(path) as f:
+                for w in f:
+                    words.add(w.strip().lower())
+        except OSError:
+            pass
     return words
 
 

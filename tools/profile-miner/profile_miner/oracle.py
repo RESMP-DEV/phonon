@@ -72,8 +72,7 @@ def summarize(term, voices):
     order = {"same": 0, "case": 1, "format": 2, "phonetic": 3}
     worst = "same"
     forms = []
-    for v in VOICES:
-        heard = voices.get(v)
+    for v, heard in voices.items():  # any voice set: Mac say voices at runtime, Kokoro voices for the shipped lexicon
         if heard is None:
             continue
         d = diff_class(term, heard)

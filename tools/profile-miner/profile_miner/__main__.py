@@ -21,6 +21,9 @@ def main(argv=None):
     g = sub.add_parser("gemma", help="optional stage 3d: local Gemma pass (needs mlx-lm)")
     g.add_argument("--minutes", type=float, default=20)
     g.add_argument("--top", type=int, default=400)
+    lx = sub.add_parser("lexicon", help="tech lexicon: build from public lists")
+    lx.add_argument("action", choices=["build"])
+    lx.add_argument("--cache", default=None, help="dir with fetched lists (lexicon/fetch.sh)")
     g.add_argument("--model", default=None, help="mlx model id (default: Phonon's polish model)")
     g.add_argument("--out", default="gemma_pass.json", help="output file name under mined/")
     sc = sub.add_parser("score", help="dev-only scoring against the held-out dictionary and corpus")
@@ -32,6 +35,10 @@ def main(argv=None):
         seed.run(github=not a.no_github)
     elif a.cmd == "candidates":
         candidates.run(min_count=a.min_count)
+    elif a.cmd == "lexicon":
+        from . import lexicon
+        from pathlib import Path
+        lexicon.build(Path(a.cache) if a.cache else lexicon.LEX_DIR / "cache")
     elif a.cmd == "oracle":
         from . import oracle
         oracle.run_candidates(workers=a.workers, top=a.top)

@@ -1,16 +1,48 @@
-//! Where Phonon keeps runtimes, weights, recordings, and logs on Windows.
+//! Where Phonon keeps runtimes, weights, recordings, and logs.
 //!
 //! Everything lives under one directory so a user can delete it and start over.
 //! `PHONON_WIN_HOME` overrides it; continuous integration uses that to put the
 //! cache on the runner's fast disk.
+//! Linux defaults to `$XDG_DATA_HOME/phonon` or `~/.local/share/phonon`.
 
 use std::path::PathBuf;
 
 /// The Phonon data root.
 pub fn data_root() -> PathBuf {
     if let Some(explicit) = std::env::var_os("PHONON_WIN_HOME") {
-        return PathBuf::from(explicit);
+        return absolute_root(PathBuf::from(explicit));
     }
+    default_root()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn absolute_root(path: PathBuf) -> PathBuf {
+    path
+}
+
+#[cfg(target_os = "linux")]
+fn absolute_root(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .expect("read the current directory")
+            .join(path)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn default_root() -> PathBuf {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    absolute_root(base.join("phonon"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn default_root() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
@@ -31,6 +63,15 @@ pub fn recordings() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn relative_roots_survive_changing_the_child_directory() {
+        assert_eq!(
+            absolute_root(PathBuf::from("models")),
+            std::env::current_dir().unwrap().join("models")
+        );
+    }
 
     #[test]
     fn the_override_wins() {

@@ -22,6 +22,9 @@ mod pipeline;
 mod polish;
 mod smoke;
 
+#[cfg(target_os = "linux")]
+mod linux;
+
 #[cfg(windows)]
 mod win;
 
@@ -38,7 +41,12 @@ use pipeline::PassResult;
 pub const STARTUP_WAV: &[u8] = include_bytes!("../../../assets/startup.wav");
 
 #[derive(Parser)]
-#[command(name = "phonon-win", about = "Phonon dictation for Windows", version)]
+#[command(name = "phonon-win", version)]
+#[cfg_attr(windows, command(about = "Phonon dictation for Windows"))]
+#[cfg_attr(
+    not(windows),
+    command(about = "Phonon speech recognition and correction")
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -85,13 +93,16 @@ fn run() -> Result<()> {
 #[cfg(not(windows))]
 fn run() -> Result<()> {
     bail!(
-        "phonon-win runs on Windows. On macOS use `phonon`. \
-         `phonon-win info`, `fetch`, and `selftest` work anywhere."
+        "run is not supported on this platform; the tray, hotkey, and text insertion require Windows. \
+         On Linux x86_64 use `phonon-win info`, `fetch`, or `selftest`. On macOS use `phonon`."
     )
 }
 
 fn info() {
+    #[cfg(not(target_os = "linux"))]
     println!("Phonon for Windows");
+    #[cfg(target_os = "linux")]
+    println!("Phonon for Linux x86_64");
     println!("  data root:        {}", paths::data_root().display());
     println!(
         "  first run downloads {}",

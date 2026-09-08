@@ -123,6 +123,11 @@ impl Recognizer {
         // that not every C++ file reader accepts.
         let wav = absolute(wav)?;
         let mut command = Command::new(&self.tool);
+        #[cfg(target_os = "linux")]
+        crate::linux::runtime_libraries(
+            &mut command,
+            &fetch::component_dir(&manifest::SHERPA_RUNTIME),
+        )?;
         command.args(self.args(&wav));
         if let Some(bin) = self.tool.parent() {
             command.current_dir(bin);

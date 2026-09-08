@@ -171,8 +171,8 @@ fn fetch_asset(
     Ok(target)
 }
 
-/// Expand an archive with the `tar` that ships with Windows 10 and 11. It reads
-/// both zip and bzip2 archives, which is every archive in the manifest.
+/// Windows' bsdtar reads zip and bzip2 archives. Linux's tar reads the pinned
+/// tar.bz2 and tar.gz releases and preserves executable modes and library links.
 fn expand(archive: &Path, into: &Path) -> Result<()> {
     fs::create_dir_all(into)?;
     let output = std::process::Command::new("tar")
@@ -181,7 +181,9 @@ fn expand(archive: &Path, into: &Path) -> Result<()> {
         .arg("-C")
         .arg(into)
         .output()
-        .context("run tar; Windows 10 build 17063 or later provides it")?;
+        .context(
+            "run tar; install tar and gzip/bzip2 on Linux, or use Windows 10 build 17063 or later",
+        )?;
     if !output.status.success() {
         bail!(
             "tar failed on {}: {}",
@@ -268,6 +270,8 @@ pub fn ensure(component: &Component, on_progress: &mut dyn FnMut(Progress)) -> R
 
 /// Fetch and install everything first run needs.
 pub fn ensure_all(on_progress: &mut dyn FnMut(Progress)) -> Result<()> {
+    #[cfg(all(target_os = "linux", not(target_arch = "x86_64")))]
+    bail!("the prebuilt Linux runtimes require x86_64");
     for component in crate::manifest::ALL {
         ensure(component, on_progress)?;
     }
@@ -332,6 +336,12 @@ mod tests {
         let source = dir.join("src/wrapper/bin");
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join("tool"), b"binary").unwrap();
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::{symlink, PermissionsExt};
+            fs::set_permissions(source.join("tool"), fs::Permissions::from_mode(0o755)).unwrap();
+            symlink("tool", source.join("tool-link")).unwrap();
+        }
         let archive = dir.join("bundle.tar");
         let status = std::process::Command::new("tar")
             .arg("-cf")
@@ -350,6 +360,22 @@ mod tests {
         let flat = dir.join("flat");
         move_children(&out.join("wrapper"), &flat).unwrap();
         assert!(flat.join("bin/tool").is_file());
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_ne!(
+                fs::metadata(flat.join("bin/tool"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o111,
+                0
+            );
+            assert_eq!(
+                fs::read_link(flat.join("bin/tool-link")).unwrap(),
+                Path::new("tool")
+            );
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 }

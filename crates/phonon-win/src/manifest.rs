@@ -55,6 +55,7 @@ pub const POLISH_MODEL_REVISION: &str = "675cff42a74c774d6cb76f76d8eacb49b48c9b9
 pub const POLISH_GGUF: &str = "gemma-4-E2B_q4_0-it.gguf";
 
 /// sherpa-onnx command line tools and the ONNX Runtime they load.
+#[cfg(not(target_os = "linux"))]
 pub const SHERPA_RUNTIME: Component = Component {
     dir: "runtime/sherpa-onnx-1.13.6",
     label: "speech recognition runtime",
@@ -72,6 +73,7 @@ pub const SHERPA_RUNTIME: Component = Component {
 
 /// llama.cpp CPU build. The x64 CPU zip carries every ggml CPU backend variant,
 /// so one artifact covers Sandy Bridge through Zen 4.
+#[cfg(not(target_os = "linux"))]
 pub const LLAMA_RUNTIME: Component = Component {
     dir: "runtime/llama-b10726",
     label: "correction runtime",
@@ -83,6 +85,38 @@ pub const LLAMA_RUNTIME: Component = Component {
     }],
     unpack: Unpack::Archive { strip_to: "" },
     sentinel: "llama-server.exe",
+};
+
+/// Linux x86_64 tools, including the shared ONNX Runtime in `lib/`.
+#[cfg(target_os = "linux")]
+pub const SHERPA_RUNTIME: Component = Component {
+    dir: "runtime/sherpa-onnx-1.13.6-linux-x64",
+    label: "speech recognition runtime",
+    assets: &[Asset {
+        name: "sherpa-onnx-linux-x64.tar.bz2",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-v1.13.6-linux-x64-shared-no-tts.tar.bz2",
+        sha256: "089c01bded9166ed53f9e433b030863f9dd5ec2ad067dca73a8ba96dca25979d",
+        bytes: 24_503_640,
+    }],
+    unpack: Unpack::Archive {
+        strip_to: "sherpa-onnx-v1.13.6-linux-x64-shared-no-tts",
+    },
+    sentinel: "bin/sherpa-onnx-offline",
+};
+
+/// The pinned Ubuntu CPU release is a tar.gz, not a zip.
+#[cfg(target_os = "linux")]
+pub const LLAMA_RUNTIME: Component = Component {
+    dir: "runtime/llama-b10726-linux-x64",
+    label: "correction runtime",
+    assets: &[Asset {
+        name: "llama-ubuntu-x64.tar.gz",
+        url: "https://github.com/ggml-org/llama.cpp/releases/download/b10726/llama-b10726-bin-ubuntu-x64.tar.gz",
+        sha256: "d3c4e406b2911c8c75d2d0858459645960f8f592c1ab372d565cf145b870c901",
+        bytes: 16_702_536,
+    }],
+    unpack: Unpack::Archive { strip_to: "llama-b10726" },
+    sentinel: "llama-server",
 };
 
 /// Parakeet TDT 0.6b v2, the same acoustic model the macOS build runs, exported

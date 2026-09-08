@@ -87,3 +87,65 @@ jobs:
       - name: report what is installed
         if: always()
         run: bin\phonon-win.exe info
+
+  linux:
+    name: Linux build, unit tests, and end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Override the Windows job default; keep weights out of the checkout.
+      PHONON_WIN_HOME: ${{ runner.temp }}/phonon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-beta
+
+      - name: install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libgomp1 tar gzip bzip2
+
+      - name: format
+        run: cargo fmt --all -- --check
+
+      - name: unit tests
+        run: nice -n 10 cargo test -p phonon-win -p phonon-hotkey --locked
+
+      - name: clippy
+        run: nice -n 10 cargo clippy -p phonon-win -p phonon-hotkey --all-targets --locked -- -D warnings
+
+      - name: build the release executable
+        run: nice -n 10 cargo build --release -p phonon-win --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonon-linux-x64
+          path: target/release/phonon-win
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: cache the runtimes
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PHONON_WIN_HOME }}/runtime
+          key: phonon-linux-x64-runtime-sherpa1.13.6-llama-b10726
+
+      - name: download and verify the runtimes and weights
+        run: nice -n 10 target/release/phonon-win fetch
+
+      - name: end-to-end selftest on the startup fixture
+        run: nice -n 10 target/release/phonon-win selftest --wav assets/startup.wav
+
+      - name: report what is installed
+        if: always()
+        run: target/release/phonon-win info
+
+      - name: preserve correction diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonon-linux-logs
+          path: ${{ env.PHONON_WIN_HOME }}/logs
+          if-no-files-found: ignore

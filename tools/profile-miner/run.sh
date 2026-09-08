@@ -9,7 +9,15 @@ UNTIL="${UNTIL:-}"
 TOP="${ORACLE_TOP:-200}"   # live non-lexicon terms; lexicon spoken forms ship in lexicon/spoken.jsonl.gz
 PY="uv run --offline --python 3.12"
 
-$PY python -m profile_miner extract ${UNTIL:+--until "$UNTIL"}
+# Code identifiers come from the Rust port when it is built (cargo build --release -p phonon-mine; byte-identical
+# output, about twice as fast); it writes extract/counts.json fresh, so it runs before the Python sources merge in.
+MINE="$(cd ../.. && pwd)/target/release/phonon-mine"
+if [ -x "$MINE" ]; then
+  "$MINE" extract-code --out "$PHONON_MINER_OUT" ${UNTIL:+--until "$UNTIL"}
+  $PY python -m profile_miner extract --source claude --source codex --source grok --source repos ${UNTIL:+--until "$UNTIL"}
+else
+  $PY python -m profile_miner extract ${UNTIL:+--until "$UNTIL"}
+fi
 $PY python -m profile_miner seed
 $PY python -m profile_miner candidates
 $PY --with parakeet-mlx==0.5.2 python -m profile_miner oracle --top "$TOP"

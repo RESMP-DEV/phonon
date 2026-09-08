@@ -25,6 +25,9 @@ ap.add_argument("--model", default="Qwen/Qwen3.5-4B"); ap.add_argument("--out", 
 ap.add_argument("--epochs", type=int, default=3); ap.add_argument("--lr", type=float, default=2e-4)
 ap.add_argument("--rank", type=int, default=16); ap.add_argument("--bs", type=int, default=8)
 ap.add_argument("--max-len", type=int, default=1024); ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--target-regex", default=None,
+                help="PEFT target_modules regex, e.g. r'.*language_model.*\\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$' "
+                     "to skip the audio and vision towers of a multimodal model")
 a = ap.parse_args()
 random.seed(a.seed); torch.manual_seed(a.seed)
 
@@ -110,8 +113,9 @@ print(f"[judge] zero-shot per-term {summary['zero_shot_per_term']} best-thr {sum
       f"({time.time() - t0:.0f}s)", file=sys.stderr)
 
 # ---- LoRA training on the answer tokens only
+TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 lcfg = LoraConfig(r=a.rank, lora_alpha=2 * a.rank, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
-                  target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"])
+                  target_modules=a.target_regex or TARGETS)
 model = get_peft_model(model, lcfg)
 model.print_trainable_parameters()
 model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})

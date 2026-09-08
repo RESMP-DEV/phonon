@@ -68,10 +68,20 @@ def run(live_top=100, oracle_cache=None):
                 "spoken_forms": forms, "count": c["count"], "sources": c["sources"], "prior": c.get("prior", 0.0)}
         (tier2 if diff in ("same", "case") else tier1).append(item)
     seen = {i["key"] for i in tier1} | {i["key"] for i in tier2}
+    # Live tier: with a judge result (mined/judge.json) take the judged terms it keeps, up to live_top; without
+    # one, the top live_top by rank.
+    judge_path = od / "mined" / "judge.json"
+    judged = read_json(judge_path)["terms"] if judge_path.exists() else None
     live = 0
     for m in read_json(od / "mined" / "candidates.json"):
         if m.get("lexicon") or m["term"].strip().lower() in seen:
             continue
+        if judged is not None:
+            j = judged.get(m["term"])
+            if j is None:
+                break  # past the judged prefix
+            if not j["keep"]:
+                continue
         tier1.append({"term": m["term"], "key": m["term"].strip().lower(), "origin": "live", "cats": [], "diff": m["diff"],
                       "spoken_forms": m["spoken_forms"], "count": m["count"], "sources": m["sources"], "prior": m["prior"],
                       "evidence": m.get("evidence", [])})

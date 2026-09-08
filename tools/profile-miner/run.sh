@@ -32,7 +32,9 @@ fi
 # Lexicon (lexicon/lexicon.json.gz + lexicon/spoken.jsonl.gz) is built once from public lists: lexicon/fetch.sh, then
 # `profile_miner lexicon build`, oracled on a Linux GPU box with lexicon/oracle_linux.py. Both ship in the repo.
 $PY python -m profile_miner dictionary --live-top "${LIVE_TOP:-100}"
-if [ "${GEMMA:-1}" = 1 ]; then
+# Optional exploratory Gemma proposal pass (67 s; nothing downstream reads mined/gemma_pass.json now that the judge
+# exists). Off by default: GEMMA=1 to run it.
+if [ "${GEMMA:-0}" = 1 ]; then
   $PY --with mlx-lm==0.31.3 python -m profile_miner gemma --minutes "${GEMMA_MINUTES:-20}" || echo "gemma pass failed (optional)"
 fi
 echo "done: $PHONON_MINER_OUT/mined/dictionary.json (ranked candidates in mined/candidates.json)"

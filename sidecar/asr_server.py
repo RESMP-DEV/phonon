@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import json
 import base64
+import json
 import sys
 import time
 import traceback
@@ -99,7 +99,7 @@ def main() -> None:
     )
     try:
         from parakeet_mlx import from_pretrained
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         emit({"type": "error", "msg": f"parakeet_mlx import failed: {e}"})
         return
 
@@ -121,7 +121,7 @@ def main() -> None:
 
             source = snapshot_download(model_id, revision=revision)
         model = from_pretrained(source)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         emit({"type": "error", "msg": f"load failed: {e}"})
         traceback.print_exc(file=sys.stderr)
         return
@@ -137,7 +137,7 @@ def main() -> None:
         import mlx.core as mx
 
         mx.eval(model.parameters())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         emit({"type": "error", "msg": f"weight materialization failed: {e}"})
         traceback.print_exc(file=sys.stderr)
         return
@@ -182,7 +182,7 @@ def main() -> None:
                 streamer = model.transcribe_stream(context_size=(128, 64))
                 streamer.__enter__()
                 emit({"type": "stream_started", "id": stream_id})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 close_stream()
                 emit(
                     {
@@ -215,7 +215,7 @@ def main() -> None:
                             "seconds": time.perf_counter() - t1,
                         }
                     )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 emit({"type": "error", "id": rid, "msg": f"stream chunk failed: {e}"})
                 traceback.print_exc(file=sys.stderr)
             continue
@@ -257,7 +257,7 @@ def main() -> None:
                         "partial": False,
                     }
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 emit({"type": "error", "id": rid, "msg": f"stream warmup failed: {e}"})
             continue
         if cmd == "transcribe":
@@ -290,7 +290,7 @@ def main() -> None:
                         "seconds": time.perf_counter() - t1,
                     }
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 emit({"type": "error", "id": rid, "msg": f"transcribe failed: {e}"})
                 traceback.print_exc(file=sys.stderr)
             continue

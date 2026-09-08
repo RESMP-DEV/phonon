@@ -93,7 +93,9 @@ def run_mode(phonon: Path, mode: str, args: argparse.Namespace) -> dict:
     if args.budget is not None and mode == "profile":
         env["PHONON_PROFILE_TOKEN_BUDGET"] = str(args.budget)
     print(f"== {mode}: {' '.join(command)}", file=sys.stderr)
-    result = subprocess.run(command, env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        command, env=env, capture_output=True, text=True, check=False
+    )
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         raise SystemExit(f"{mode} failed with exit code {result.returncode}")

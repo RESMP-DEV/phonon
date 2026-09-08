@@ -24,7 +24,9 @@ $PY --with parakeet-mlx==0.5.2 python -m profile_miner oracle --top "$TOP"
 $PY python -m profile_miner rank
 # Judge: LoRA keep/drop classifier over the live top-N. Needs an mlx_lm adapter dir in $PHONON_JUDGE_ADAPTER
 # (recipe in judge/); without one the dictionary falls back to the top LIVE_TOP live terms by rank.
-if [ -n "${PHONON_JUDGE_ADAPTER:-}" ]; then
+PHONON_JUDGE_ADAPTER="${PHONON_JUDGE_ADAPTER:-$(dirname "$0")/judge/adapter-gemma-4-e2b}"
+export PHONON_JUDGE_ADAPTER
+if [ -d "$PHONON_JUDGE_ADAPTER" ]; then
   $PY --with mlx-lm==0.31.3 python -m profile_miner judge --top "${JUDGE_TOP:-300}" || echo "judge failed (optional)"
 fi
 # Lexicon (lexicon/lexicon.json.gz + lexicon/spoken.jsonl.gz) is built once from public lists: lexicon/fetch.sh, then

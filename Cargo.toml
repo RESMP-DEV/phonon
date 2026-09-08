@@ -6,6 +6,7 @@ members = [
     "crates/phonon-core",
     "crates/phonon-hotkey",
     "crates/phonon-llm",
+    "crates/phonon-mine",
     "crates/phonon-profile",
     "crates/phonon-win",
 ]

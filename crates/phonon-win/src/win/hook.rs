@@ -107,13 +107,20 @@ pub fn reset_latch() {
     }
 }
 
+fn accept_injected() -> bool {
+    static ACCEPT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ACCEPT.get_or_init(|| std::env::var_os("PHONON_WIN_ACCEPT_INJECTED").is_some_and(|v| v == "1"))
+}
+
 unsafe extern "system" fn proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code < 0 {
         return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
     let event = &*(lparam as *const KBDLLHOOKSTRUCT);
-    // Phonon's own Control-V for pasting must not feed the latch.
-    let injected = event.flags & LLKHF_INJECTED != 0;
+    // Phonon's own Control-V for pasting must not feed the latch. Automated
+    // tests on a machine without a keyboard set PHONON_WIN_ACCEPT_INJECTED=1
+    // to drive the key with SendInput; never set it for real use.
+    let injected = event.flags & LLKHF_INJECTED != 0 && !accept_injected();
     let Some(state) = STATE.get() else {
         return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     };

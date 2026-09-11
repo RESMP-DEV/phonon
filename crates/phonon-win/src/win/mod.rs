@@ -180,7 +180,16 @@ fn begin() -> Option<capture::Recording> {
             Some(recording)
         }
         Err(error) => {
-            tray::notify("Phonon cannot hear you", &format!("{error:#}"), true);
+            let mut text = format!("{error:#}");
+            // E_ACCESSDENIED from WASAPI: Windows privacy settings block the
+            // microphone for desktop apps (seen on a stock Server 2022).
+            if text.contains("0x80070005") {
+                text.push_str(
+                    ". Turn on Settings > Privacy & security > Microphone, including \"Let desktop apps access your microphone\"",
+                );
+            }
+            eprintln!("phonon: cannot hear you: {text}");
+            tray::notify("Phonon cannot hear you", &text, true);
             None
         }
     }

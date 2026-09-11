@@ -171,27 +171,33 @@ fn fetch_asset(
     Ok(target)
 }
 
-/// Windows' bsdtar reads zip and bzip2 archives. Linux's tar reads the pinned
-/// tar.bz2 and tar.gz releases and preserves executable modes and library links.
+/// Expand a downloaded asset in-process, choosing its format by name.
 fn expand(archive: &Path, into: &Path) -> Result<()> {
     fs::create_dir_all(into)?;
-    let output = std::process::Command::new("tar")
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(into)
-        .output()
-        .context(
-            "run tar; install tar and gzip/bzip2 on Linux, or use Windows 10 build 17063 or later",
-        )?;
-    if !output.status.success() {
-        bail!(
-            "tar failed on {}: {}",
-            archive.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
+    let file = fs::File::open(archive).with_context(|| format!("open {}", archive.display()))?;
+    let name = archive.file_name().unwrap_or_default().to_string_lossy();
+    let result = if name.ends_with(".tar.bz2") {
+        tar::Archive::new(bzip2::read::MultiBzDecoder::new(file))
+            .unpack(into)
+            .map_err(anyhow::Error::from)
+    } else if name.ends_with(".tar.gz") {
+        tar::Archive::new(flate2::read::MultiGzDecoder::new(file))
+            .unpack(into)
+            .map_err(anyhow::Error::from)
+    } else if name.ends_with(".tar") {
+        tar::Archive::new(file)
+            .unpack(into)
+            .map_err(anyhow::Error::from)
+    } else if name.ends_with(".zip") {
+        // extract validates paths (including symlink destinations) and restores
+        // each file's Unix permissions when the entry supplies them.
+        zip::ZipArchive::new(file)?
+            .extract(into)
+            .map_err(anyhow::Error::from)
+    } else {
+        bail!("unsupported archive format: {}", archive.display());
+    };
+    result.with_context(|| format!("unpack {}", archive.display()))
 }
 
 /// Move every entry of `from` into `to`.
@@ -328,7 +334,7 @@ mod tests {
         );
     }
 
-    /// The unpack path uses the system `tar`, so it can be proved off Windows too.
+    /// Unpacking preserves the runtime layout, executable modes, and library links.
     #[test]
     fn expands_an_archive_and_strips_its_root() {
         let dir = std::env::temp_dir().join("phonon-win-expand-test");
@@ -336,7 +342,7 @@ mod tests {
         let source = dir.join("src/wrapper/bin");
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join("tool"), b"binary").unwrap();
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
             use std::os::unix::fs::{symlink, PermissionsExt};
             fs::set_permissions(source.join("tool"), fs::Permissions::from_mode(0o755)).unwrap();
@@ -360,7 +366,7 @@ mod tests {
         let flat = dir.join("flat");
         move_children(&out.join("wrapper"), &flat).unwrap();
         assert!(flat.join("bin/tool").is_file());
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_ne!(
@@ -377,5 +383,93 @@ mod tests {
             );
         }
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn write_archive_fixture(path: &Path, entry_name: &str) {
+        let file = fs::File::create(path).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        if name.ends_with(".zip") {
+            let mut archive = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(0o755);
+            archive.start_file(entry_name, options).unwrap();
+            archive.write_all(b"binary").unwrap();
+            archive.finish().unwrap();
+        } else {
+            let mut archive = tar::Builder::new(Vec::new());
+            let mut header = tar::Header::new_gnu();
+            header.set_size(6);
+            header.set_mode(0o755);
+            // Write the name directly so the fixture can include a malicious
+            // path that the tar builder's set_path would refuse to create.
+            header.as_mut_bytes()[..entry_name.len()].copy_from_slice(entry_name.as_bytes());
+            header.set_cksum();
+            archive.append(&header, &b"binary"[..]).unwrap();
+            let bytes = archive.into_inner().unwrap();
+            if name.ends_with(".tar.bz2") {
+                let mut encoder = bzip2::write::BzEncoder::new(file, bzip2::Compression::default());
+                encoder.write_all(&bytes).unwrap();
+                encoder.finish().unwrap();
+            } else {
+                let mut encoder =
+                    flate2::write::GzEncoder::new(file, flate2::Compression::default());
+                encoder.write_all(&bytes).unwrap();
+                encoder.finish().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn expands_compressed_archives_and_strips_their_roots() {
+        let dir = std::env::temp_dir().join("phonon-win-compressed-expand-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for suffix in ["tar.bz2", "tar.gz", "zip"] {
+            let archive = dir.join(format!("bundle.{suffix}"));
+            write_archive_fixture(&archive, "wrapper/bin/tool");
+            let raw = dir.join(format!("{suffix}/.raw"));
+            expand(&archive, &raw).unwrap();
+            let flat = dir.join(format!("{suffix}/installed"));
+            let strip_to = "wrapper";
+            move_children(&raw.join(strip_to), &flat).unwrap();
+            assert_eq!(fs::read(flat.join("bin/tool")).unwrap(), b"binary");
+            assert!(!flat.join("wrapper").exists());
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    fs::metadata(flat.join("bin/tool"))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o755
+                );
+            }
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_archive_path_traversal() {
+        let dir = std::env::temp_dir().join("phonon-win-traversal-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for suffix in ["tar.bz2", "tar.gz", "zip"] {
+            let archive = dir.join(format!("bundle.{suffix}"));
+            write_archive_fixture(&archive, "../escaped");
+            let out = dir.join("out");
+            let result = expand(&archive, &out);
+            if suffix == "zip" {
+                assert!(result.is_err(), "zip traversal must fail extraction");
+            } else {
+                // tar rejects traversal entries by skipping them.
+                result.unwrap();
+            }
+            assert!(!dir.join("escaped").exists());
+            assert_eq!(fs::read_dir(&out).unwrap().count(), 0);
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

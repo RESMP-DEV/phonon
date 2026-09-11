@@ -11,12 +11,17 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+# The 0.6 default is libbz2-rs-sys (pure Rust); do not enable bzip2-sys.
+bzip2 = "0.6"
 clap = { version = "4", features = ["derive"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 hound = "3"
 phonon-hotkey = { path = "../phonon-hotkey" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # native-tls uses SChannel on Windows and Security.framework on macOS, so no
 # C toolchain is needed to build or to cross-check this crate.
 native-tls = "0.2"

@@ -13,6 +13,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use crate::fetch;
 use crate::manifest;
 
+/// `CREATE_NO_WINDOW`: run a console child without a console window.
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// A ready recogniser: the tool and the weights it needs.
 #[derive(Debug, Clone)]
 pub struct Recognizer {
@@ -123,6 +127,14 @@ impl Recognizer {
         // that not every C++ file reader accepts.
         let wav = absolute(wav)?;
         let mut command = Command::new(&self.tool);
+        #[cfg(windows)]
+        {
+            // A console tool started from a tray app gets its own console
+            // window unless told otherwise; it flashed on the desktop on every
+            // utterance on a real Windows Server 2022 box.
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         #[cfg(target_os = "linux")]
         crate::linux::runtime_libraries(
             &mut command,

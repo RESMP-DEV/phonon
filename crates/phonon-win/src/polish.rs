@@ -206,6 +206,13 @@ impl Corrector {
         if let Some(dir) = server.parent() {
             command.current_dir(dir);
         }
+        #[cfg(windows)]
+        {
+            // Without this the server owns a console window that sits on the
+            // desktop for the life of the tray app.
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(crate::asr::CREATE_NO_WINDOW);
+        }
         #[cfg(target_os = "linux")]
         let log_path = {
             crate::linux::runtime_libraries(

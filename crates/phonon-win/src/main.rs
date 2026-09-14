@@ -139,14 +139,32 @@ fn info() {
 }
 
 fn fetch_all() -> Result<()> {
+    use std::io::{IsTerminal, Write};
+    // A terminal gets one line rewritten in place; a log gets one line per file and
+    // per ten percent, instead of one per 4 MB chunk.
+    let tty = std::io::stdout().is_terminal();
     let mut last = String::new();
+    let mut last_step: (&str, u32) = ("", u32::MAX);
     fetch::ensure_all(&mut |progress| {
         let line = progress.line();
-        if line != last {
-            println!("{line}");
-            last = line;
+        if line == last {
+            return;
+        }
+        last = line.clone();
+        if tty {
+            print!("\r\x1b[2K{line}");
+            let _ = std::io::stdout().flush();
+        } else {
+            let step = (progress.file, progress.percent() / 10);
+            if step != last_step {
+                println!("{line}");
+                last_step = step;
+            }
         }
     })?;
+    if tty && !last.is_empty() {
+        println!();
+    }
     println!("every runtime and model is installed and verified");
     Ok(())
 }

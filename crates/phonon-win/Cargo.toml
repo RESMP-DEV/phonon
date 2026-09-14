@@ -9,6 +9,9 @@ description = "Phonon for Windows: tray app, global hotkey, local ASR and correc
 name = "phonon-win"
 path = "src/main.rs"
 
+[package.metadata.winresource]
+OriginalFilename = "phonon-win.exe"
+
 [dependencies]
 anyhow.workspace = true
 # The 0.6 default is libbz2-rs-sys (pure Rust); do not enable bzip2-sys.
@@ -26,6 +29,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # C toolchain is needed to build or to cross-check this crate.
 native-tls = "0.2"
 ureq = { version = "2", default-features = false, features = ["json", "gzip", "native-tls"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 cpal = "0.15"

@@ -22,7 +22,8 @@ installation. To build locally instead, use
 ## Windows beta
 
 Beta. Continuous integration builds it on Windows and runs one real dictation
-through it on every push. Nobody has run it on a real Windows machine yet.
+through it on every push, and the same flow has run end to end on a Windows
+Server 2022 machine: download, first-run setup, dictation into Notepad.
 
 Download `phonon-win.exe` from the
 [latest Windows prerelease](https://github.com/Infatoshi/phonon/releases?q=win-beta)
@@ -35,7 +36,9 @@ around this without an Extended Validation certificate.
 
 First run downloads about 3.8 GB: the sherpa-onnx tools, the llama.cpp CPU
 build, Parakeet as int8 ONNX, and the Gemma correction weights. The tray
-tooltip carries the progress. Everything after that is local and offline.
+tooltip carries the progress; Windows hides new tray icons behind the **^**
+at the right of the taskbar, so look there. Everything after that is local
+and offline.
 
 Hold **Right Ctrl** to dictate. Double-tap it to latch, then press it again to
 stop. Right-click the tray icon for the menu. Phonon swallows Right Ctrl while

@@ -94,7 +94,7 @@ jobs:
     timeout-minutes: 90
     env:
       # Override the Windows job default; keep weights out of the checkout.
-      PHONON_WIN_HOME: ${{ runner.temp }}/phonon
+      PHONON_WIN_HOME: /tmp/phonon
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

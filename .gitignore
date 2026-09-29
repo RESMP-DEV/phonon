@@ -28,3 +28,7 @@
 /ml/research/record_terms/read_script.jsonl
 /ml/research/record_terms/recordings.jsonl
 /ml/research/record_terms/wav/
+
+# Local agent worktrees and semantic index
+.worktrees/
+.sindexer/

@@ -21,3 +21,10 @@
 *.dmg
 *.app/
 *.xcresult/
+
+# ml/: the research log, goal file and field recordings stay on the machines that make them
+/ml/DEVLOG.md
+/ml/GOAL.md
+/ml/research/record_terms/read_script.jsonl
+/ml/research/record_terms/recordings.jsonl
+/ml/research/record_terms/wav/

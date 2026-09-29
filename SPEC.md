@@ -265,3 +265,10 @@ text is restored a quarter of a second later.
 - Unpacking uses the `tar` that ships with Windows 10 build 17063 and later.
 - Recognition loads the encoder per pass, so the first word costs more than it
   does on macOS.
+
+## Refiner (research)
+
+The next correction model is built in `ml/`: Parakeet TDT v2, then per-utterance retrieval over a
+vocabulary indexed from the user's own code, then LFM2.5-1.2B with a LoRA adapter, shipped as the
+same int4 weights on every platform. `ml/SPEC.md` has the design and the evaluation roadmap;
+`ml/AGENTS.md` has the current state and how to run the pipeline.

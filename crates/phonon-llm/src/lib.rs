@@ -400,7 +400,10 @@ pub struct PolishSidecar {
 /// it is a developer comparison switch and is never set in a shipped build.
 fn polish_command(root: &Path, config: &PolishConfig) -> Result<Option<Command>> {
     let script = polish_script(root);
-    let prompt = polish_prompt(root);
+    // Overridable for developer model comparisons only; unset in shipped builds.
+    let prompt = std::env::var("PHONON_POLISH_PROMPT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| polish_prompt(root));
     if !(script.is_file() && prompt.is_file()) {
         return Ok(None);
     }
@@ -441,6 +444,11 @@ fn polish_command(root: &Path, config: &PolishConfig) -> Result<Option<Command>>
     }
     if !config.prefix_cache {
         command.arg("--no-prefix-cache");
+    }
+    // Developer comparison switch for correctors trained on the bare transcript
+    // (no dictionary envelope); never set in a shipped build.
+    if std::env::var("PHONON_POLISH_TRANSCRIPT_ONLY").as_deref() == Ok("1") {
+        command.arg("--transcript-only");
     }
     phonon_asr::apply_offline_policy(&mut command, &uv, POLISH_RUNTIME_REQUIREMENT);
     Ok(Some(command))

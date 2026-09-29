@@ -26,10 +26,12 @@ import traceback
 # the answer channel, which is what a formatter needs: short, literal output.
 NO_THINK_PREFILL = "<|channel>thought\nNo thinking needed.\n<channel|>"
 
-# Hard ceiling on generated tokens. A correction pass never legitimately needs
-# more; without it a bad expansion decodes until the model's own limit and the
-# request feels frozen.
-OUTPUT_TOKEN_CEILING = 256
+# Hard ceiling on generated tokens, so a runaway expansion cannot decode until
+# the model's own limit and feel frozen. The per-request budget below already
+# scales with the spoken text; the ceiling is only a backstop. It was 256 until
+# 2026-09-15, which silently cut every dictation longer than about 230 words
+# (20 of 145 real holdout dictations) to its first 256 tokens.
+OUTPUT_TOKEN_CEILING = 2048
 OUTPUT_TOKEN_FLOOR = 48
 TRANSCRIPT_PATTERN = re.compile(r"<transcript>(.*?)</transcript>", re.DOTALL)
 LEAKED_MARKER_PATTERN = re.compile(r"<\|?/?(?:channel|turn|think)\|?>?")
@@ -202,6 +204,9 @@ def parse_args() -> argparse.Namespace:
     # Developer switch: prefill the whole prompt on every request, as before
     # the prefix cache. Output is identical; only latency differs.
     parser.add_argument("--no-prefix-cache", action="store_true")
+    # Developer comparisons: send only the text inside <transcript> to a model
+    # trained on bare transcripts. Shipped builds never pass this.
+    parser.add_argument("--transcript-only", action="store_true")
     return parser.parse_known_args()[0]
 
 
@@ -230,7 +235,11 @@ def main() -> None:
         }
     )
     try:
-        local_dir = snapshot_download(args.model, revision=args.revision)
+        # A local directory (developer model comparisons) is used as it is.
+        if os.path.isdir(args.model):
+            local_dir = args.model
+        else:
+            local_dir = snapshot_download(args.model, revision=args.revision)
     except Exception as error:  # noqa: BLE001
         emit({"ok": False, "error": f"correction model download failed: {error}"})
         return
@@ -306,8 +315,13 @@ def main() -> None:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user})
+        kwargs = {}
+        # Qwen3-style templates open a thinking block unless told not to; a
+        # formatter wants the answer straight away.
+        if "enable_thinking" in template:
+            kwargs["enable_thinking"] = False
         return tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=False
+            messages, add_generation_prompt=True, tokenize=False, **kwargs
         )
 
     # The prompt is prefix + user text + suffix. The prefix (system turn with
@@ -315,6 +329,8 @@ def main() -> None:
     prompt_prefix, prompt_suffix = split_rendered_prompt(render, system_prompt)
 
     def build_prompt(text: str) -> str:
+        if args.transcript_only:
+            text = transcript_payload(text)
         return prompt_prefix + text + prompt_suffix + think_prefill
 
     def encode_prompt(prompt: str) -> list[int]:

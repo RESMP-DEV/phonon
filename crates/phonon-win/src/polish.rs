@@ -25,7 +25,7 @@ use crate::manifest;
 pub const SYSTEM_PROMPT: &str = include_str!("../../../prompts/polish_v2.txt");
 
 /// Bounds on generated tokens, copied from `sidecar/polish_server.py`.
-pub const OUTPUT_TOKEN_CEILING: u32 = 256;
+pub const OUTPUT_TOKEN_CEILING: u32 = 2048;
 pub const OUTPUT_TOKEN_FLOOR: u32 = 48;
 
 /// The model may take this long to load before the server is called dead.
@@ -446,8 +446,10 @@ mod tests {
         assert_eq!(output_budget(10), OUTPUT_TOKEN_FLOOR);
         // ceil(20 * 1.8) + 24 = 60.
         assert_eq!(output_budget(20), 60);
+        // A 400-token dictation is no longer cut: ceil(400 * 1.8) + 24 = 744.
+        assert_eq!(output_budget(400), 744);
         // Ceiling.
-        assert_eq!(output_budget(400), OUTPUT_TOKEN_CEILING);
+        assert_eq!(output_budget(4000), OUTPUT_TOKEN_CEILING);
     }
 
     #[test]

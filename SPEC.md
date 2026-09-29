@@ -213,7 +213,7 @@ one wave file and writes one JSON object to standard output.
 Correction is Gemma 4 E2B, Google's own quantisation-aware q4_0 GGUF, resident
 in `llama-server.exe`. The prompt is `prompts/polish_v2.txt`, embedded in the
 executable. The temperature and the output budget rule, `ceil(spoken * 1.8) +
-24` clamped to 48 and 256 tokens, are the ones in `sidecar/polish_server.py`.
+24` clamped to 48 and 2048 tokens, are the ones in `sidecar/polish_server.py`.
 Both platforms therefore correct a transcript the same way.
 
 Correction is mandatory here as it is on macOS. There is no recognition-only

@@ -11,7 +11,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-ENGLISH_WORDS = Path("/data/phonon_bench_v0/sets/english_words.txt")
+from .paths import BENCH
+
+ENGLISH_WORDS = BENCH / "sets" / "english_words.txt"
 
 
 def set_english_words(path) -> None:

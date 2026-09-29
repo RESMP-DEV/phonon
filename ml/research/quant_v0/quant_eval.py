@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,7 +21,8 @@ sys.path.insert(0, str(HERE.parent / "corrector_v0"))
 from common import chat_messages, fair_norm, pair_wer, score_lists  # noqa: E402
 from eval_corrector import SET_ORDER, eval_rows  # noqa: E402
 
-PRED_DIR = Path("/data/phonon_corrector_v0/eval_predictions")
+DATA = Path(os.environ.get("PHONON_DATA_ROOT", "/data"))
+PRED_DIR = DATA / "phonon_corrector_v0/eval_predictions"
 
 
 def corpus_wer(refs, hyps, norm):
@@ -166,8 +168,8 @@ def load_ref_preds(label: str, set_name: str) -> dict[str, str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", choices=["mlx", "openai"], default="mlx")
-    ap.add_argument("--merged", default="/data/phonon_quant_v0/merged_lfm2.5-1.2b_real")
-    ap.add_argument("--out-dir", default="/data/phonon_quant_v0/mlx")
+    ap.add_argument("--merged", default=str(DATA / "phonon_quant_v0/merged_lfm2.5-1.2b_real"))
+    ap.add_argument("--out-dir", default=str(DATA / "phonon_quant_v0/mlx"))
     ap.add_argument("--configs", default="bf16,q8_g64,q4_g32,q4_g64,q4_g128,q6_g64,q5_g64,q3_g64,mixed_4_6,mixed_3_6,mxfp4")
     ap.add_argument("--base-url", default="http://127.0.0.1:8080")
     ap.add_argument("--config-name", default="openai", help="label for the openai backend run")
@@ -180,7 +182,7 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--out-md", required=True)
-    ap.add_argument("--pred-dir", default="/data/phonon_quant_v0/predictions")
+    ap.add_argument("--pred-dir", default=str(DATA / "phonon_quant_v0/predictions"))
     args = ap.parse_args()
 
     sets = {k: v for k, v in eval_rows().items() if k in args.sets.split(",")}

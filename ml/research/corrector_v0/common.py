@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-WISPR_ROOT = Path("/data/phonon_personal/wispr_20260915")
-JULY_ROOT = Path("/data/phonon_personal/dictation_eval_20260719")
-DATA_ROOT = Path("/data/phonon_corrector_v0")
-REPO_ROOT = Path("/home/user/phonon")
+DATA = Path(os.environ.get("PHONON_DATA_ROOT", "/data"))
+WISPR_ROOT = DATA / "phonon_personal/wispr_20260915"
+JULY_ROOT = DATA / "phonon_personal/dictation_eval_20260719"
+DATA_ROOT = DATA / "phonon_corrector_v0"
+REPO_ROOT = Path(os.environ.get("PHONON_REPO_ROOT", str(Path(__file__).resolve().parents[2])))
 RESEARCH_ROOT = REPO_ROOT / "research" / "corrector_v0"
 
 PAIRS_PATH = WISPR_ROOT / "corrector_pairs_v0.jsonl"
@@ -20,7 +22,7 @@ DEV_JSONL = DATA_ROOT / "dev.jsonl"
 ASR_SCORES = DATA_ROOT / "asr_scores.json"
 FAILURES_PATH = DATA_ROOT / "failures.jsonl"
 
-HF_HOME = Path("/data/hf")
+HF_HOME = DATA / "hf"
 HF_TOKEN_PATH = Path.home() / ".cache" / "huggingface" / "token"
 
 TRAIN_SPLITS = frozenset({"wispr_train", "wispr_text_train"})

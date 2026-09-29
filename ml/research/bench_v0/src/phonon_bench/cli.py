@@ -5,10 +5,11 @@ import argparse
 import os
 from pathlib import Path
 
-BENCH = Path(os.environ.get("PHONON_BENCH_ROOT", "/data/phonon_bench_v0"))
+from .paths import BENCH, HF
+
 LFM12 = "LiquidAI/LFM2.5-1.2B-Instruct"
 
-os.environ.setdefault("HF_HOME", "/data/hf")
+os.environ.setdefault("HF_HOME", str(HF))
 os.environ.setdefault("HF_HUB_CACHE", os.environ["HF_HOME"] + "/hub")
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", os.environ["HF_HOME"] + "/hub")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")

@@ -6,16 +6,16 @@ from pathlib import Path
 
 HARNESS = Path(__file__).resolve().parents[2]          # research/harness
 RESEARCH = HARNESS.parent                               # research
-REPO = Path(os.environ.get("PHONON_REPO", RESEARCH.parent))
-DATA = Path("/data")
+REPO = Path(os.environ.get("PHONON_REPO_ROOT", str(RESEARCH.parent)))
+DATA = Path(os.environ.get("PHONON_DATA_ROOT", "/data"))
 
 REGISTRY_DIR = HARNESS / "registry"
 ADAPTERS_YAML = REGISTRY_DIR / "adapters.yaml"
 SETS_YAML = REGISTRY_DIR / "sets.yaml"
 CONFIGS = HARNESS / "configs"
 
-QUEUE_ROOT = Path(os.environ.get("PHONON_QUEUE_ROOT", "/data/phonon_queue"))
-CORPUS_ROOT = Path(os.environ.get("PHONON_CORPUS_ROOT", "/data/phonon_harness"))
+QUEUE_ROOT = Path(os.environ.get("PHONON_QUEUE_ROOT", str(DATA / "phonon_queue")))
+CORPUS_ROOT = Path(os.environ.get("PHONON_CORPUS_ROOT", str(DATA / "phonon_harness")))
 
 TRAIN_LORA = RESEARCH / "corrector_v0" / "train_lora.py"
 GEN_SENTENCES = RESEARCH / "scaling_v0" / "gen_more.py"
@@ -23,7 +23,7 @@ TTS_JOBS = RESEARCH / "bigrun_v0" / "tts_jobs.py"
 ASR_CLIPS = RESEARCH / "term_eval_v0" / "asr_clips.py"
 BENCH_PROJECT = RESEARCH / "bench_v0"
 
-ADAPTER_ROOT = Path("/data/phonon_corrector_v0/adapters")
+ADAPTER_ROOT = Path(os.environ.get("PHONON_ADAPTER_ROOT", str(DATA / "phonon_corrector_v0/adapters")))
 
 # research packages the corpus modules import from (numerics live there, not here)
 VOCAB_V0 = RESEARCH / "vocab_v0"
@@ -35,9 +35,9 @@ def hf_env(gpu: int | str | None = None) -> dict[str, str]:
     """The env every GPU step on gpubox runs with."""
     env = dict(os.environ)
     env.update({
-        "HF_HOME": "/data/hf",
-        "HF_HUB_CACHE": "/data/hf/hub",
-        "HUGGINGFACE_HUB_CACHE": "/data/hf/hub",
+        "HF_HOME": str(DATA / "hf"),
+        "HF_HUB_CACHE": str(DATA / "hf/hub"),
+        "HUGGINGFACE_HUB_CACHE": str(DATA / "hf/hub"),
         "TRANSFORMERS_OFFLINE": "1",
         "HF_HUB_OFFLINE": "1",
         "TOKENIZERS_PARALLELISM": "false",

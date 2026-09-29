@@ -5,9 +5,14 @@ PRO 6000 Blackwell (96 GB, sm_120, CUDA 13), a 64-core CPU and 60 GB of RAM. Dat
 audio and run outputs live under `/data` on that box and never enter git. Nothing here trains or
 runs heavy inference on a Mac; the Mac only runs the shipped int4 model and the recorder script.
 
-The research scripts hardcode their root as `/home/user/phonon`, which is this `ml/` directory
-checked out on the GPU box (the original path had a username in it). Run from a checkout there,
-or edit the constant. `/data/...` paths are real and listed under Data below.
+The live tools (harness, bench_v0, quant_v0, corrector_v0, synth_v2, ship_v0 scripts) resolve
+their roots from the environment and fall back to the GPU-box layout, so nothing changes there:
+`PHONON_DATA_ROOT` (default `/data`) moves the data tree, `PHONON_REPO_ROOT` (default: this `ml/`
+directory, derived from the file location) moves the checkout, `PHONON_BENCH_ROOT` moves only the
+bench directory, and `PHONON_QUEUE_ROOT`/`PHONON_CORPUS_ROOT`/`PHONON_ADAPTER_ROOT` move their
+roots. With the env set, the bench and quant sweeps run on any machine that has the fixture and
+model files under its data root; the dated research dirs keep their literal `/home/user/phonon`
+and `/data` paths as historical record (copy from them, then resolve through the env).
 
 ## What this is
 

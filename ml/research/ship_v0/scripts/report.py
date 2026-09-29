@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
 
-BENCH = Path("/data/phonon_bench_v0/bench.jsonl")
-STATE = Path("/data/phonon_queue/ship_v0/state.json")
-SHIP = Path("/data/phonon_ship_v0")
-OUT = Path("/home/user/phonon/research/ship_v0")
+DATA = Path(os.environ.get("PHONON_DATA_ROOT", "/data"))
+BENCH = DATA / "phonon_bench_v0/bench.jsonl"
+STATE = DATA / "phonon_queue/ship_v0/state.json"
+SHIP = DATA / "phonon_ship_v0"
+OUT = Path(__file__).resolve().parents[1]
 SETS = ["real_580", "term_old_seen", "term_old_unseen", "term_new", "term_pool2", "term_pool3"]
 ORDER = [
     ("ship_bigrun_mid_r16", "bigrun_mid_r16 (ref)"),

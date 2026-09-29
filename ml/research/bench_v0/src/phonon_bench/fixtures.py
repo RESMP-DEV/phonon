@@ -18,16 +18,16 @@ import random
 from pathlib import Path
 
 from .metrics import read_jsonl, squash, write_jsonl
+from .paths import BENCH, DATA
 
-BENCH = Path("/data/phonon_bench_v0")
 SETS_DIR = BENCH / "sets"
 
 # ---- sources in the research tree (read once, at build time) ----------------
 SRC = {
     "real_580": {
         "kind": "real",
-        "rows": "/data/phonon_corrector_v0/datesplit/holdout_date_audio.jsonl",
-        "lists": "/data/phonon_term_eval_v1/real/eval_holdout_date_audio.jsonl",
+        "rows": str(DATA / "phonon_corrector_v0/datesplit/holdout_date_audio.jsonl"),
+        "lists": str(DATA / "phonon_term_eval_v1/real/eval_holdout_date_audio.jsonl"),
         "note": "580-row date-split real-audio holdout; v1 retrieved lists (30 slots)",
     },
     "real_holdout120": {
@@ -43,22 +43,22 @@ SRC = {
     },
     "term_old_unseen": {
         "kind": "term",
-        "rows": "/data/phonon_retrieval_v2/cond_unseen_v2.jsonl",
+        "rows": str(DATA / "phonon_retrieval_v2/cond_unseen_v2.jsonl"),
         "note": "term_eval_v1 asr.jsonl clips (same terms, unseen voices), retrieval v2 lists",
     },
     "term_new": {
         "kind": "term",
-        "rows": "/data/phonon_retrieval_v2/cond_new_v2.jsonl",
+        "rows": str(DATA / "phonon_retrieval_v2/cond_new_v2.jsonl"),
         "note": "bigrun heldout_new (300 new terms, new voices), retrieval v2 lists",
     },
     "term_pool2": {
         "kind": "term",
-        "rows": "/data/phonon_retrieval_v2/cond_pool2_v2.jsonl",
+        "rows": str(DATA / "phonon_retrieval_v2/cond_pool2_v2.jsonl"),
         "note": "pool2 held-out asr (300 terms outside the repo walk), retrieval v2 lists",
     },
     "term_pool3": {
         "kind": "term",
-        "rows": "/data/phonon_pool3_v0/eval_conditions_pool3.jsonl",
+        "rows": str(DATA / "phonon_pool3_v0/eval_conditions_pool3.jsonl"),
         "note": "pool3 held-out asr (300 terms from 150 public repos), v2 lists + budget lists",
     },
 }
@@ -67,23 +67,23 @@ NUMERICS_N = 500
 NUMERICS_SEED = 20260921
 
 LEXICONS = {
-    "lexicon_big.jsonl": ["/data/phonon_synth_v0/lexicon_ranked.jsonl",
-                          "/data/phonon_term_eval_v0/terms_heldout.jsonl",
-                          "/data/phonon_bigrun_v0/terms_heldout_new.jsonl"],
-    "lexicon_small.jsonl": ["/data/phonon_synth_v1/lexicon_ranked.jsonl",
-                            "/data/phonon_term_eval_v0/terms_heldout.jsonl"],
-    "lexicon_union.jsonl": ["/data/phonon_synth_v0/lexicon_ranked.jsonl",
-                            "/data/phonon_term_eval_v0/terms_heldout.jsonl",
-                            "/data/phonon_bigrun_v0/terms_heldout_new.jsonl",
-                            "/data/phonon_pool2_v0/terms_pool2.jsonl",
-                            "/data/phonon_pool2_v0/terms_heldout_pool2.jsonl",
-                            "/data/phonon_pool3_v0/terms_pool3.jsonl",
-                            "/data/phonon_pool3_v0/terms_heldout_pool3.jsonl"],
+    "lexicon_big.jsonl": [str(DATA / "phonon_synth_v0/lexicon_ranked.jsonl"),
+                          str(DATA / "phonon_term_eval_v0/terms_heldout.jsonl"),
+                          str(DATA / "phonon_bigrun_v0/terms_heldout_new.jsonl")],
+    "lexicon_small.jsonl": [str(DATA / "phonon_synth_v1/lexicon_ranked.jsonl"),
+                            str(DATA / "phonon_term_eval_v0/terms_heldout.jsonl")],
+    "lexicon_union.jsonl": [str(DATA / "phonon_synth_v0/lexicon_ranked.jsonl"),
+                            str(DATA / "phonon_term_eval_v0/terms_heldout.jsonl"),
+                            str(DATA / "phonon_bigrun_v0/terms_heldout_new.jsonl"),
+                            str(DATA / "phonon_pool2_v0/terms_pool2.jsonl"),
+                            str(DATA / "phonon_pool2_v0/terms_heldout_pool2.jsonl"),
+                            str(DATA / "phonon_pool3_v0/terms_pool3.jsonl"),
+                            str(DATA / "phonon_pool3_v0/terms_heldout_pool3.jsonl")],
 }
 AUX = {
-    "english_words.txt": "/data/phonon_asr_errors_v0/english_words.txt",
-    "g2p_cache.json": "/data/phonon_retrieval_v2/g2p_cache.json",
-    "kind_prior.json": "/data/phonon_retrieval_v2/prior.json",
+    "english_words.txt": str(DATA / "phonon_asr_errors_v0/english_words.txt"),
+    "g2p_cache.json": str(DATA / "phonon_retrieval_v2/g2p_cache.json"),
+    "kind_prior.json": str(DATA / "phonon_retrieval_v2/prior.json"),
 }
 
 SET_ORDER = ["real_580", "real_holdout120", "term_old_seen", "term_old_unseen", "term_new",
@@ -99,8 +99,8 @@ def sha256(path: Path) -> str:
 
 
 def _wispr_holdout120() -> list[dict]:
-    pairs = read_jsonl("/data/phonon_personal/wispr_20260915/corrector_pairs_v0.jsonl")
-    pk = {r["id"]: r for r in read_jsonl("/data/phonon_corrector_v0/parakeet_v2_wispr.jsonl")}
+    pairs = read_jsonl(DATA / "phonon_personal/wispr_20260915/corrector_pairs_v0.jsonl")
+    pk = {r["id"]: r for r in read_jsonl(DATA / "phonon_corrector_v0/parakeet_v2_wispr.jsonl")}
     out = []
     for r in pairs:
         if r.get("split") != "wispr_holdout120":

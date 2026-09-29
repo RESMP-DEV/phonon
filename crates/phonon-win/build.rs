@@ -10,6 +10,7 @@ fn main() {
             .set("FileDescription", "Phonon")
             .set("CompanyName", "Phonon")
             .set("LegalCopyright", "MIT");
-        res.compile().expect("phonon-win: compiling the Windows version resource");
+        res.compile()
+            .expect("phonon-win: compiling the Windows version resource");
     }
 }

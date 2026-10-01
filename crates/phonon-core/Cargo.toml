@@ -11,3 +11,5 @@ phonon-audio = { path = "../phonon-audio" }
 phonon-llm = { path = "../phonon-llm" }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]

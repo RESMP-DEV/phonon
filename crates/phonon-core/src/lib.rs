@@ -14,6 +14,7 @@
 //!   {"type":"error","id":"...","msg":"..."}
 
 pub mod data;
+pub mod parody;
 mod paths;
 
 use anyhow::{bail, Context, Result};

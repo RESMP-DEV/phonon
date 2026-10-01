@@ -105,29 +105,27 @@ pub struct AsrSidecar {
 
 impl AsrSidecar {
     pub fn spawn(root: &Path) -> Result<Self> {
-        let script = root.join("sidecar/asr_server.py");
+        let engine = AsrEngineSelection::from_environment();
+        Self::spawn_engine(root, engine)
+    }
+
+    pub fn spawn_engine(root: &Path, engine: AsrEngineSelection) -> Result<Self> {
+        let script = engine.script(root);
         if !script.is_file() {
             bail!("missing {}", script.display());
         }
         let uv = resolve_uv().context("uv not found; install it with Homebrew")?;
         let started = Instant::now();
         let mut command = Command::new(&uv);
+        command.args(engine.uv_arguments(root));
         command
-            .args([
-                "run",
-                "--python",
-                PYTHON_REQUIREMENT,
-                "--with",
-                ASR_RUNTIME_REQUIREMENT,
-                "python",
-            ])
-            .arg(&script)
-            .args(["--model", ASR_MODEL_ID, "--revision", ASR_MODEL_REVISION])
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        apply_offline_policy(&mut command, &uv, ASR_RUNTIME_REQUIREMENT);
+        if !engine.uses_custom_runtime() {
+            apply_offline_policy(&mut command, &uv, ASR_RUNTIME_REQUIREMENT);
+        }
         let mut child = command.spawn().context("spawn ASR")?;
         let stdout = child.stdout.take().context("asr stdout")?;
         let stdin = child.stdin.take().context("asr stdin")?;
@@ -166,8 +164,6 @@ impl AsrSidecar {
                     return;
                 }
             }
-            // stdout closed. If that happened before `ready`, the process died
-            // during startup and nobody would ever hear about it otherwise.
             if !ready {
                 let _ = tx.send(AsrEvent::Error {
                     msg: stderr.exit_message("ASR sidecar"),
@@ -270,5 +266,97 @@ pub fn apply_offline_policy(command: &mut Command, uv: &Path, requirement: &str)
 impl Drop for AsrSidecar {
     fn drop(&mut self) {
         let _ = self.child.kill();
+    }
+}
+
+/// A normalized ASR launch plan.
+///
+/// Environment overrides remain the user-facing compatibility layer, but the
+/// app and benchmark consume this object so default Parakeet and a custom SALM
+/// engine cannot drift into two different protocols.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsrEngineSelection {
+    script: String,
+    runtime_requirements: Vec<String>,
+}
+
+impl AsrEngineSelection {
+    pub fn parakeet() -> Self {
+        Self {
+            script: "sidecar/asr_server.py".into(),
+            runtime_requirements: vec![ASR_RUNTIME_REQUIREMENT.to_owned()],
+        }
+    }
+
+    pub fn custom(script: impl Into<String>, runtime_requirements: Vec<String>) -> Self {
+        Self {
+            script: script.into(),
+            runtime_requirements: if runtime_requirements.is_empty() {
+                vec![ASR_RUNTIME_REQUIREMENT.to_owned()]
+            } else {
+                runtime_requirements
+            },
+        }
+    }
+
+    pub fn from_environment() -> Self {
+        let script = std::env::var("PHONON_ASR_SCRIPT")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "sidecar/asr_server.py".into());
+        let runtime_requirements: Vec<String> = std::env::var("PHONON_ASR_WITH")
+            .map(|value| {
+                value
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if script == "sidecar/asr_server.py" {
+            Self::parakeet()
+        } else {
+            Self {
+                script,
+                runtime_requirements,
+            }
+        }
+    }
+
+    pub fn script(&self, root: &Path) -> std::path::PathBuf {
+        root.join(&self.script)
+    }
+
+    pub fn runtime_requirements(&self) -> &[String] {
+        &self.runtime_requirements
+    }
+
+    pub fn uses_custom_script(&self) -> bool {
+        self.script != "sidecar/asr_server.py"
+    }
+
+    pub fn uses_custom_runtime(&self) -> bool {
+        self.runtime_requirements.as_slice() != [ASR_RUNTIME_REQUIREMENT]
+    }
+
+    pub fn uv_arguments(&self, root: &Path) -> Vec<String> {
+        let mut args = vec!["run".into(), "--python".into(), PYTHON_REQUIREMENT.into()];
+        for requirement in &self.runtime_requirements {
+            args.push("--with".into());
+            args.push(requirement.clone());
+        }
+        args.push("python".into());
+        args.push(
+            self.script(root)
+                .to_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| self.script.clone()),
+        );
+        if !self.uses_custom_script() {
+            args.push("--model".into());
+            args.push(ASR_MODEL_ID.into());
+            args.push("--revision".into());
+            args.push(ASR_MODEL_REVISION.into());
+        }
+        args
     }
 }

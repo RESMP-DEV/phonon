@@ -70,6 +70,25 @@ The correction stage is `sidecar/polish_server.py`: `mlx-community/gemma-4-e2b-i
 on `mlx-lm`, run locally through `uv`. It is a pipeline stage, not a provider
 setting, and there is no way to point it at a remote model.
 
+### SALM engine (single-stage dictation, experimental)
+
+`sidecar/salm_server.py` is a drop-in replacement for the ASR sidecar that
+transcribes *and* corrects in one pass: LFM2.5-Audio-1.5B with a LoRA adapter
+trained on dictation audio → intended text. Because the output is already
+corrected, the dictionary-retrieval and correction stages add nothing when
+this engine is selected. It speaks the same JSONL protocol; streaming
+partials are unsupported (whole-utterance transcription only).
+
+```bash
+export PHONON_ASR_SCRIPT=sidecar/salm_server.py
+export PHONON_ASR_WITH="liquid-audio==1.3.0 peft soundfile"
+export PHONON_SALM_ADAPTER=~/.local/share/phonon/salm/lora_adapter.safetensors
+phonon bench --wav <utterance.wav>   # streams 2+ unchanged
+```
+
+The adapter is user-data-derived and stays local; the loader requires it
+(`--no-adapter` runs the stock model for comparison only).
+
 ## Build from source
 
 ```bash

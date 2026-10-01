@@ -346,21 +346,16 @@ struct AsrBench {
 }
 
 fn bench_asr_full(root: &Path, wav: Option<&Path>) -> Result<AsrBench> {
-    let script = root.join("sidecar/asr_server.py");
-    if !script.is_file() {
-        bail!("missing {}", script.display());
+    // Use the same engine plan as AsrSidecar::spawn so benchmark and app
+    // launches cannot drift when a custom SALM sidecar is selected.
+    let engine = phonon_asr::AsrEngineSelection::from_environment();
+    if !engine.script(root).is_file() {
+        bail!("missing {}", engine.script(root).display());
     }
     let uv = crate::resolve_runtime_tool("uv").context("uv not found")?;
-    let mut child = Command::new(uv)
-        .args([
-            "run",
-            "--python",
-            phonon_asr::PYTHON_REQUIREMENT,
-            "--with",
-            phonon_asr::ASR_RUNTIME_REQUIREMENT,
-            "python",
-            script.to_str().unwrap(),
-        ])
+    let mut command = Command::new(uv);
+    command.args(engine.uv_arguments(root));
+    let mut child = command
         .current_dir(root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

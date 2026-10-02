@@ -10,9 +10,13 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | --- | --- | --- |
 | Product specification | `SPEC.md` | Canonical product requirements and policy; needs status links after sections are audited |
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
-| macOS app and capture path | `bar/`, `crates/` | Shaped as the local product surface |
+| macOS app surface | `bar/Sources/*.swift` | Native app, settings, retention, backup mirror, microphone and screen capture |
+| Engine process | `crates/phonon-core`, `phonon-cli` | Warm JSONL engine, speech gate, dictionary retrieval, correction orchestration |
+| ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming |
+| Correction sidecar | `sidecar/polish_server.py`, `phonon-llm` | Pinned Gemma MLX process, prefix cache and MTP |
 | Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR-only today; image path and sidecar protocol still open |
 | Audio front end | `MicRecorder`, `phonon-audio` | Hardware-rate capture with independent streaming and final paths |
+| Local user data | `phonon-core::data`, `AppData.swift` | Dictionary, settings, paired corpus, retention, and explicit export |
 | Final-training Optuna sweep | `ml/research/final_sweep` | Prompt-baked, context-keyed packs; live study running on B550 |
 | ML correction and research | `ml/` | Canonical text-refiner research pipeline |
 | Profile and vocabulary mining | `tools/profile-miner` | Local consent-gated personal context lane |
@@ -398,7 +402,174 @@ provenance. It is product-ready when the resampler change is measured on the
 frozen slice without regressing fair WER, and when the speech gate is proven
 against real clips that contain no speech.
 
+## Runtime architecture
+
+### Process topology
+
+Phonon on macOS is four cooperating pieces, and the boundaries between them are
+the architecture:
+
+```text
+Phonon.app (Swift/AppKit)        bar/Sources/*.swift
+  ├─ AppStore, settings, retention, backup mirror
+  ├─ MicRecorder: CoreAudio tap, streaming chunks, 16 kHz WAV
+  └─ ScreenContextCapture: ScreenCaptureKit stills, Vision OCR
+        │  JSONL over stdio (line-delimited JSON, both directions)
+        ▼
+phonon engine (Rust)             crates/phonon-cli/src/main.rs (Commands::Engine)
+  ├─ speech gate, corpus metadata, dictionary, correction prompt
+  └─ two sidecars, one per weight stream, each a separate uv process
+        ├─ sidecar/asr_server.py     parakeet-mlx, 16 kHz, batch and streaming
+        └─ sidecar/polish_server.py  mlx-lm, prefix cache, MTP drafter
+```
+
+The bar never loads a model. It speaks the same line protocol the CLI exposes,
+so `phonon engine` is the only owner of engine state, and the benchmark path
+consumes the same object the app does. The workspace is nine Rust crates:
+`phonon-core` owns the engine and data model, `phonon-asr` and `phonon-llm` own
+one sidecar each, `phonon-audio` owns the speech gate, `phonon-hotkey` owns the
+hold/tap latch, `phonon-cli` is the only binary entry point, `phonon-mine` and
+`phonon-profile` are developer tools, and `phonon-win` is the Windows port.
+
+### Protocol contract
+
+One JSON object per line, on stdin and stdout. Requests are
+`status`, `transcribe`, `polish`, `reload_dictionary`, `shutdown`, plus the
+Parakeet-only `stream_start`, `stream_chunk`, and `stream_stop`. Events are
+`stream` for per-stack loading progress, a single `ready` when every required
+stream is warm, `result` for a transcript or correction, and `error`.
+
+Two rules keep the protocol safe to extend. Every result carries the request
+`id` so a superseded pass can be dropped rather than inserted, and a sidecar
+that cannot serve a request answers with an explicit `error` rather than
+silently degrading. That is exactly how the SALM sidecar refuses streaming
+partials, and it is the precedent the multimodal image field must follow.
+
+The sidecar child is killed on drop, and its last twelve stderr lines are
+retained so a sidecar that dies before `ready` reports why instead of hanging
+the loader at whatever percentage it reached.
+
+### Lifecycle and readiness
+
+`Engine::start` spawns the ASR and correction sidecars in parallel and then
+refuses to report ready until a startup gate passes on all four axes. Parakeet
+must transcribe `assets/startup.wav` in batch mode, must transcribe the same
+fixture through the streaming path, the correction model must answer a text
+prime, and the correction model must round-trip the actual ASR output of that
+fixture. A transcript mismatch on any axis is an error, not a warning. The
+correction prompt is shipped inside the executable, not read from disk at
+runtime, so a first launch does not depend on a loose file.
+
+A first dictation frequently lands before the weights are warm. The bar keeps
+the capture, queues the transcribe until `ready`, and shows a loading state
+rather than dropping the utterance. This is why the app has a loading
+presentation at all.
+
+### Pinned runtime and offline policy
+
+| Piece | Pin |
+| --- | --- |
+| ASR model | `mlx-community/parakeet-tdt-0.6b-v2` at `8ae155301e23d820d82aa60d24817c900e69e487` |
+| ASR runtime | `parakeet-mlx==0.5.2` |
+| Correction model | `mlx-community/gemma-4-e2b-it-4bit` at `238767527555cb75a05732a84dff5d6ba0dd6809` |
+| Correction runtime | `mlx-lm==0.31.3` |
+| Python | exactly `3.12`, not an open range |
+
+`phonon doctor` reports whether each runtime is already in uv's cache, because
+that cache is what makes a second launch work with no network at all. An
+unprimed install is not a broken install, and SoX is reported as optional since
+the native app records through CoreAudio and only the terminal path needs it.
+
+### Local data, retention, and the backup mirror
+
+All user state is one directory, `~/Library/Application Support/Phonon`:
+`settings.json`, `dictionary.json`, and `Corpus/<id>/` with `audio.wav` and
+`metadata.json`. A recording's metadata carries the schema version, source,
+microphone name, duration, the speech-gate verdict, the raw transcript, the
+final corrected text, an optional intended transcript, every applied
+dictionary correction, the screen-confirmed terms, and the correction model's
+latency, time to first token, and tokens per second.
+
+Retention is explicit and opt-in by schema, not by documentation. Schema 2 made
+local history and screen context default off, and an existing schema 1 install
+keeps whatever its owner had already been shown. The default window keeps
+recordings until the owner deletes them; 7, 30, and 90-day windows prune on
+change. Deletion is always to the Trash, never an unlink, so a mistaken clear is
+recoverable by the person who made it.
+
+Because uninstallers match on the app name and then sweep `~/Library`, a small
+set of irreplaceable text files is mirrored to `~/.phonon/backup`:
+`dictionary.json`, `settings.json`, legacy `History.json`, `Vocabulary.txt`,
+and `WordReplacements.json`. The new paired `Corpus/` is deliberately not
+mirrored because it contains audio and grows without bound; Settings' explicit
+export copies it in full. The mirror counts corpus entries in its manifest but
+does not copy them, so restore cannot reconstruct a modern recording. Model
+weights are also excluded: they live in the Hugging Face cache, are named after
+their models rather than this app, and no uninstaller should be able to remove
+them. A capture that would replace a non-empty mirror with an empty store is
+refused, restore never overwrites an existing file, and restoration is offered
+only when the live store is empty.
+
+### CLI surface
+
+`phonon` with no arguments launches the native app. The rest are one verb each,
+and every mutating verb is a file operation the user can undo or inspect:
+`bar`, `engine`, `bench`, `doctor`, `profile` with `kernel`, `model`, and `e2e`
+subcommands, `dictionary` with `list`, `add`, `learn`, `import-wispr`,
+`import-txt`, `test`, and `evaluate`, `corpus` with `path`, `list`, `show`,
+`set-intended`, `migrate-legacy`, `delete`, and `polish-eval`, and `stats`.
+The dictionary and corpus verbs are what make the training set auditable from
+a terminal, so they are product surface, not developer tooling.
+
+### Distribution
+
+macOS ships as a signed app bundle with the Rust binary and the pinned weights
+resolved through uv, and the Windows port is a self-contained executable with
+its own manifest. Both Windows weight streams differ from macOS because the
+runtime is not Metal: speech uses
+`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8` at
+`1ab9323565ddb038682214b292f588070a538ce2` through sherpa-onnx `1.13.6` rather
+than the MLX Parakeet build, and correction uses the GGUF QAT build of the same
+correction model, `google/gemma-4-E2B-it-qat-q4_0-gguf` at
+`675cff42a74c774d6cb76f76d8eacb49b48c9b93`, through a pinned llama.cpp build
+`b10726`. Every manifest URL is pinned and every asset hash is a SHA-256, and a
+fetch verifies the hash before the file is used.
+
+The first-run Windows download is roughly four gigabytes. That is a product
+decision with a measured cost, not an implementation detail, and the same
+correction model is quantized differently per platform rather than shipped
+identically.
+
+### Open choices
+
+| Topic | Current position | Decision gate |
+| --- | --- | --- |
+| Startup gate cost | Four axes, so a heavy first launch is paid before readiness | Measured time-to-first-dictation on target hardware against a lighter gate |
+| Deletion semantics | Trash, not unlink, for recordings and clear-all | A decision to support secure deletion would need its own privacy review |
+| Backup mirror scope | Small text files and legacy history only; the paired Corpus and weights are excluded | Include corpus metadata without audio, or keep corpus recovery dependent on explicit export, after measuring size and privacy impact |
+| Windows parity | Different runtimes on both streams: sherpa-onnx int8 Parakeet and GGUF q4 Gemma instead of MLX | A measured quality comparison between the macOS and Windows stacks on one registered protocol |
+| Streaming ownership | Parakeet-only today; the SALM sidecar refuses streaming | Either a streaming SALM path with partial-state contract, or a documented product decision that single-stage engines are whole-utterance only |
+
 ## Work-log
+
+### 2026-10-02: runtime architecture audit
+
+Audited the shipped runtime from source rather than from the README and added a
+Runtime architecture section covering the four-process topology (Swift app, Rust
+engine, two uv sidecars), the line protocol and its error discipline, the
+four-axis startup readiness gate, the pinned macOS and Windows artifacts, the
+opt-in retention model, the CLI surface, and distribution.
+
+Three claims were corrected against the code while writing it. The README and
+the first draft of the section implied the backup mirror covers the paired
+corpus; `PhononDataMirror.mirroredFiles` mirrors only dictionary, settings,
+legacy history, vocabulary, and word replacements, counts corpus entries in its
+manifest, and leaves recovery of modern recordings to the explicit export. The
+Windows port was described as a correction-only difference; `phonon-win` also
+swaps Parakeet to a sherpa-onnx int8 build. And screen context and local history
+are opt-in by settings schema 2, defaulting off on a fresh install, while the
+Rust-side `SettingsFile` still defaults them to true because the native app owns
+that file and the engine must not rewrite it.
 
 ### 2026-10-02: Optuna first-stage receipts and rank-aware recovery
 

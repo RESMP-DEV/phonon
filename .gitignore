@@ -10,8 +10,6 @@
 .env
 .env.*
 .vercel
-/AGENTS.md
-/CLAUDE.md
 /DEVLOG.md
 /dictionary_new_terms.txt
 /dictionary.json

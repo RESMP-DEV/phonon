@@ -21,6 +21,19 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Public site | `website/` | Separate web surface; consumes stable claims only |
 | Audio/vision SALM experiments | local `phonon-eval` workspace, B550 `~/salm-lora`, and the committed product seam on `ml/portable-harness` | Research adapters exercised and measured; product integration is committed and the remaining path is gated on multimodal and distribution work |
 
+## Open choices
+
+| Topic | Current position | Decision gate |
+| --- | --- | --- |
+| Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
+| Final-training hyperparameters | `xml_dictation_v1` fixed; eight configurations under Optuna on B550 | Completed eight-configuration study on the frozen 500-clip slice, reported with per-trial receipts, not a single pilot |
+| Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
+| Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
+| Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
+| Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
+| Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
+| Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
+
 ## Product planes
 
 1. **Speech plane.** Capture audio locally, recognize it, and preserve the acoustic signal until final text is committed or deliberately discarded.
@@ -387,11 +400,60 @@ against real clips that contain no speech.
 
 ## Work-log
 
+### 2026-10-02: Optuna first-stage receipts and rank-aware recovery
+
+The first real eight-trial request ran on B550 with the fixed
+`xml_dictation_v1` prompt, 10,000 public YODAS-Granary rows, 10,000 public
+steps, 1,000 Aqua adaptation steps, and all 500 frozen evaluation rows. The
+persistent study is `final-reverse-vl-xml-v1` in
+`/home/kearm/salm-lora/build/optuna/final-reverse-vl-xml-v1.db`. Its prompt
+SHA-256 is
+`a805969f94dd4075a6f8abfae95ba0117a824a5ac8f9321a74f6d59ac514bf88`.
+
+| Optuna trial | State | Fair WER | Strict WER | Exact | Key parameters |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 0 | complete | 0.12974190195738783 | 0.16833484986351227 | 0.262 | context 1024, rank 16, LR 4.7537e-5, adapter LR 1.2466e-4, warmup 25 |
+| 1 | complete | 0.1454183266932271 | 0.18061874431301184 | 0.274 | context 768, rank 16, LR 1.2482e-4, adapter LR 1.4816e-4, warmup 175 |
+| 2 | complete | 0.13563138749350426 | 0.17343039126478618 | 0.276 | context 512, rank 16, LR 1.4443e-4, adapter LR 6.9040e-5, warmup 50 |
+| 3 | failed evaluation | not scored by first run | not scored by first run | not scored by first run | context 512, rank 32, LR 6.5057e-5, adapter LR 4.9434e-5, warmup 50 |
+| 4 | recovered completion of trial 3 | 0.12783648016629134 | 0.16642402183803456 | 0.294 | identical to trial 3 |
+
+Trial 3 completed both training phases, but its first evaluation reconstructed
+the model at LoRA rank 16 even though the adapter was trained at rank 32. The
+failure is recorded in `trial-0003/logs/evaluate-failed-rank16.log`; the final
+adapter was intact. Commit `d7b4db3` passes the trial rank explicitly and can
+infer rank from adapter A-matrix shapes when omitted. The recovered evaluation
+completed all 500 rows with rank 32. Its hypothesis file is
+`trial-0003/hyps.jsonl`, SHA-256
+`cf738a1260c3e9ac89abc2a81a34835a4f3a577bfcd27c679988bce775f318d1`; its score
+file is `trial-0003/score.json`, SHA-256
+`e108e64b282f318c53d15ba0ce879bd6ab89515f9650bd3342992f39c99778d7`. Trial 4
+is a separate Optuna completion with `recovered_from_trial=3`; failed trial 3
+was not rewritten or deleted.
+
+The B550 machine audit found no failed systemd unit, kernel XID/NVRM message,
+OOM kill, storage/filesystem error, hardware memory error, thermal fault, GPU
+remapped row, or pending GPU repair. The visible `rxe0 qp not ready to send`
+messages occurred while the persistent Soft-RoCE link on `enp7s0` transitioned
+to link-up during the public-data phase; current RDMA counters showed
+`send_err=0`. Hugging Face also emitted transient DNS and IPv6 unreachable
+retries before the 10,000-row pack download recovered. These were not CUDA or
+filesystem failures.
+
+At 07:39 PDT the study was resumed for four additional trials through
+`run_final_optuna_resume.sh`, with trial 5 running on GPU 0 at 74 percent
+utilization and 6,952 MiB memory. Its receipt log is
+`/home/kearm/salm-lora/build/optuna/final-resume.log`; completion and failure
+markers are `OPTUNA-RESUME-DONE` and `OPTUNA-RESUME-FAILED`. The resumed run is
+not complete, no final hyperparameter decision has been made, and none of these
+research adapters is product-integrated.
+
 ### 2026-10-02: screen and audio architecture audit
 
 Audited the live screen-context and microphone paths from source rather than intent. `ScreenContextCapture` captures every display with ScreenCaptureKit, excludes Phonon itself, resizes to native logical dimensions, hides the cursor, and immediately discards the image after Vision OCR; only transcript-relevant dictionary terms survive into the correction prompt. Measured the exact LFM2.5-VL image processor on common display sizes: all realistic captures collapse to 3x2 or 4x2 grids of 512px tiles plus a thumbnail, consuming 1,764 to 2,300 language-model image placeholders regardless of nominal resolution. A 5K capture costs barely more than a 1440p one, so active-display versus all-display is a context, latency, and privacy decision rather than a fidelity one.
 
 Audited `MicRecorder` and the Rust speech gate. Current capture is hardware-rate stereo averaged to mono, retained up to 120 seconds, and separately resampled by linear interpolation to 16 kHz for streaming and final PCM16 WAV. The level meter is UI-only, no automatic gain is applied, and the final WAV is required to be mono PCM16 before the adaptive speech gate runs. Added architecture sections for the multimodal image protocol, exact vision preprocessing, and the target shared audio front end with resampler, DC-offset, clipping, and provenance gates.
+
 ### 2026-10-01: reverse Audio-to-VL graft and public audio CPT
 
 Implemented the reverse graft under `ml/research/reverse_vl_v0`: retain the VL language stack and vision path, transplant the Audio conformer and audio adapter, reserve token id 14 for continuous audio slots, and scatter projected audio embeddings into the VL language stream. The trainer updates a VL LoRA plus the audio adapter while freezing the VL base and conformer; the evaluator loads a saved graft adapter and performs greedy audio-to-text generation.
@@ -438,3 +500,7 @@ Added the canonical architecture after auditing the repository. Encoded the paro
 - Evaluated outputs stay within their registered workflow and are never pooled with unrelated protocols.
 - Personal data is local, consent-gated, journaled, reviewable, and deletable.
 - Unverified implementation is never reported as a shipped or working capability.
+- The prompt format, context length, and LoRA rank are part of a training contract. A pack, checkpoint, adapter, or score is only valid with the same prompt ID and hash, the same context length, and the same rank that produced it.
+- A failed trial is preserved, never rewritten. Repaired work is recorded as a separate completion carrying the original trial, the cause, and the evidence path.
+- Screen images are never a by-product of capture. Image conditioning requires an explicit protocol field, a declared capability, and a consent-gated retention and deletion policy.
+- The final audio path stays mono PCM16 at 16 kHz. Any change to that format must clear the speech gate, not just the model.

@@ -124,6 +124,7 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
         "--slice", config.eval_slice,
         "--audio-root", config.audio_root,
         "--adapter", aqua_output / "reverse_audio_vl_adapter.safetensors",
+        "--lora-rank", params["rank"],
         "--limit", config.eval_limit,
         "--prompt-id", params["prompt_id"],
         "--out", hyps,

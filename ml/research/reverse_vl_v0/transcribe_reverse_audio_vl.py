@@ -15,7 +15,22 @@ from reverse_audio_vl import LORA_TARGETS, ReverseAudioVL
 from safetensors.torch import load_file
 
 
-def load_adapter(model: ReverseAudioVL, path: Path, *, rank: int = 16) -> None:
+def infer_lora_rank(state: dict[str, torch.Tensor]) -> int:
+    """Infer the LoRA rank from an adapter's A-matrix shapes."""
+
+    ranks = {
+        int(tensor.shape[0])
+        for key, tensor in state.items()
+        if ".lora_A." in key and tensor.ndim == 2
+    }
+    if len(ranks) != 1:
+        raise RuntimeError(f"adapter does not contain one consistent LoRA rank: {sorted(ranks)}")
+    return ranks.pop()
+
+
+def load_adapter(
+    model: ReverseAudioVL, path: Path, *, rank: int = 0
+) -> None:
     for parameter in model.vl.parameters():
         parameter.requires_grad_(False)
     for parameter in model.audio.parameters():
@@ -30,6 +45,8 @@ def load_adapter(model: ReverseAudioVL, path: Path, *, rank: int = 16) -> None:
         model.vl,
     )
     state = load_file(str(path), device="cpu")
+    if rank <= 0:
+        rank = infer_lora_rank(state)
     vl_state = {key.removeprefix("vl."): value for key, value in state.items() if key.startswith("vl.")}
     adapter_state = {
         key.removeprefix("audio_adapter."): value
@@ -49,6 +66,12 @@ def main() -> None:
     parser.add_argument("--slice", default="slice-eval-500.jsonl")
     parser.add_argument("--out", default="hyps_reverse_vl_v1.jsonl")
     parser.add_argument("--adapter", default="reverse-audio-vl-v1/reverse_audio_vl_adapter.safetensors")
+    parser.add_argument(
+        "--lora-rank",
+        type=int,
+        default=0,
+        help="LoRA rank; zero infers the rank from the adapter",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--audio-root", default="~/aqua-training-data")
@@ -59,7 +82,7 @@ def main() -> None:
 
     device = torch.device(args.device)
     model = ReverseAudioVL.from_pretrained(device=device)
-    load_adapter(model, Path(args.adapter), rank=16)
+    load_adapter(model, Path(args.adapter), rank=args.lora_rank)
 
     rows = [json.loads(line) for line in Path(args.slice).read_text().splitlines() if line.strip()]
     if args.limit:

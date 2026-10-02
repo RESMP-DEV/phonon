@@ -60,6 +60,16 @@ def test_checkpoint_name_uses_python_five_digit_format() -> None:
     assert plan["prompt_id"] == "xml_dictation_v1"
 
 
+def test_evaluation_receives_trial_lora_rank() -> None:
+    """A rank-32 trial must not be reconstructed as the rank-16 default."""
+
+    plan = module.build_trial_plan(
+        3, {**params(), "rank": 32}, make_config()
+    )
+    evaluate = plan["commands"]["evaluate"]
+    assert evaluate[evaluate.index("--lora-rank") + 1] == "32"
+
+
 def test_prompt_hash_is_stable() -> None:
     assert len(module.prompt_sha256("xml_dictation_v1")) == 64
 

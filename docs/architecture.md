@@ -11,12 +11,15 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Product specification | `SPEC.md` | Canonical product requirements and policy; needs status links after sections are audited |
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
 | macOS app and capture path | `bar/`, `crates/` | Shaped as the local product surface |
+| Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR-only today; image path and sidecar protocol still open |
+| Audio front end | `MicRecorder`, `phonon-audio` | Hardware-rate capture with independent streaming and final paths |
+| Final-training Optuna sweep | `ml/research/final_sweep` | Prompt-baked, context-keyed packs; live study running on B550 |
 | ML correction and research | `ml/` | Canonical text-refiner research pipeline |
 | Profile and vocabulary mining | `tools/profile-miner` | Local consent-gated personal context lane |
 | Synthetic persona evaluation | `tools/persona-gym` | Synthetic-user regression tool for mining |
 | Distribution | `DISTRIBUTION.md`, `scripts/`, platform crates | Packaging, signatures, and pinned runtime assets |
 | Public site | `website/` | Separate web surface; consumes stable claims only |
-| Audio/vision SALM experiments | local `phonon-eval` workspace, B550 `~/salm-lora`, and uncommitted product seam on `ml/portable-harness` | Research adapters exercised and measured; product integration remains uncommitted and untested |
+| Audio/vision SALM experiments | local `phonon-eval` workspace, B550 `~/salm-lora`, and the committed product seam on `ml/portable-harness` | Research adapters exercised and measured; product integration is committed and the remaining path is gated on multimodal and distribution work |
 
 ## Product planes
 
@@ -100,7 +103,7 @@ Minimum release gates for the deterministic slice are zero protected-span mutati
 
 The committed architectural direction is a single-model multimodal SALM lane: audio or an image in, intended text out, replacing the separate ASR, retrieval, and polish cascade for an experimental engine selection. This is motivated by measured production behavior: the two-model polish cascade adds latency and can corrupt otherwise acceptable raw text, while a local SALM LoRA can improve the same local 500-clip slice.
 
-The repository contains only the first product integration seam, currently uncommitted on `ml/portable-harness`: `sidecar/salm_server.py`, ASR-sidecar selection in `crates/phonon-asr`, benchmark wiring in `crates/phonon-cli`, and README instructions. It targets `LiquidAI/LFM2.5-Audio-1.5B`, speaks the existing JSONL protocol for whole utterances, and intentionally does not support streaming partials.
+The repository contains the first committed product integration seam on `ml/portable-harness`: `sidecar/salm_server.py`, ASR-sidecar selection in `crates/phonon-asr`, benchmark wiring in `crates/phonon-cli`, and README instructions. It targets `LiquidAI/LFM2.5-Audio-1.5B`, speaks the existing JSONL protocol for whole utterances, and intentionally does not support streaming partials.
 
 The completed experiments live in the Claude Code workspace and on B550 rather than this Git checkout:
 
@@ -129,7 +132,7 @@ The vision architecture uses the same-family `LFM2.5-VL-1.6B` SigLIP2 tower and 
 
 ### Work packages
 
-1. **Preserve the dirty product seam.** Inspect and commit custom/default ASR process selection independently from model claims. Add tests proving the custom script/runtime selection and that the default Parakeet command remains unchanged.
+1. **Preserve the committed product seam.** Keep custom/default ASR process selection independent of model claims, with tests proving the custom script/runtime selection and that the default Parakeet command remains unchanged.
 2. **Bring the experiment under durable source control.** Review and commit the local experiment scripts, omitting personal data, then record adapter hashes and score receipts in an evidence index. The existing local workspace is not a release process.
 3. **Protocol contract tests.** Exercise ready, ping, transcribe, warmup, unsupported streaming, missing adapter, malformed JSON, and shutdown behavior without loading the model by injecting a fake engine boundary into `salm_server.py`.
 4. **Create the audio release gate.** Repeat the GRPO result with a frozen, manifest-hashed fixture and compare SALM, Parakeet, and the two-model refiner under one registered protocol. The present local slice is strong evidence, not a product ship gate.
@@ -142,8 +145,253 @@ The vision architecture uses the same-family `LFM2.5-VL-1.6B` SigLIP2 tower and 
 
 The product seam can be called implemented only when its code and protocol tests are committed and pass the relevant Rust and Python checks. The research adapters are already exercised on real audio and screenshots, but the lane can be called product-ready only after the frozen-fixture audio and vision gates pass, sidecar multimodal behavior is tested, offline artifact pinning works, streaming behavior is explicitly represented, and the default Parakeet path has no regression. The current vision adapter must not be described as shipping in Phonon merely because its research evaluation passed.
 
+## Screen context and the vision-head image path
+
+### Current position
+
+Screen context is implemented in `bar/Sources/PhononBar.swift` as
+`ScreenContextCapture.recognizeAllDisplays()`, and it is OCR-only. The captured
+image is discarded before the audio finishes; only recognized text survives, and
+only the dictionary terms that the transcript already resembles are forwarded to
+the correction stage. `crates/phonon-core/src/data.rs::screen_confirmed_terms`
+keeps a term only when the normalized screen text contains the canonical form
+and some known form of that entry is contextually similar to the raw
+transcript, so full screen text never reaches the correction prompt.
+
+The vision-head product path is not implemented. Productizing it requires
+forwarding the image itself, or a normalized representation of it, alongside the
+audio, which is a protocol change rather than a capture change.
+
+### Measured capture contract
+
+The capture behavior below was read from the current source, not from a
+specification.
+
+| Property | Current behavior | Owner |
+| --- | --- | --- |
+| Permission | `CGPreflightScreenCaptureAccess`, then `CGRequestScreenCaptureAccess`; denial returns empty text silently | `ScreenContextCapture` |
+| Scope | Every display returned by `SCShareableContent`, not the active display | `ScreenContextCapture` |
+| Self-exclusion | Phonon's own application is excluded from every filter | `ScreenContextCapture` |
+| Filter | One `SCContentFilter` per display over the whole display, no window selection | `ScreenContextCapture` |
+| Pixel size | `SCStreamConfiguration.width` and `.height` set to `display.width` and `display.height`, the display's native logical point size | `ScreenContextCapture` |
+| Cursor | `showsCursor = false` | `ScreenContextCapture` |
+| Capture API | `SCScreenshotManager.captureImage`, a still image, not a stream | `ScreenContextCapture` |
+| Timing | Started at recording start, concurrently with audio capture, not at correction time | `PhononBar` dictation start |
+| OCR | `VNRecognizeTextRequest` with `recognitionLevel = .accurate` and language correction on | `ScreenContextCapture` |
+| Output | Text only, displays joined with newlines; the image is released | `ScreenContextCapture` |
+| Failure | Any capture or OCR error is logged and degrades to empty context | `ScreenContextCapture` |
+| Blocking | If OCR is still running when ASR returns, the final polish waits for it | `PhononBar` pending final polish |
+
+### Model-side image requirements
+
+The image requirements come from the pinned donor
+`LiquidAI/LFM2.5-VL-1.6B` snapshot `919fde3d022e3f90a4716006f993938ee8c2eb97`,
+read from its `config.json` and its `Lfm2VlImageProcessor` implementation, then
+confirmed by running the processor locally over synthetic images at each display
+size, using Transformers 5.17.0 to match the B550 training environment. The
+model snapshot has no `preprocessor_config.json`, so the image processor is
+constructed from model-config values rather than loaded as a standalone file.
+
+| Property | Value | Source |
+| --- | --- | --- |
+| Tile size | 512 x 512 pixels | `tile_size` |
+| Encoder patch size | 16 pixels | `encoder_patch_size`, SigLIP2 |
+| Downsample factor | 2, giving 16 x 16 = 256 language-model placeholders per full 512px tile | `downsample_factor` |
+| Tiles per image | 2 to 10 chosen by aspect ratio, plus one thumbnail when the grid is larger than one tile | `min_tiles`, `max_tiles`, `use_thumbnail` |
+| Splitting | Enabled for images above roughly 256 tokens of pixels; smaller images are resized to a single image | `do_image_splitting`, `max_image_tokens`, `max_pixels_tolerance` |
+| Resize filter | Bilinear with antialiasing | `resample` |
+| Normalization | Channel-wise mean 0.5 and standard deviation 0.5, that is `(x / 255 - 0.5) / 0.5` | `image_mean`, `image_std` |
+| Image token id | 396, with the audio model reserving rows 396 through 500 for the same range | `image_token_id` |
+| Text | 65536 rows, 128k positions, 16 layers, 2048 hidden | `text_config` |
+
+Measured tile behavior for realistic display sizes, produced locally with the
+real processor:
+
+| Display size | Tile grid | Processor resize | LM image placeholders |
+| --- | --- | --- | ---: |
+| 1440 x 900 | 3 x 2 | 1536 x 1024 | 1,776 |
+| 1512 x 982 | 3 x 2 | 1536 x 1024 | 1,764 |
+| 1920 x 1080 | 4 x 2 | 2048 x 1024 | 2,300 |
+| 2056 x 1329 | 3 x 2 | 1536 x 1024 | 1,764 |
+| 2560 x 1440 | 4 x 2 | 2048 x 1024 | 2,300 |
+| 3008 x 1692 | 4 x 2 | 2048 x 1024 | 2,300 |
+| 3456 x 2234 | 3 x 2 | 1536 x 1024 | 1,764 |
+| 3840 x 2160 | 4 x 2 | 2048 x 1024 | 2,300 |
+| 5120 x 2880 | 4 x 2 | 2048 x 1024 | 2,300 |
+
+The counts come from tokenizing the complete processor expansion with the pinned
+tokenizer, not from hand arithmetic. The composition is 256 placeholders per
+512px tile plus a separately `smart_resize`-budgeted thumbnail, which is why a
+3x2 grid does not cost exactly 6 x 256 placeholders.
+
+Two consequences follow from this measurement, and both are budget problems
+rather than quality problems. First, every measured display size collapses to a
+3x2 or 4x2 grid, so a 1440p screenshot and a 5K screenshot cost within 30 percent
+of each other: nominal resolution buys almost nothing, and active-display versus
+all-display is a context, latency, and privacy decision. Second, a single display
+costs roughly 1,800 to 2,300 language-model placeholders. That already exceeds
+the 512-1024 context lengths in the current reverse-graft sweep and must be
+treated as a real per-request context cost, which is a further argument for one
+active display rather than unconditional all-display capture.
+
+Separately, the current capture request is expressed in display logical
+dimensions, but the backing scale of the `CGImage` that `SCScreenshotManager`
+actually returns still needs to be measured on a live Retina system before any
+small-text fidelity claim is made.
+
+### Image protocol for the vision head
+
+The sidecar protocol is a JSONL request and response stream. A multimodal
+request must add image fields without disturbing the existing audio fields, and
+must declare capability so a single-stage engine can refuse cleanly:
+
+```text
+transcribe {
+  cmd: "transcribe",
+  id: "...",
+  path: "/path/to/audio.wav",
+  images: [
+    {
+      path: "/path/to/screenshot.png",
+      display_id: 1,
+      width: 5120,
+      height: 2880,
+      scale_factor: 2.0,
+      captured_at_ms: 1759400000123,
+      origin: "screen_context",
+    },
+  ],
+}
+```
+
+The engine must answer `ready` with a capability declaration such as
+`{"audio": true, "image": true, "max_screenshot_tokens": 2300}` so the app can hide
+the screen-context affordance when the selected engine cannot consume images.
+Screenshots are never encoded into an audio command, never base64'd into the
+`pcm16` field, and never written into the corpus unless retention is separately
+consented.
+
+### Work packages
+
+1. **Add the image field and capability declaration** to the sidecar protocol and
+   the Rust `AsrSidecar` request builder, with the audio-only path unchanged when
+   no image is attached.
+2. **Contract-test the multimodal request** without loading a model, using the
+   existing fake-engine seam: image accepted, image refused by an audio-only
+   engine, missing file, malformed image record.
+3. **Return a normalized image to the bar.** Capture the CGImage, encode a
+   bounded-resolution PNG, write it to a per-session temporary directory, and
+   delete it on session end exactly as the audio WAV is deleted today.
+4. **Decide display scope.** Active display only, or all displays, with the token
+   cost and privacy cost stated for each.
+5. **Keep the OCR path.** OCR remains useful without the vision head, since it
+   is what ranks dictionary candidates today. It should not be removed when the
+   image path is added.
+6. **Gate the vision lane** with real held-out display captures, blank and
+   degraded controls, a simultaneous audio regression check, and a privacy review
+   of what a retained screenshot can contain.
+
+### Acceptance gates
+
+The image path is implemented when the protocol carries images, a model capability
+declaration is reported, the capture and deletion lifecycle is tested, an
+audio-only engine still passes the default Parakeet path unchanged, and the
+measured token and latency cost of one and of all displays is recorded. It is
+product-ready only after a registered vision gate on real display captures passes
+alongside the audio gate.
+
+## Audio capture and normalization contract
+
+### Current position
+
+Audio capture, streaming, and final-WAV writing all live in `MicRecorder` in
+`bar/Sources/PhononBar.swift`. The audio language model is trained and evaluated
+on 16 kHz mono, and the current implementation already delivers that. What does
+not exist is a single declared contract: resampling is ad hoc linear
+interpolation, normalization is absent by design, and the streaming and final
+paths duplicate the resample call without sharing a filter or a provenance
+record.
+
+### Measured capture contract
+
+| Property | Current behavior | Owner |
+| --- | --- | --- |
+| Source | `AVAudioEngine` input tap on bus 0 at the hardware input format | `MicRecorder` |
+| Rate | Hardware rate, re-read and reinstalled whenever the device renegotiates its format | `MicRecorder` |
+| Tap buffer | 1024 frames | `MicRecorder` |
+| Channels | Averaged to mono at ingest | `MicRecorder` |
+| Level meter | RMS dBFS mapped from -55 to 0 dB, smoothed 0.18 past and 0.82 present, every second frame published; UI only, not applied to samples | `MicRecorder` |
+| Duration cap | At most 120 seconds retained, oldest samples dropped | `MicRecorder` |
+| Streaming | Accumulate about 0.4 s, resample to 16 kHz, encode PCM16, send as base64 `stream_chunk` | `MicRecorder`, `PhononBar` |
+| Final path | Resample the whole captured buffer to 16 kHz, write mono PCM16 WAV under `Corpus/<id>/audio.wav` | `MicRecorder` |
+| Minimum clip | Below about 80 ms no WAV is written, which suppresses a cold-start stub | `MicRecorder` |
+| Resampling | Linear interpolation, passthrough when the rates are within 0.5 Hz | `MicRecorder` |
+| Quantization | Clamp to [-1, 1], scale by `Int16.max`, round to nearest | `MicRecorder` |
+| Speech gate | Rust-side adaptive gate on the written WAV before ASR | `phonon-audio` |
+
+The speech gate in `crates/phonon-audio` requires mono PCM16, so the WAV
+contract is already load-bearing: a future change to the WAV format breaks the
+gate before it breaks the model. It frames audio at 50 Hz, takes the 20th
+percentile frame energy as the noise floor, requires energy above three times
+that floor with an absolute floor of 180, caps the voiced zero-crossing rate at
+0.20, and requires four consecutive voiced frames, that is about 80 ms of
+sustained speech-like energy.
+
+### Target contract for the audio head
+
+The audio language model consumes 16 kHz mono float audio through
+`ChatState.add_audio`, with the sample rate passed explicitly, so the sidecar
+trusts the file's declared rate. That makes the writer, not the model, the owner
+of correctness. The target contract, which the current code satisfies only
+partially, is:
+
+1. One resampler instance and one filter chain shared by the streaming path and
+   the final path, so a streamed partial and the final WAV of the same utterance
+   carry identical signal treatment.
+2. `AVAudioConverter` with an explicit quality setting instead of linear
+   interpolation, or a documented measured justification for keeping linear
+   interpolation when the source rate is 48 kHz and the target is 16 kHz.
+3. No automatic gain applied to the samples. The meter is a display concern.
+   Record the capture level as metadata so a training or evaluation pass can
+   restrict or stratify by level.
+4. DC-offset removal before resampling, since a single-tap `AVAudioEngine` path
+   can carry a small DC bias that a mean-removed signal avoids.
+5. Clipping provenance: record whether the clip reached full scale, so a
+   truncated clip is visible in evaluation instead of being silently scored.
+6. Provenance in model input metadata: hardware rate, channel count, selected
+   device name, resampler identity, target rate, and whether normalization ran.
+
+### Work packages
+
+1. Extract a single `AudioFrontEnd` in Swift that owns downmix, DC removal,
+   resampling, and quantization, and route both the streaming and the final path
+   through it.
+2. Add a unit test that a 48 kHz synthetic tone and its 16 kHz conversion agree
+   on frequency and level within a stated tolerance, and that a stereo input
+   downmixes to the expected mono amplitude.
+3. Extend the corpus `metadata.json` with the front-end provenance fields and a
+   clipping flag, then make the evaluation report stratify by level.
+4. Replace the linear resampler with `AVAudioConverter` and measure the WER delta
+   on the frozen 500-clip slice before adopting it.
+5. Decide whether the streaming path stays Parakeet-only. The SALM sidecar
+   currently rejects `stream_start`, `stream_chunk`, and `stream_stop`, so the
+   0.4-second chunk contract is a Parakeet feature, not a shared one.
+
+### Acceptance gates
+
+The audio contract is implemented when both paths share one front end, tests
+cover downmix, resample, DC removal, and quantization, and metadata records
+provenance. It is product-ready when the resampler change is measured on the
+frozen slice without regressing fair WER, and when the speech gate is proven
+against real clips that contain no speech.
+
 ## Work-log
 
+### 2026-10-02: screen and audio architecture audit
+
+Audited the live screen-context and microphone paths from source rather than intent. `ScreenContextCapture` captures every display with ScreenCaptureKit, excludes Phonon itself, resizes to native logical dimensions, hides the cursor, and immediately discards the image after Vision OCR; only transcript-relevant dictionary terms survive into the correction prompt. Measured the exact LFM2.5-VL image processor on common display sizes: all realistic captures collapse to 3x2 or 4x2 grids of 512px tiles plus a thumbnail, consuming 1,764 to 2,300 language-model image placeholders regardless of nominal resolution. A 5K capture costs barely more than a 1440p one, so active-display versus all-display is a context, latency, and privacy decision rather than a fidelity one.
+
+Audited `MicRecorder` and the Rust speech gate. Current capture is hardware-rate stereo averaged to mono, retained up to 120 seconds, and separately resampled by linear interpolation to 16 kHz for streaming and final PCM16 WAV. The level meter is UI-only, no automatic gain is applied, and the final WAV is required to be mono PCM16 before the adaptive speech gate runs. Added architecture sections for the multimodal image protocol, exact vision preprocessing, and the target shared audio front end with resampler, DC-offset, clipping, and provenance gates.
 ### 2026-10-01: reverse Audio-to-VL graft and public audio CPT
 
 Implemented the reverse graft under `ml/research/reverse_vl_v0`: retain the VL language stack and vision path, transplant the Audio conformer and audio adapter, reserve token id 14 for continuous audio slots, and scatter projected audio embeddings into the VL language stream. The trainer updates a VL LoRA plus the audio adapter while freezing the VL base and conformer; the evaluator loads a saved graft adapter and performs greedy audio-to-text generation.
@@ -180,7 +428,7 @@ Recovered ownership of the SALM and vision transplant thread from the Phonon Cla
 
 Implemented the first takeover slices. Added `AsrEngineSelection` as one tested launch plan for default Parakeet and custom SALM selection, wired both `AsrSidecar` and the ASR benchmark to it, and added five no-model JSONL protocol tests for `sidecar/salm_server.py`. Added deterministic-first parody contracts in `phonon-core` with protected URL, identifier, and number spans, ordered and duplicate-count preservation checks, negation and source recovery tests, and two fictional built-in styles. The Rust workspace, Python sidecar tests, formatting, and Clippy pass locally. These slices do not wire either capability into the UI or ship the measured research adapters.
 
-Added the canonical architecture after auditing the repository. Encoded the parody plane as a deterministic-first, consent-gated, meaning-locked transform architecture with registered semantic, style, rights, and product gates. Classified the visible SALM transplant as uncommitted and unverified, and defined preservation, protocol, stock-load, adapter, benchmark, product, and distribution gates. No application code or model behavior was changed in this edit.
+Added the canonical architecture after auditing the repository. Encoded the parody plane as a deterministic-first, consent-gated, meaning-locked transform architecture with registered semantic, style, rights, and product gates. Classified the SALM transplant as implementation-first and measurement-gated, and defined preservation, protocol, stock-load, adapter, benchmark, product, and distribution gates. No application code or model behavior was changed in this edit.
 
 ## Contracts to preserve
 

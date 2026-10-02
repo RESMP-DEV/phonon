@@ -144,6 +144,12 @@ The product seam can be called implemented only when its code and protocol tests
 
 ## Work-log
 
+### 2026-10-01: reverse Audio-to-VL graft and public audio CPT
+
+Implemented the reverse graft under `ml/research/reverse_vl_v0`: retain the VL language stack and vision path, transplant the Audio conformer and audio adapter, reserve token id 14 for continuous audio slots, and scatter projected audio embeddings into the VL language stream. The trainer updates a VL LoRA plus the audio adapter while freezing the VL base and conformer; the evaluator loads a saved graft adapter and performs greedy audio-to-text generation.
+
+A synthetic end-to-end probe succeeded before training. On the first 25 rows of the frozen Aqua slice, a 2,000-step Aqua-only reverse graft scored 0.1458 fair WER / 0.2029 strict / 0.28 exact. Public audio pretraining used the open `espnet/yodas-granary` English stream (embedded 16 kHz WAV, CC-BY-3.0 backing audio; `nvidia/Granary` CC-BY-4.0 manifests). A 2,000-row/2,000-step public stage alone scored 0.1840 fair WER, but public pretraining followed by 1,000 Aqua steps improved to 0.1337 fair WER / 0.1755 strict / 0.40 exact. A larger 10,000-row, 10,000-step public run followed by 1,000 Aqua steps was launched to measure scaling; no result is claimed until its chained evaluation completes. This lane remains research-only and behind the native Audio student.
+
 ### 2026-10-01: API-first correction curation
 
 Corrected the model-selection boundary: larger third-party models are API teachers and evaluators, not local Phonon runtimes. Stopped and removed the experimental B550 Voxtral download and environment. A live synthetic vision probe through the OCR/review OpenAI-compatible service exactly recovered `PHONON_API_VISION_42`; the configured fallback served `glm-5.3-flash`, proving image transport through the local API tier. Direct fully qualified free OpenRouter Gemma and Nemotron Omni probes timed out, so the immediately reliable teacher path is the configured tier rather than a hand-selected free model ID.

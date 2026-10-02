@@ -144,6 +144,16 @@ The product seam can be called implemented only when its code and protocol tests
 
 ## Work-log
 
+### 2026-10-01: higher-quality audio data and model survey
+
+Measured two longer GRPO arms after the 300-step pilot. The 500-step group-8 control scored 0.0848 fair WER and the 500-step group-12/SFT-init-KL arm scored 0.0840, while GRPO v1 remained best at 0.0839. This closes the "just run GRPO longer" hypothesis for the current recipe.
+
+Audited the Aqua packs without emitting transcript contents. The full interleaved pack is valid and substantial: 31,652 rows with 2,619,605 text slots, 3,258,794 audio-in slots, and 3,292,509 audio-out slots. The newer v3/v4 mixed packs use sequential audio-in rows plus text correction rows and do not include the interleaved read-along lane. A matched high-quality rebuild therefore provides new signal rather than a duplicate experiment.
+
+The manifest has 34,246 rows, mean duration 9.44 seconds, and 32,813 correction-positive rows. A higher-quality selection keeps only correction-positive clips between two and twenty seconds, excludes the frozen 500-clip slice, and uses a stable audio-ID hash split: 12,855 train, 1,458 development, and 750 future rows. Work began on matched sequential and interleaved packs over exactly those training rows.
+
+A public model survey ranked Voxtral Mini 3B, Voxtral Small 24B, Voxtral Mini 4B Realtime, Gemma 4 E4B/12B, Qwen3 Omni 30B-A3B, and LFM2.5-Audio as the strongest practical audio-text candidates. Voxtral Mini 3B is the first external baseline to download and run because it combines an Apache-2.0 license, 32k context, roughly 30-minute transcription support, a Whisper-family audio head, and an 8.72 GiB selected-weight footprint. Voxtral Mini 4B Realtime is the streaming-specific follow-up; Gemma 4 is a strong long-context but chunked-audio candidate; Qwen3 Omni and Voxtral Small are quality ceilings rather than routine local baselines.
+
 ### 2026-10-01
 
 Recovered ownership of the SALM and vision transplant thread from the Phonon Claude Code session. Reconciled the architecture with its surviving local and B550 artifacts, adapter hashes, and aggregate metrics.

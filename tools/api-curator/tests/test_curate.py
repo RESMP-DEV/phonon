@@ -105,3 +105,36 @@ def test_read_rows_preserves_supplied_ids(tmp_path: Path) -> None:
     source.write_text('{"custom":"row-a","raw":"a","corrected":"A"}\n')
     rows = read_rows(source, "raw", "corrected", "custom", 0)
     assert rows == [CuratedRow("row-a", "a", "A")]
+
+
+def test_curate_image_contract(monkeypatch) -> None:
+    from api_curator.curate import curate_image
+
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            completion = '```json\n{"decision":"keep","corrected":"PHONON_API_VISION_42","reason_code":"exact","confidence":1}\n```'
+            return json.dumps({"choices": [{"message": {"content": completion}}]}).encode()
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr("api_curator.curate.urllib.request.urlopen", fake_urlopen)
+    judgment, _ = curate_image(
+        "data:image/png;base64,AAA",
+        endpoint="https://teacher.test/v1",
+        api_key="secret",
+        model="vision-teacher",
+        timeout=9,
+    )
+    assert judgment.corrected == "PHONON_API_VISION_42"
+    assert captured["body"]["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/png")

@@ -173,3 +173,61 @@ def curate_rows(rows: list[CuratedRow], output: Path, *, resume: bool = True, **
             sink.write(json.dumps(record, ensure_ascii=False) + "\n")
             sink.flush()
     return output
+
+
+VISION_SYSTEM = """You are a screenshot transcription data curator.
+The image is a synthetic probe for infrastructure validation.
+Return exactly one JSON object fenced by ```json, with:
+decision: keep | revise | discard
+corrected: exact visible text (empty only for discard)
+reason_code: exact | terminology | layout | ambiguous | unsafe
+confidence: number from 0 to 1
+No commentary."""
+VISION_PROMPT = """Transcribe and validate the visible text exactly. Do not infer hidden content."""
+
+
+def curate_image(
+    image_data_url: str,
+    *,
+    endpoint: str,
+    api_key: str,
+    model: str,
+    timeout: float = 180,
+) -> tuple[CurationJudgment, str]:
+    """Validate one screenshot caption candidate without local text leakage."""
+
+    started = time.monotonic()
+    endpoint = endpoint.rstrip("/")
+    if not endpoint.endswith("/chat/completions"):
+        endpoint += "/chat/completions"
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": VISION_PROMPT},
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ],
+                }
+            ],
+            "temperature": 0,
+            "max_tokens": 512,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        endpoint,
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.load(response)
+    text = body["choices"][0]["message"]["content"]
+    judgment = validate_judgment(
+        parse_json_block(text),
+        model,
+        time.monotonic() - started,
+    )
+    return judgment, text

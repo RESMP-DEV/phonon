@@ -310,7 +310,12 @@ def main() -> None:
         direction="minimize",
         load_if_exists=True,
     )
-    study.optimize(objective, n_trials=args.trials, gc_after_trial=True)
+    study.optimize(
+        objective,
+        n_trials=args.trials,
+        gc_after_trial=True,
+        catch=(RuntimeError, subprocess.TimeoutExpired),
+    )
     print(json.dumps({"best_trial": study.best_trial.number, "best_value": study.best_value}, indent=2))
 
 

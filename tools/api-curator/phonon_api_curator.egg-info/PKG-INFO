@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: phonon-api-curator
-Version: 0.1.0
-Summary: API-assisted correction curation for local Phonon training data
-Requires-Python: >=3.12

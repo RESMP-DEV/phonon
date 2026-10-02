@@ -1,2 +1,0 @@
-[console_scripts]
-phonon-api-curator = api_curator.__main__:main

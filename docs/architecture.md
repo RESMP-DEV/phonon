@@ -144,6 +144,14 @@ The product seam can be called implemented only when its code and protocol tests
 
 ## Work-log
 
+### 2026-10-01: API-first correction curation
+
+Corrected the model-selection boundary: larger third-party models are API teachers and evaluators, not local Phonon runtimes. Stopped and removed the experimental B550 Voxtral download and environment. A live synthetic vision probe through the OCR/review OpenAI-compatible service exactly recovered `PHONON_API_VISION_42`; the configured fallback served `glm-5.3-flash`, proving image transport through the local API tier. Direct fully qualified free OpenRouter Gemma and Nemotron Omni probes timed out, so the immediately reliable teacher path is the configured tier rather than a hand-selected free model ID.
+
+Added `tools/api-curator`, a resumeable CLI that sends only raw and final dictation text to an OpenAI-compatible endpoint. It validates a strict JSON contract (`keep`, `revise`, or `discard`, corrected text, reason code, confidence), never sends audio paths or local session metadata, and stores a completion for audit without requesting or storing reasoning. Five offline tests pass. A three-row synthetic live pilot through `glm-5.3-flashx` succeeded, and a 25-row real-data pilot returned valid judgments for every row: 14 keep, 11 revise, 0 discard, mean request latency 3.688 seconds, max 15.461 seconds.
+
+The vision-head graft process is the already-measured research path, now reframed for screenshot conditioning: donor `LFM2.5-VL-1.6B`; copy its SigLIP2 tower and 2048-dimensional projector into `LFM2.5-Audio-1.5B`; reuse audio-vocab reserved IDs 396-500 as image-token rows; initialize those rows by reserved/copy/OMP race; inject image embeddings at the existing modality flag seam; train a LoRA in the audio LM with tower and projector frozen; and always truncate generation at the first supervised position. The measured adapter reads real held-out screenshots at 0.0250 WER / 79.5 percent exact and collapses on blank controls. Productization requires an explicit image field, consented screen capture, API-teacher curation of screenshot-caption pairs, retention policy, and simultaneous audio regression.
+
 ### 2026-10-01: higher-quality audio data and model survey
 
 Measured two longer GRPO arms after the 300-step pilot. The 500-step group-8 control scored 0.0848 fair WER and the 500-step group-12/SFT-init-KL arm scored 0.0840, while GRPO v1 remained best at 0.0839. This closes the "just run GRPO longer" hypothesis for the current recipe.

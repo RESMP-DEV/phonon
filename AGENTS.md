@@ -58,6 +58,8 @@
 - Resumed four-trial log: `/home/kearm/salm-lora/build/optuna/final-resume.log`
 - Resumed markers: `OPTUNA-RESUME-DONE` and `OPTUNA-RESUME-FAILED`
 - Frozen evaluation slice: `/home/kearm/salm-lora/slice-eval-500.jsonl`
+- Offline ASR teacher roots:
+  `/home/kearm/salm-lora/build/asr-teachers/{qwen3-asr-1p7b,cohere-transcribe-03-2026}`
 - Public dataset revision:
   `espnet/yodas-granary@969944574ea3f37890beaf67ea651e160cfaf043`
 

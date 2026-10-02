@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
-import urllib.error
 from pathlib import Path
 
 import pytest
-
-from api_curator.__main__ import read_rows
+from api_curator.__main__ import read_rows, read_teacher_map
 from api_curator.curate import (
     CuratedRow,
     curate_one,
     curate_rows,
+    format_prompt,
     parse_json_block,
     validate_judgment,
 )
@@ -66,7 +65,12 @@ def test_request_reaches_validated_response(monkeypatch, tmp_path: Path) -> None
 
     monkeypatch.setattr("api_curator.curate.urllib.request.urlopen", fake_urlopen)
     judgment, completion = curate_one(
-        CuratedRow("42", "deploy phone on v2", "Deploy Phonon v2."),
+        CuratedRow(
+            "42",
+            "deploy phone on v2",
+            "Deploy Phonon v2.",
+            {"qwen3_asr_1p7b": "deploy Phonon v2"},
+        ),
         endpoint="https://teacher.test/v1",
         api_key="secret",
         model="teacher",
@@ -74,7 +78,10 @@ def test_request_reaches_validated_response(monkeypatch, tmp_path: Path) -> None
     )
     assert captured["path"] == "https://teacher.test/v1/chat/completions"
     assert captured["body"]["messages"][0]["role"] == "system"
-    assert "deploy phone on v2" in captured["body"]["messages"][1]["content"]
+    user_content = captured["body"]["messages"][1]["content"]
+    assert "<raw>deploy phone on v2</raw>" in user_content
+    assert '<hypothesis source="qwen3_asr_1p7b">deploy Phonon v2</hypothesis>' in user_content
+    assert "<final>Deploy Phonon v2.</final>" in user_content
     assert judgment.decision == "revise"
     assert judgment.model == "teacher"
     assert "Phonon v2" in completion
@@ -104,7 +111,33 @@ def test_read_rows_preserves_supplied_ids(tmp_path: Path) -> None:
     source = tmp_path / "rows.jsonl"
     source.write_text('{"custom":"row-a","raw":"a","corrected":"A"}\n')
     rows = read_rows(source, "raw", "corrected", "custom", 0)
-    assert rows == [CuratedRow("row-a", "a", "A")]
+    assert rows == [CuratedRow("row-a", "a", "A", {})]
+
+
+def test_named_teacher_maps_are_joined_by_id_and_escaped(tmp_path: Path) -> None:
+    source = tmp_path / "rows.jsonl"
+    source.write_text(
+        '{"audio":"one.flac","raw":"a & b","corrected":"A & B"}\n'
+        '{"audio":"two.flac","raw":"c","corrected":"C"}\n'
+    )
+    teacher = tmp_path / "teacher.jsonl"
+    teacher.write_text(
+        '{"audio":"one.flac","hyp":"A <and> B"}\n'
+        '{"audio":"missing.flac","hyp":"unused"}\n'
+    )
+    teachers = read_teacher_map(teacher, "audio", "hyp")
+    rows = read_rows(source, "raw", "corrected", "audio", 0, {"qwen": teachers})
+    assert rows[0].teachers == {"qwen": "A <and> B"}
+    assert rows[1].teachers == {}
+    prompt = format_prompt(rows[0].raw, rows[0].final, rows[0].teachers)
+    assert '<hypothesis source="qwen">A &lt;and&gt; B</hypothesis>' in prompt
+
+
+def test_omitting_final_removes_the_accepted_text_block() -> None:
+    prompt = format_prompt("raw", "", {"teacher": "candidate"})
+    assert "<asr_hypotheses>" in prompt
+    assert "<hypothesis source=\"teacher\">candidate</hypothesis>" in prompt
+    assert "<final>" not in prompt
 
 
 def test_curate_image_contract(monkeypatch) -> None:

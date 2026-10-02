@@ -2,29 +2,46 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Only the fields we need are sent: raw and corrected text. Audio paths,
 # timestamps, session IDs, and other local metadata never leave the machine.
 SYSTEM = """You are a dictation correction data curator.
-Compare the raw ASR transcript with the user's final text.
+Compare the raw ASR transcript, any named offline ASR hypotheses, and the user's accepted final text.
+The accepted final text is evidence, not an immutable oracle: revise it only when the named ASR hypotheses collectively establish a specific acoustic correction.
 Return exactly one JSON object fenced by ```json, with:
 decision: keep | revise | discard
 corrected: final intended text (required for keep/revise; empty string for discard)
 reason_code: brief stable tag such as exact, punctuation, terminology, rewrite, unsafe, or ambiguous
 confidence: number from 0 to 1
 No commentary and no explanation."""
+SYSTEM_NO_FINAL = """You are a dictation transcription reconciler.
+Choose or correct the intended transcript using the raw ASR transcript and the named offline ASR hypotheses. No accepted final text is supplied.
+Prefer the acoustic evidence supported by multiple hypotheses; preserve technical terms, identifiers, numbers, ordering, punctuation, and speaker detail.
+Return exactly one JSON object fenced by ```json, with:
+decision: keep | revise | discard
+corrected: final intended transcript (required for keep/revise; empty string for discard)
+reason_code: brief stable tag such as exact, terminology, punctuation, rewrite, unsafe, or ambiguous
+confidence: number from 0 to 1
+No commentary and no explanation."""
 PROMPT = """<pair>
 <raw>{raw}</raw>
-<final>{final}</final>
+{hypotheses}{final}
 </pair>"""
+HYPOTHESES_BLOCK = """<asr_hypotheses>
+{rows}</asr_hypotheses>
+"""
+HYPOTHESIS_ROW = """<hypothesis source="{source}">{text}</hypothesis>
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +51,7 @@ class CuratedRow:
     id: str
     raw: str
     final: str
+    teachers: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +79,7 @@ def parse_json_block(text: str) -> dict[str, Any]:
     value = match.group(1) if match else text.strip()
     obj = json.loads(value)
     if not isinstance(obj, dict):
-        raise ValueError("teacher response must be a JSON object")
+        raise ValueError("teacher response must be a JSON object")  # noqa: TRY004
     return obj
 
 
@@ -82,12 +100,33 @@ def validate_judgment(value: dict[str, Any], model: str, elapsed_s: float) -> Cu
     return CurationJudgment(decision, corrected, reason, confidence, model, elapsed_s)
 
 
+def format_prompt(raw: str, final: str, teachers: dict[str, str] | None = None) -> str:
+    usable_teachers = {
+        str(source).strip(): str(text).strip()
+        for source, text in sorted((teachers or {}).items())
+        if str(source).strip() and str(text).strip()
+    }
+    hypothesis_rows = "".join(
+        HYPOTHESIS_ROW.format(source=html.escape(source), text=html.escape(text))
+        for source, text in usable_teachers.items()
+    )
+    final_block = f"<final>{html.escape(final)}</final>" if final.strip() else ""
+    return PROMPT.format(
+        raw=html.escape(raw),
+        hypotheses=(
+            HYPOTHESES_BLOCK.format(rows=hypothesis_rows) if hypothesis_rows else ""
+        ),
+        final=final_block,
+    )
+
+
 def make_request(
     endpoint: str,
     api_key: str,
     model: str,
     raw: str,
     final: str,
+    teachers: dict[str, str] | None,
     timeout: float,
     opener: Callable[..., urllib.request.Request] = urllib.request.Request,
 ) -> urllib.request.Request:
@@ -98,10 +137,13 @@ def make_request(
         {
             "model": model,
             "messages": [
-                {"role": "system", "content": SYSTEM},
+                {
+                    "role": "system",
+                    "content": SYSTEM if final.strip() else SYSTEM_NO_FINAL,
+                },
                 {
                     "role": "user",
-                    "content": PROMPT.format(raw=raw, final=final),
+                    "content": format_prompt(raw, final, teachers),
                 },
             ],
             "temperature": 0,
@@ -136,7 +178,9 @@ def curate_one(
     for attempt in range(retries + 1):
         started = time.monotonic()
         try:
-            request = make_request(endpoint, api_key, model, row.raw, row.final, timeout)
+            request = make_request(
+                endpoint, api_key, model, row.raw, row.final, row.teachers, timeout
+            )
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 body = json.load(response)
             text = body["choices"][0]["message"]["content"]
@@ -167,6 +211,7 @@ def curate_rows(rows: list[CuratedRow], output: Path, *, resume: bool = True, **
                 "id": row.id,
                 "raw": row.raw,
                 "final": row.final,
+                "teachers": row.teachers or {},
                 "judgment": asdict(judgment),
                 "completion": completion,
             }

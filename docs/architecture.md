@@ -30,7 +30,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Topic | Current position | Decision gate |
 | --- | --- | --- |
 | Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
-| Final-training hyperparameters | `xml_dictation_v1` fixed; eight configurations under Optuna on B550 | Completed eight-configuration study on the frozen 500-clip slice, reported with per-trial receipts, not a single pilot |
+| Final-training hyperparameters | `xml_dictation_v1` fixed; eight effective configurations completed; recovered rank-32/context-512 trial 4 is best | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
 | Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
@@ -45,6 +45,102 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 3. **Context plane.** Mine, review, retain, and expire personal vocabulary and style facts locally. Every source is opt-in, reviewed where used for candidate generation, and journaled.
 4. **Parody plane.** Transform text only after the user has selected a parody mode. It is an explicit mode, never a hidden personality applied to ordinary dictation.
 5. **Evaluation plane.** Freeze fixtures, register protocols, and gate every user-visible model or transform on measured fidelity, restraint, latency, and privacy invariants.
+
+## Dataset creation and teacher curation
+
+### Current output flow
+
+The Aqua export starts with two text observations for every clip:
+`raw_text`, the latency-constrained real-time transcript, and `normalized_text`,
+the accepted or normalized text. `ingest_aqua` converts audio to 16 kHz mono,
+hashes it, and stores `verbatim_text` from the raw transcript,
+`insert_text`/`normalized_text` from the accepted text, and a
+`teacher_transcripts` map initially containing only `aqua_raw` and
+`aqua_normalized`. The label status is `model_assisted`; it is not represented
+as human-audited truth.
+
+There are three uses of text after ingestion:
+
+1. **Evaluation.** A hypothesis file carries `ref`, `raw_aqua`, and `hyp`; the
+   registered fair/strict scorer compares `hyp` to `ref` over the complete
+   frozen slice.
+2. **Training.** `build_aqua_prompt_pack.py` currently takes
+   `row["corrected"]` directly as the assistant target. It verifies audio
+   presence, duration, manifest hash, prompt hash, and context length, but it
+   does not read `teacher_transcripts`. This is the principal curation gap.
+3. **Review.** The general Phonon teacher lane can append NeMo or Whisper
+   transcripts to the canonical dataset and rank disagreement for review, but
+   that lane has not been connected to the final reverse-graft pack builder.
+
+### Dedicated offline ASR teachers
+
+Two non-real-time ASR teachers were run over the same frozen 500-clip slice on
+B550 after the Optuna study completed. Neither was given reference text. Both
+output a pinned model/revision, per-row generation time, Aqua raw text, and the
+hypothesis used for scoring.
+
+| Teacher | Fair WER | Strict WER | Exact | Rows | Wall time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Aqua real-time raw | 0.03291183093712108 | 0.055232029117379434 | 0.674 | 500 | existing slice |
+| Qwen3-ASR 1.7B `bcd2b5b7…` | 0.07067382643339684 | 0.11847133757961784 | 0.398 | 500 | 418 s |
+| Cohere Transcribe 03-2026 `b1eacc26…` | 0.05768231422137537 | 0.09526842584167425 | 0.454 | 500 | 108 s |
+
+Cohere is the stronger independent offline teacher and is much faster, but both
+dedicated teachers remain behind Aqua raw. The agreement analysis is more
+important than either aggregate: normalized Qwen and Cohere agree on 264 rows,
+including 46 where they differ from Aqua raw, but they both beat Aqua raw on
+only four rows and at least one beats Aqua raw on only 22 of 500. A naive
+majority-or-Aqua vote scores 0.04524 mean row WER, worse than Aqua raw's 0.03513.
+The per-row oracle over Aqua raw, Qwen, and Cohere is only 0.03065. Therefore
+offline ASR is useful as selective evidence, not as a replacement ground truth
+and not as an unconditional ensemble vote.
+
+### API correction contract
+
+The approved GLM-5.3-FlashX curation request contains text only. Depending on
+the arm it may include Aqua raw, named offline ASR hypotheses, and the accepted
+historical text; the independent arm omits the accepted text. It never contains
+audio bytes, audio paths, timestamps, session IDs, machine identifiers, or
+screen content. The reply must remain a strict `keep`/`revise`/`discard` JSON
+decision with corrected text, reason code, confidence, model, and elapsed time.
+
+A targeted diagnostic input selects the 22 rows where Qwen or Cohere beat Aqua
+raw, disagreement controls where the two offline teachers agree but differ from
+Aqua, and exact controls. This selection intentionally concentrates the small
+possible gain; it is not a full-slice quality estimate. One input row has an
+empty Aqua raw field and is correctly skipped by the curator, leaving 49 calls
+in each API arm.
+
+| API arm | Decisions | Mean row WER | Exact | Versus baseline | Mean latency |
+| --- | --- | ---: | ---: | --- | ---: |
+| accepted text included | 40 keep, 9 revise | 0.01587 | 0.857 | 0 wins, 42 ties, 7 losses versus accepted | 6.65 s |
+| accepted text omitted | 20 keep, 29 revise | 0.08295 | 0.347 | 12 wins, 26 ties, 11 losses versus Aqua raw; raw mean 0.07519 and exact 0.408 | 5.35 s |
+
+The first arm cannot beat an already-accepted label by construction and mostly
+copies it; its seven revisions are losses. The independent second arm is the
+meaningful test: it occasionally recovers terminology, but net WER and exactness
+are worse than Aqua raw on this deliberately favorable selection. The full
+500-row API pass is therefore not justified. The accepted-input output SHA-256
+is `89c663938129f47b457888e9665a6c80573c8ec64952b0eade952bbf373b7a5f`; the
+independent output SHA-256 is
+`b7419a9b3ebafc43ceb70c8acf692c567d658ab4506e53933c5457b4f9263331`.
+
+### Curation gates
+
+1. A teacher transcript is evidence with model, revision, prompt/language mode,
+   and runtime metadata. It is never silently promoted to `insert_text`.
+2. API output is a candidate label. It must preserve the original ID and retain
+   all source hypotheses for audit.
+3. A replacement training target must improve fair WER and exactness on the
+   full registered slice, not only a selected pilot.
+4. A curation pass must report wins, losses, reversions, empty outputs,
+   confidence calibration, and latency. Conservative behavior that merely keeps
+   accepted text is not an improvement.
+5. The pack builder must gain an explicit versioned target-field choice before
+   curated labels can enter training. Its pack metadata must hash the curation
+   sidecar and preserve the existing prompt/context/rank contracts.
+6. A failed targeted pilot must stop scale-up. Repeating the same prompt on all
+   500 rows would consume API time without testing a new hypothesis.
 
 ## Parody architecture
 
@@ -552,6 +648,29 @@ identically.
 
 ## Work-log
 
+### 2026-10-02: offline ASR teachers and independent GLM reconciliation
+
+Added pinned, resumeable ASR teacher harnesses for Qwen3-ASR 1.7B and Cohere
+Transcribe 03-2026. Both completed all 500 rows on B550 without reference text.
+Qwen scored 0.07067382643339684 fair WER / 0.11847133757961784 strict /
+0.398 exact in 418 seconds; its hypothesis SHA-256 is
+`c916da3da92be9f2604df1bb3571b5a3de789d9888aeddc190bed9faf854d503`. Cohere
+scored 0.05768231422137537 fair WER / 0.09526842584167425 strict / 0.454 exact
+in 108 seconds; its hypothesis SHA-256 is
+`9aa6dc5ae558c2fd81669394cadc7cbf1987747444bbe99c3877d460d8ef3f52`. Aqua raw
+remains substantially better at 0.03291183093712108 fair WER and 0.674 exact.
+
+The API curator now accepts named ASR hypothesis files, XML-escapes them, and
+supports a no-accepted-final mode that sends only Aqua raw plus named offline
+hypotheses. A synthetic FlashX request verified the local route and prompt
+contract. On the targeted 49-row real-data diagnostic, including accepted text
+produced no wins, 42 ties, and seven losses. Omitting accepted text produced an
+independent candidate with 12 wins, 26 ties, and 11 losses against Aqua raw,
+but worse mean WER (0.08295 versus 0.07519) and worse exactness (0.347 versus
+0.408). This negative result stops a full 500-row API pass under the current
+prompt; offline ASR remains evidence for selective review, not a replacement
+training truth.
+
 ### 2026-10-02: runtime architecture audit
 
 Audited the shipped runtime from source rather than from the README and added a
@@ -587,7 +706,11 @@ SHA-256 is
 | 1 | complete | 0.1454183266932271 | 0.18061874431301184 | 0.274 | context 768, rank 16, LR 1.2482e-4, adapter LR 1.4816e-4, warmup 175 |
 | 2 | complete | 0.13563138749350426 | 0.17343039126478618 | 0.276 | context 512, rank 16, LR 1.4443e-4, adapter LR 6.9040e-5, warmup 50 |
 | 3 | failed evaluation | not scored by first run | not scored by first run | not scored by first run | context 512, rank 32, LR 6.5057e-5, adapter LR 4.9434e-5, warmup 50 |
-| 4 | recovered completion of trial 3 | 0.12783648016629134 | 0.16642402183803456 | 0.294 | identical to trial 3 |
+| 4 | recovered completion of trial 3; best | 0.12783648016629134 | 0.16642402183803456 | 0.294 | identical to trial 3 |
+| 5 | complete | 0.15156764247358392 | 0.18817106460418562 | 0.280 | context 1024, rank 32, LR 3.1521e-5, adapter LR 1.4771e-4, warmup 200 |
+| 6 | complete | 0.1335527455395808 | 0.17033666969972702 | 0.294 | context 512, rank 32, LR 6.5806e-5, adapter LR 4.2540e-5, warmup 200 |
+| 7 | complete | 0.19539234366880304 | 0.2310282073413285 | 0.246 | context 512, rank 8, LR 3.0438e-5, adapter LR 3.3352e-5, warmup 150 |
+| 8 | complete | 0.136497488307639 | 0.17370336689699726 | 0.282 | context 768, rank 8, LR 6.1324e-5, adapter LR 4.7486e-5, warmup 150 |
 
 Trial 3 completed both training phases, but its first evaluation reconstructed
 the model at LoRA rank 16 even though the adapter was trained at rank 32. The
@@ -611,13 +734,19 @@ to link-up during the public-data phase; current RDMA counters showed
 retries before the 10,000-row pack download recovered. These were not CUDA or
 filesystem failures.
 
-At 07:39 PDT the study was resumed for four additional trials through
-`run_final_optuna_resume.sh`, with trial 5 running on GPU 0 at 74 percent
-utilization and 6,952 MiB memory. Its receipt log is
-`/home/kearm/salm-lora/build/optuna/final-resume.log`; completion and failure
-markers are `OPTUNA-RESUME-DONE` and `OPTUNA-RESUME-FAILED`. The resumed run is
-not complete, no final hyperparameter decision has been made, and none of these
-research adapters is product-integrated.
+The study resumed four additional trials through `run_final_optuna_resume.sh`.
+Trials 5 through 8 all completed, and `OPTUNA-RESUME-DONE` appeared at 09:53
+PDT. The final database SHA-256 is
+`62f5297a0d5fda3d5bbfa028d5355f8a4edc005520f703b4da97a33e449add94`. Trial 4,
+the recovered rank-32/context-512 run, remains best at 0.12783648016629134 fair
+WER with 0.294 exact; its final adapter SHA-256 is
+`542588cf601a31b5376a4f9b13f583fab64ce646386fd6a84da465b1a1e07b59`. Mean
+generation across completed trials was 0.858-0.889 seconds. Rank 32 supplies
+the best point, but rank 16 trial 0 is close at 0.12974190 fair WER and rank
+32 trial 5 is worse at 0.15156764, so this is a promising direction rather than
+proof that rank alone caused the win. The current selected candidate for the
+next controlled training stage is trial 4's parameter family; it is not a
+product adapter.
 
 ### 2026-10-02: screen and audio architecture audit
 

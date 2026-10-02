@@ -43,10 +43,10 @@ On the first 25 rows of the frozen 500-clip Aqua slice:
 | Aqua-only graft, 2k steps | 0.1458 | 0.2029 | 0.28 |
 | YODAS-Granary 2k public steps | 0.1840 | 0.2322 | 0.28 |
 | YODAS-Granary 2k + Aqua 1k | **0.1337** | **0.1755** | 0.40 |
+| YODAS-Granary 10k + Aqua 1k | **0.0938** | **0.1335** | 0.36 |
 
 The public-only stage does not transfer directly, but public pretraining plus
-Aqua adaptation improves the reverse graft. A 10k-row/10k-step scaling run is
-the next measurement. This lane remains far behind the native Audio student on
+Aqua adaptation improves the reverse graft. A 10k-row/10k-step scaling run confirmed the direction. This lane remains far behind the native Audio student on
 this slice and is research-only.
 
 Run from the B550 research root in `~/salm-lora` using the pinned

@@ -25,11 +25,8 @@ from transformers import AutoTokenizer, Lfm2VlForConditionalGeneration
 AUDIO_PLACEHOLDER_ID = 14
 AUDIO_REPO = "LiquidAI/LFM2.5-Audio-1.5B"
 VL_REPO = "LiquidAI/LFM2.5-VL-1.6B"
-SYSTEM = (
-    "You are a personal dictation engine. Transcribe the user's audio into the "
-    "text they intended, including technical terms, identifiers and punctuation. "
-    "Text only."
-)
+SYSTEM_NAME = "prose_dictation_v1"
+
 LORA_TARGETS = (
     r"^model\.language_model\.layers\.\d+\."
     r"(self_attn\.(q_proj|k_proj|v_proj|out_proj)"
@@ -133,10 +130,15 @@ class ReverseAudioVL:
         sampling_rate: int,
         *,
         max_new_tokens: int = 96,
-        system: str = SYSTEM,
+        system: str | None = None,
+        prompt_id: str = SYSTEM_NAME,
     ) -> str:
         from liquid_audio import ChatState
 
+        if system is None:
+            from prompts import get_prompt
+
+            system = get_prompt(prompt_id)
         proc = LFM2AudioProcessor.from_pretrained(AUDIO_REPO, device=self.device).eval()
         chat = ChatState(proc)
         chat.new_turn("system")
@@ -175,6 +177,7 @@ def main() -> None:
     parser.add_argument("--audio", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--max-new-tokens", type=int, default=96)
+    parser.add_argument("--prompt-id", default=SYSTEM_NAME)
     args = parser.parse_args()
     model = ReverseAudioVL.from_pretrained(device=args.device)
     wav, sr = sf.read(args.audio, dtype="float32")
@@ -182,7 +185,7 @@ def main() -> None:
     if wave.dim() == 1:
         wave = wave[None, :]
     text = model.generate(
-        wave, int(sr), max_new_tokens=args.max_new_tokens
+        wave, int(sr), max_new_tokens=args.max_new_tokens, prompt_id=args.prompt_id
     )
     # Synthetic probes may print text; real Aqua callers must aggregate off-site.
     print(json.dumps({"chars": len(text), "text": text}, ensure_ascii=False))

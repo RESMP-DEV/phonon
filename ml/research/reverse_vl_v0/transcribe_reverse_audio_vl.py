@@ -10,6 +10,7 @@ from pathlib import Path
 import soundfile as sf
 import torch
 from peft import LoraConfig, inject_adapter_in_model
+from prompts import get_prompt, prompt_sha256
 from reverse_audio_vl import LORA_TARGETS, ReverseAudioVL
 from safetensors.torch import load_file
 
@@ -52,7 +53,9 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--audio-root", default="~/aqua-training-data")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--prompt-id", default="prose_dictation_v1")
     args = parser.parse_args()
+    get_prompt(args.prompt_id)
 
     device = torch.device(args.device)
     model = ReverseAudioVL.from_pretrained(device=device)
@@ -79,6 +82,7 @@ def main() -> None:
                 wave,
                 int(sampling_rate),
                 max_new_tokens=args.max_new_tokens,
+                prompt_id=args.prompt_id,
             )
             result = {
                 "ts": row.get("ts"),
@@ -88,6 +92,8 @@ def main() -> None:
                 "hyp": hyp,
                 "dur": row.get("dur", 0),
                 "gen_s": round(time.time() - t0, 2),
+                "prompt_id": args.prompt_id,
+                "prompt_sha256": prompt_sha256(args.prompt_id),
             }
             sink.write(json.dumps(result, ensure_ascii=False) + "\n")
             sink.flush()

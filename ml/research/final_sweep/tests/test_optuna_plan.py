@@ -62,3 +62,27 @@ def test_checkpoint_name_uses_python_five_digit_format() -> None:
 
 def test_prompt_hash_is_stable() -> None:
     assert len(module.prompt_sha256("xml_dictation_v1")) == 64
+
+
+def test_pack_cache_key_includes_context_length() -> None:
+    """Packs are context-length specific, so a shared path would silently
+    reuse a pack built for a different context window."""
+
+    short = module.build_trial_plan(0, params(), make_config())
+    longer = module.build_trial_plan(
+        0, {**params(), "context_length": 1024}, make_config()
+    )
+    assert short["public_pack"] != longer["public_pack"]
+    assert short["aqua_pack"] != longer["aqua_pack"]
+    assert "ctx768" in str(short["public_pack"])
+    assert "ctx1024" in str(longer["public_pack"])
+
+
+def test_pack_is_valid_rejects_wrong_context_length(tmp_path) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "dataset_info.json").write_text("{}")
+    (pack / "pack_meta.json").write_text(
+        '{"prompt_id": "xml_dictation_v1", "context_length": 512}'
+    )
+    assert not module.pack_is_valid(pack, "xml_dictation_v1", 1024)

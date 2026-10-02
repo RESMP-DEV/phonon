@@ -47,8 +47,10 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
     """Return a deterministic command plan for one trial."""
 
     trial_root = config.work_root / f"trial-{trial_number:04d}"
+    context_key = int(params["context_length"])
     public_pack = config.work_root / (
-        f"granary-{params['prompt_id']}-{config.public_rows}-{config.public_revision[:12]}"
+        f"granary-{params['prompt_id']}-{config.public_rows}-"
+        f"{config.public_revision[:12]}-ctx{context_key}"
     )
     manifest_material = (
         config.manifest.read_bytes()
@@ -56,7 +58,10 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
         else str(config.manifest).encode()
     )
     manifest_hash = hashlib.sha256(manifest_material).hexdigest()[:16]
-    aqua_pack = config.work_root / f"aqua-{params['prompt_id']}-{manifest_hash}"
+    aqua_pack = (
+        config.work_root
+        / f"aqua-{params['prompt_id']}-{manifest_hash}-ctx{context_key}"
+    )
     public_output = trial_root / "public"
     aqua_output = trial_root / "aqua"
     hyps = trial_root / "hyps.jsonl"
@@ -130,6 +135,7 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
     )
     return {
         "prompt_id": params["prompt_id"],
+        "context_length": params["context_length"],
         "trial_root": trial_root,
         "public_pack": public_pack,
         "aqua_pack": aqua_pack,
@@ -165,7 +171,7 @@ def run_step(name: str, argv: list[str], log_path: Path, timeout: int) -> None:
         )
 
 
-def pack_is_valid(path: Path, prompt_id: str) -> bool:
+def pack_is_valid(path: Path, prompt_id: str, context_length: int) -> bool:
     metadata_path = path / "pack_meta.json"
     if not metadata_path.is_file() or not (path / "dataset_info.json").is_file():
         return False
@@ -173,6 +179,7 @@ def pack_is_valid(path: Path, prompt_id: str) -> bool:
     return (
         metadata.get("prompt_id") == prompt_id
         and metadata.get("prompt_sha256") == prompt_sha256(prompt_id)
+        and metadata.get("context_length") == context_length
     )
 
 
@@ -189,9 +196,13 @@ def execute_plan(plan: dict[str, Any], timeout: int) -> dict[str, Any]:
         ("score", plan["commands"]["score"], logs / "score.log"),
     ]
     for name, argv, log_path in steps:
-        if name == "build_public" and pack_is_valid(plan["public_pack"], plan["prompt_id"]):
+        if name == "build_public" and pack_is_valid(
+            plan["public_pack"], plan["prompt_id"], int(plan["context_length"])
+        ):
             continue
-        if name == "build_aqua" and pack_is_valid(plan["aqua_pack"], plan["prompt_id"]):
+        if name == "build_aqua" and pack_is_valid(
+            plan["aqua_pack"], plan["prompt_id"], int(plan["context_length"])
+        ):
             continue
         run_step(name, argv, log_path, timeout)
     score_path = plan["score"]

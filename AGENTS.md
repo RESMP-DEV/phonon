@@ -60,6 +60,12 @@
 - Frozen evaluation slice: `/home/kearm/salm-lora/slice-eval-500.jsonl`
 - Offline ASR teacher roots:
   `/home/kearm/salm-lora/build/asr-teachers/{qwen3-asr-1p7b,cohere-transcribe-03-2026}`
+- Phonon-owned Voxtral teacher:
+  `ml/research/asr_teachers/quantize_voxtral_mxfp4.py`. Build only from
+  `mistralai/Voxtral-Small-24B-2507@da5b42409f279fdd92febee0511a6c32828569c1`,
+  never from the third-party C4-calibrated INT4 checkpoint. Keep B550 base,
+  calibration, output, and receipt artifacts under
+  `/home/kearm/salm-lora/build/asr-teachers/`.
 - Public dataset revision:
   `espnet/yodas-granary@969944574ea3f37890beaf67ea651e160cfaf043`
 
@@ -68,7 +74,9 @@
 Run the scope appropriate to the change, and state exactly what ran:
 
 ```bash
-uvx ruff check ml/research/final_sweep ml/research/reverse_vl_v0
+uvx ruff check ml/research/asr_teachers ml/research/final_sweep ml/research/reverse_vl_v0
+cd ml/research/asr_teachers/tests && \
+  uv run --python 3.12 --with pytest python -m pytest . -q -p no:cacheprovider --noconftest
 PYTHONPATH=ml/research/final_sweep uv run --python 3.12 --with optuna \
   pytest ml/research/final_sweep/tests/test_optuna_plan.py -q -p no:cacheprovider
 cargo fmt --all -- --check

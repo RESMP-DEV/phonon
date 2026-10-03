@@ -722,6 +722,50 @@ identically.
 
 ## Work-log
 
+### 2026-10-03: Phonon-owned Voxtral MXFP4 W4A16 harness
+
+The third-party INT4 checkpoint is closed as an input. Phonon's teacher path now
+builds from `mistralai/Voxtral-Small-24B-2507` at revision
+`da5b42409f279fdd92febee0511a6c32828569c1` and quantizes it with LLM
+Compressor GPTQ, `scheme="MXFP4A16"`, `targets="Linear"`, and compressed-tensors
+packing. `lm_head`, every `audio_tower` linear, and every
+`multi_modal_projector` linear are ignored. Calibration is selected only from
+training/public audio-text rows, de-duplicates audio IDs, excludes every ID in
+`slice-eval-500.jsonl`, hashes both audio and accepted text, and never copies
+accepted text into the calibration receipt. The first full recipe is 256 stable
+selected rows of 2-20 second clips; a two-row smoke is allowed before that.
+
+Added `ml/research/asr_teachers/quantize_voxtral_mxfp4.py`. It downloads only
+the eleven official sharded BF16 safetensors files and required config assets;
+`consolidated.safetensors` and any `original/` tree are blocked. Calibration
+uses the actual `VoxtralProcessor.apply_transcription_request(..., language="en")`
+path. Token IDs are cached in Arrow while the batch-size-one collator regenerates
+`input_features` live and checks that the token IDs did not drift. The official
+audio values (`downsample_factor: 4`, `d_model: 1280`, `sampling_rate: 16000`,
+`hop_length: 160`, `window_size: 400`) are baked into both the model and output
+config. Completion requires a receipt with base/model/runtime/calibration
+hashes, a config audit, uint8 packed/scale tensors, proof that ignored components
+remain unquantized, and SHA-256 for every output file.
+
+Local verification passed: `uvx ruff check
+ml/research/asr_teachers`; `uv run --python 3.12 python -m py_compile
+ml/research/asr_teachers/quantize_voxtral_mxfp4.py`; thirteen tests in
+`ml/research/asr_teachers/tests` under `python -m pytest . -q -p
+no:cacheprovider --noconftest`; and the CLI dry-run selected one synthetic
+training row, reported MXFP4 W4A16 and all ignored layers, and reported eleven
+expected shards with the duplicate file blocked. The official revision, eleven
+shards, duplicate single-file weight, config, and nested audio parameters were
+also verified live through the authenticated HF CLI/API. No 24B model was loaded
+and no quality is claimed.
+
+B550 was not reachable for takeover: both the configured `B550` SSH route and a
+direct `kearm@192.168.1.171` attempt timed out, and ICMP received no reply. No
+process, GPU, cache, or hardware conclusion can be drawn from that result. The
+next two-row run must use a fresh output directory and write its receipt under
+`/home/kearm/salm-lora/build/asr-teachers/`; only after serialization, vLLM
+Marlin loading, and two real training-clip transcriptions should the 256-row
+recipe run.
+
 ### 2026-10-02: offline ASR teachers and independent GLM reconciliation
 
 Added pinned, resumeable ASR teacher harnesses for Qwen3-ASR 1.7B and Cohere

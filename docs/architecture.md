@@ -133,6 +133,42 @@ run on a rented or multi-GPU host. The Alibaba Fun preview is the nominal
 accuracy leader but is not yet a practical candidate without a usable account
 endpoint and price.
 
+### Voxtral Small on the 3090 Ti pair
+
+MXFP4 makes memory sense for Voxtral Small 24B, but the 3090 Ti execution mode
+must be stated precisely. The RTX 3090 Ti is SM 8.6 and has no native FP4 tensor
+path. Current vLLM compressed-tensors MXFP4 supports Ampere as **W4A16
+weight-only through Marlin**; true W4A4 is reserved for newer hardware. That is
+still useful for a batch teacher: roughly 24 billion MXFP4 weights plus E8M0
+group scales should be around 13-15 GiB before runtime and KV cache, allowing a
+single 24 GB GPU to hold the language model while the second GPU remains free.
+
+No public Voxtral Small MXFP4 checkpoint was found in the 2026-10-03 Hub survey.
+The nearest existing compressed checkpoint is
+`ghecko78/Voxtral-Small-24B-2507-W4A16` at revision
+`8ed9721e8cae74f5ed21dfd504fb78008e0b8ce1`. It is 14.46 GiB, uses INT4
+GPTQ W4A16 rather than MXFP4, was calibrated on 256 English C4 text samples,
+and keeps the audio tower, multimodal projector, and LM head unquantized. Its
+quality is therefore not evidence for or against an audio-calibrated MXFP4
+checkpoint.
+
+A live vLLM 0.30.0 probe on B550 resolved the checkpoint to compressed-tensors
+W4A16, selected `MarlinLinearKernel`, selected FlashAttention v2, and allocated
+14,432 MiB on one RTX 3090 Ti. Two configuration defects were found before
+weights loaded: Voxtral requires `--tokenizer-mode mistral`, and the third-party
+HF config omitted audio fields that current vLLM reads directly. The pinned
+snapshot was repaired with the official Mistral values: `downsample_factor: 4`,
+`d_model: 1280`, `sampling_rate: 16000`, `hop_length: 160`, and
+`window_size: 400`. Weight download was still in progress when this receipt was
+written, so transcription quality and latency remain unmeasured.
+
+A Phonon-specific quantization must calibrate on actual audio-text pairs from
+the training/public corpus, never the frozen evaluation slice, and must keep the
+audio tower and projector unquantized. Its acceptance gate is not "it fits";
+it must remain close to the BF16 Voxtral Small reference on the frozen 500-row
+slice, preserve technical terms, and beat or supplement Aqua raw before any
+curated target is allowed into training.
+
 ### API correction contract
 
 The approved GLM-5.3-FlashX curation request contains text only. Depending on

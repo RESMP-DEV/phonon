@@ -95,6 +95,44 @@ The per-row oracle over Aqua raw, Qwen, and Cohere is only 0.03065. Therefore
 offline ASR is useful as selective evidence, not as a replacement ground truth
 and not as an unconditional ensemble vote.
 
+### Market-survey boundary
+
+The first two offline teacher runs were feasibility probes, not a claim that
+1.7–3B models represent the market ceiling. Two primary leaderboards were
+checked on 2026-10-03.
+
+Artificial Analysis AA-WER v2 non-streaming weights three real-world datasets:
+AA-AgentTalk at 50%, VoxPopuli-Cleaned-AA at 25%, and Earnings22-Cleaned-AA at
+25%. Its current accuracy leaders are:
+
+| Rank | Model | Availability | AA-WER |
+| ---: | --- | --- | ---: |
+| 1 | Alibaba Fun-Realtime-ASR-preview / Fun-ASR-Flash | Preview; no established public price or local credential in this environment | 1.7% |
+| 2 | ElevenLabs Scribe v2 | Hosted API | 2.2% |
+| 3 | Microsoft MAI-Transcribe-1.5 | Azure API | 2.4% |
+| 4 | Smallest AI Pulse Pro | Hosted API | 2.4% |
+| 5 | Google Gemini 3.5 Transcribe | Hosted API | 2.6% |
+
+AA-WER currently ranks Mistral Voxtral Small 24B as the strongest open-weights
+teacher at 2.8%, followed by Thinking Machines Inkling at 3.5% and Voxtral Mini
+Transcribe 2 at 3.6%. By contrast, the Hugging Face Open ASR Leaderboard's
+latest 02-10-2026 English short-form table uses ten public/private datasets and
+reports Zoom Scribe v2 Pro first overall at 3.5925%, Azure Speech 07-2026 second
+at 3.8112%, and ElevenLabs Scribe v2 fourth at 3.9688%. Its strongest open
+checkpoint is Qwen3-ASR-1.7B-hf at 4.3113%, with Hojo-ASR-V1 at 4.3338%,
+Higgs Audio v3 STT at 4.3925%, Canary-Qwen-2.5B at 4.4275%, and Voxtral Small
+24B farther down at 4.9938%.
+
+These rankings do not contradict one another; they answer different questions.
+AA-WER gives more weight to agent-style speech, while the HF board macro-averages
+ten English datasets. Neither replaces the frozen Phonon slice. The next teacher
+selection must therefore be gated on access and on measured Phonon-slice WER:
+first a hosted ElevenLabs Scribe v2 synthetic probe, then MAI-Transcribe-1.5 if
+Azure access is configured, and in parallel an open-weights Voxtral Small 24B
+run on a rented or multi-GPU host. The Alibaba Fun preview is the nominal
+accuracy leader but is not yet a practical candidate without a usable account
+endpoint and price.
+
 ### API correction contract
 
 The approved GLM-5.3-FlashX curation request contains text only. Depending on

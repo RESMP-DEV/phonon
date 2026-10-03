@@ -5,6 +5,7 @@ repo_root="${PHONON_REPO_ROOT:-/home/kearm/phonon}"
 research_root="${PHONON_RESEARCH_ROOT:-/home/kearm/salm-lora}"
 run_name="${PHONON_VOXTRAL_RUN_NAME:-voxtral-mxfp4-smoke3}"
 port="${PHONON_VOXTRAL_VLLM_PORT:-8301}"
+verify_rows="${PHONON_VOXTRAL_VERIFY_ROWS:-2}"
 base_dir="$research_root/build/asr-teachers"
 source_model="$base_dir/$run_name"
 vllm_model="$base_dir/$run_name-vllm"
@@ -32,7 +33,8 @@ write_receipt() {
 	local status="$1"
 	local error="${2-}"
 	STATUS="$status" ERROR_STRING="$error" VLLM_PORT="$port" RESPONSE_DIR="$response_dir" \
-		VLLM_VERSION="$vllm_version" SOURCE_RECEIPT="$source_receipt" \
+		VLLM_VERSION="$vllm_version" VERIFY_ROWS="$verify_rows" \
+		SOURCE_RECEIPT="$source_receipt" \
 		CONVERT_RECEIPT="$convert_receipt" \
 		python3 - "$receipt" "$source_model" \
 		"$vllm_model" "$server_log" "$verify_exit" <<'PY'
@@ -49,7 +51,8 @@ if server_log.exists():
 payload = {
     "schema_version": 1,
     "status": os.environ["STATUS"],
-    "vllm_version": os.environ.get("VLLM_VERSION") or None,
+		"vllm_version": os.environ.get("VLLM_VERSION") or None,
+		"verify_rows": int(os.environ["VERIFY_ROWS"]),
     "source_model": str(source),
     "source_receipt": os.environ.get("SOURCE_RECEIPT"),
     "convert_receipt": os.environ.get("CONVERT_RECEIPT"),
@@ -175,18 +178,19 @@ PY
 		exit 1
 	fi
 done < <(
-	python3 - "$base_dir/$run_name-calibration.json" <<'PY'
+	python3 - "$base_dir/$run_name-calibration.json" "$verify_rows" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-for row in json.loads(Path(sys.argv[1]).read_text())["rows"]:
+rows = json.loads(Path(sys.argv[1]).read_text())["rows"]
+for row in rows[: int(sys.argv[2])]:
     print(row["audio_path"])
 PY
 )
 
-if [ "$row_index" -ne 2 ]; then
-	write_receipt failed "expected two transcription responses, got $row_index"
+if [ "$row_index" -ne "$verify_rows" ]; then
+	write_receipt failed "expected $verify_rows transcription responses, got $row_index"
 	echo 1 >"$verify_exit"
 	exit 1
 fi

@@ -766,6 +766,19 @@ next two-row run must use a fresh output directory and write its receipt under
 Marlin loading, and two real training-clip transcriptions should the 256-row
 recipe run.
 
+The route recovered long enough to verify live B550 state and seed the run. Both
+RTX 3090 Ti GPUs were idle (1 MiB and 33 MiB used, zero percent utilization)
+with no compute processes. `/home/kearm/salm-lora/hq-train-manifest.jsonl`
+contains 12,855 training rows, the frozen slice contains 500 rows, and the first
+manifest audio resolves under `/home/kearm/aqua-training-data`. The successful
+synthetic serialization artifact is present and its config is exactly
+compressed-tensors `mxfp4-pack-quantized`, four-bit float weights, group size 32,
+and `torch.uint8` scales. A clean `/home/kearm/phonon` checkout was cloned from
+a Git bundle at pushed revision `5b0d3ccddb0c0351d6c723ea22bb7956a0f25b16`;
+no credentials or authoritative Git state was copied. The network then dropped
+again through five bounded SSH retries, so no base download or GPTQ process has
+been started and no run is live.
+
 ### 2026-10-02: offline ASR teachers and independent GLM reconciliation
 
 Added pinned, resumeable ASR teacher harnesses for Qwen3-ASR 1.7B and Cohere

@@ -28,6 +28,7 @@ IGNORED_LAYERS = (
     "re:.*audio_language_adapter.*",
 )
 AUDIO_CONFIG = {
+    "global_log_mel_max": None,
     "downsample_factor": 4,
     "d_model": 1280,
     "sampling_rate": 16000,

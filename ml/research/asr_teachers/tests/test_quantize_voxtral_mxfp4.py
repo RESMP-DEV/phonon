@@ -91,6 +91,7 @@ def test_audio_config_patch_and_validation() -> None:
     module.patch_audio_config(config)
     module.validate_audio_config(config)
     assert config["audio_config"]["hop_length"] == 160
+    assert config["audio_config"]["global_log_mel_max"] is None
 
 
 def test_download_contract_excludes_duplicate_consolidated_file() -> None:

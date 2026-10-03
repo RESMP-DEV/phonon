@@ -12,9 +12,12 @@ quant_exit="$base_dir/$run_name.exit"
 convert_exit="$base_dir/$run_name-vllm-convert.exit"
 verify_exit="$base_dir/$run_name-vllm-verify.exit"
 receipt="$base_dir/$run_name-vllm-verify-receipt.json"
+source_receipt="$base_dir/$run_name-receipt.json"
+convert_receipt="$base_dir/$run_name-vllm-convert-receipt.json"
 server_log="$base_dir/$run_name-vllm-server.log"
 response_dir="$base_dir/$run_name-vllm-responses"
 server_pid=""
+vllm_version=""
 mkdir -p "$response_dir"
 
 finish() {
@@ -29,6 +32,8 @@ write_receipt() {
 	local status="$1"
 	local error="${2-}"
 	STATUS="$status" ERROR_STRING="$error" VLLM_PORT="$port" RESPONSE_DIR="$response_dir" \
+		VLLM_VERSION="$vllm_version" SOURCE_RECEIPT="$source_receipt" \
+		CONVERT_RECEIPT="$convert_receipt" \
 		python3 - "$receipt" "$source_model" \
 		"$vllm_model" "$server_log" "$verify_exit" <<'PY'
 import hashlib
@@ -44,7 +49,10 @@ if server_log.exists():
 payload = {
     "schema_version": 1,
     "status": os.environ["STATUS"],
+    "vllm_version": os.environ.get("VLLM_VERSION") or None,
     "source_model": str(source),
+    "source_receipt": os.environ.get("SOURCE_RECEIPT"),
+    "convert_receipt": os.environ.get("CONVERT_RECEIPT"),
     "vllm_model": str(model),
     "server_log": str(server_log),
     "server_log_sha256": log_hash,
@@ -59,6 +67,10 @@ payload["response_sha256"] = {
     for path in sorted(response_root.glob("transcript-*.json"))
     if path.is_file()
 }
+for key in ("source_receipt", "convert_receipt"):
+    path = Path(os.environ[key.upper()])
+    if path.is_file():
+        payload[f"{key}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
 receipt.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n")
 if len(sys.argv) > 5:
     Path(verify_exit).write_text("0\n" if payload["status"] == "complete" else "1\n")
@@ -94,6 +106,9 @@ if [ "$convert_status" != 0 ]; then
 	write_receipt failed "Mistral-name conversion exited $convert_status"
 	exit "$convert_status"
 fi
+
+vllm_version="$("$base_dir/venvs/vllm-0p30/bin/vllm" --version)"
+echo "vLLM version=$vllm_version"
 
 : >"$server_log"
 CUDA_VISIBLE_DEVICES=0 HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}" \

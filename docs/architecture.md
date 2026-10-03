@@ -84,6 +84,7 @@ hypothesis used for scoring.
 | Aqua real-time raw | 0.03291183093712108 | 0.055232029117379434 | 0.674 | 500 | existing slice |
 | Qwen3-ASR 1.7B `bcd2b5b7…` | 0.07067382643339684 | 0.11847133757961784 | 0.398 | 500 | 418 s |
 | Cohere Transcribe 03-2026 `b1eacc26…` | 0.05768231422137537 | 0.09526842584167425 | 0.454 | 500 | 108 s |
+| Phonon Voxtral Small MXFP4 audio256 `f979da7e…` | 0.06071366707084705 | 0.09181073703366698 | 0.436 | 500 | 360.399 s |
 
 Cohere is the stronger independent offline teacher and is much faster, but both
 dedicated teachers remain behind Aqua raw. The agreement analysis is more
@@ -94,6 +95,13 @@ majority-or-Aqua vote scores 0.04524 mean row WER, worse than Aqua raw's 0.03513
 The per-row oracle over Aqua raw, Qwen, and Cohere is only 0.03065. Therefore
 offline ASR is useful as selective evidence, not as a replacement ground truth
 and not as an unconditional ensemble vote.
+The Phonon-owned Voxtral result does not change that boundary. It wins on 11
+rows, ties Aqua raw on 305, loses on 184, and has only five Voxtral-only exact
+rows versus 124 Aqua-only exact rows. Its mean row WER against accepted text is
+0.07701 versus Aqua raw's 0.03513. It is therefore weaker than Cohere in exact
+recall and cannot replace Aqua as dataset truth under the current quantization
+and prompt. A BF16 Voxtral reference remains the decisive diagnostic for
+whether this gap is model/domain mismatch or MXFP4 calibration damage.
 
 ### Market-survey boundary
 
@@ -749,7 +757,7 @@ remain unquantized, and SHA-256 for every output file.
 
 Local verification passed: `uvx ruff check
 ml/research/asr_teachers`; `uv run --python 3.12 python -m py_compile
-ml/research/asr_teachers/quantize_voxtral_mxfp4.py`; thirteen tests in
+ml/research/asr_teachers/quantize_voxtral_mxfp4.py`; nineteen tests in
 `ml/research/asr_teachers/tests` under `python -m pytest . -q -p
 no:cacheprovider --noconftest`; and the CLI dry-run selected one synthetic
 training row, reported MXFP4 W4A16 and all ignored layers, and reported eleven
@@ -778,6 +786,112 @@ a Git bundle at pushed revision `5b0d3ccddb0c0351d6c723ea22bb7956a0f25b16`;
 no credentials or authoritative Git state was copied. The network then dropped
 again through five bounded SSH retries, so no base download or GPTQ process has
 been started and no run is live.
+
+The route later stabilized enough to finish source-side setup. A dedicated
+Python 3.12 environment on B550 now contains LLM Compressor 0.14.0,
+compressed-tensors 0.19.0, Transformers 5.17.0, Torch 2.14.0 with CUDA 13.0,
+Datasets 5.0.1, Accelerate 1.15.0, Mistral Common 1.12.0, librosa 0.11.0, and
+safetensors 0.8.0; both SM 8.6 devices are visible. The real-manifest dry-run
+selected two rows from 12,855 eligible training rows. An official processor
+preflight on those two clips produced 383 input IDs and attention values per
+30-second-padded clip and a `[1, 128, 3000]` BF16 `input_features` tensor, with
+the cached and live token IDs in agreement.
+
+The first two `huggingface_hub`/Xet download attempts were preserved as failed
+receipts after stalls and low throughput. The live transfer now uses canonical
+`hfd` 0.1.1 with aria2, sixteen connections per file, four concurrent jobs, and
+full verification. Its dry-run resolved the pinned revision, selected exactly 18
+files, excluded the duplicate consolidated weight, reported 48,542,538,856 bytes,
+and recorded manifest SHA-256
+`23661eb5a89f3f6b3b42306e38e3722d12ccfae4e851fa0556f930a839bf1ebd`. At 09:04
+PDT it was transferring the first four shards at about 10 MiB/s. A tmux waiter
+will launch the two-row GPTQ runner only if `hfd` exits zero; no model weights
+have been loaded and no quantization quality is claimed yet.
+
+The deployment-path audit corrected two further traps before the 24B load. LLM
+Compressor 0.14's argument default is `independent`, so the harness now requests
+`pipeline="sequential"` explicitly, keeps BF16 weights on CPU, onloads subgraphs
+to GPU 0, and offloads intermediate activations to GPU 1. The official HF index
+uses `audio_tower` and `multi_modal_projector`, while vLLM 0.30's default loader
+expects the third-party layout's `model.layers` language names plus Mistral
+audio names. A range request read the official `consolidated.safetensors` header
+without downloading its 48.5 GB body and confirmed all 488 audio/projector
+names. `convert_voxtral_mxfp4_vllm.py` now drops the fixed HF sinusoidal
+position table, maps all 488 audio/projector tensors exactly, removes the
+`language_model.` prefix from language tensors, and adds both `lm_head` and
+`output` ignore aliases. The mapping is a separate audited variant; it does not
+rewrite the canonical HF artifact.
+
+A second B550 environment contains vLLM 0.30.0 with CUDA Torch 2.13.0 and
+Transformers 5.18.0. The verifier starts that server on one 3090 Ti with
+`--tokenizer-mode mistral`, checks health, sends exactly the two selected clips
+to `/v1/audio/transcriptions`, rejects empty JSON, stops the server by PID, and
+hashes the local response files. It never prints or uploads transcript text. At
+09:43 PDT the canonical base transfer had reached 32 GiB, shards 5-8 were
+73-78% complete, and all three tmux waiters remained healthy.
+
+The canonical `hfd` transfer completed at 10:05 PDT with all 18 selected files
+fully verified, the pinned revision, and the expected 48,542,538,856 bytes. A
+stale background fragment from the earlier malformed nested waiter launched one
+old `smoke2` command after the download; its failed receipt and markers are
+preserved. The clean durable runner then launched `voxtral-mxfp4-smoke4`.
+Sequential GPTQ used CPU-resident BF16 base weights, GPU 0 for subgraphs, and
+GPU 1 for activation offload. It completed in 376.419 seconds with two training
+clips, 280 packed uint8 tensors, 280 uint8 E8M0 scale tensors, no quantized
+ignored component, and the official audio fields. The canonical HF artifact is
+`voxtral-mxfp4-smoke4/model.safetensors` (15 GiB), SHA-256
+`17791a6adb4b341be56bf00f8fd0439e704275a8307b6d756d80de482ca684a1`; its config
+SHA-256 is `573fb8ad0e49459e47f575d579dc55f81d8906e90fd44e2cafc15a06d1f6f174`.
+
+The audited vLLM name variant is separate. It contains 1,131 tensors, maps all
+486 non-position audio/projector tensors to Mistral names, leaves zero audio
+tensors quantized, and completes conversion in 22.288 seconds. Its model and
+config SHA-256 values are
+`87f83e65d03b9c25ba5bbae3265bba5881e7fee609dcd94f7dfb7d9633533ac8` and
+`819bdaeb3f2c7d44d5263c35c51170064bbea275d1a7317cd87fa1c712ffc9ba`. Three
+startup repairs are preserved as receipts: `soundfile==0.14.0` was missing,
+the official unset `global_log_mel_max` had to be serialized as null, and
+FlashInfer sampling had to be disabled because its JIT invoked an nvcc option
+unsupported by B550. The final server run selected
+`MarlinMxFp4LinearKernel` and FlashAttention v2, loaded the model in 14.89 GiB,
+allocated 5.48 GiB KV cache (35,904 tokens), accepted both real clips, and
+stopped cleanly. Response SHA-256 values are
+`48422210e0b7e79e0810c73a6476708b9a79e74040cc1af97bd0eed79a07fb93` and
+`4940f1a6660dba2f7a06d34e1e24aef6c7061a8305d64960976c971fcdcbdd4e`; their
+local-only sizes are 215 and 178 bytes. A two-row sanity score against accepted
+text was 0.10909 fair WER / 0.21569 strict WER / 0 exact. This is explicitly
+not a full-slice quality estimate.
+
+The requested 256-row run `voxtral-mxfp4-audio256-v1` completed from the same
+fully verified base in 1,117.66 seconds. It selected 256 training rows, used
+the same sequential CPU/GPU plan, and produced the same 280 packed and 280
+scale tensor audit with no protected component quantized. Its model and config
+SHA-256 values are
+`f979da7e5d571f28317a872839f4c161b078307b3f6534573d3510c30c551fe3` and
+`e72506870b44892ea68f36decdb178c07bf0c4b1eda62bfba0436aef5c3f0ba5`. GPTQ
+Hessian inversion failed for one of 280 modules,
+`model.language_model.layers.2.mlp.down_proj`, and that module fell back to
+round-to-nearest while retaining MXFP4 packing. The chained vLLM run again
+selected `MarlinMxFp4LinearKernel` and FlashAttention v2, loaded 14.89 GiB,
+allocated 5.48 GiB KV cache, transcribed two bounded clips, and stopped
+cleanly. Its conversion receipt SHA-256 is
+`f6019950656563f8c3c9cbb8e17326f2ef643fa9ddd9cb35dda5b28ba894e86e`.
+
+The full frozen-slice evaluation then completed all 500 rows in 360.399
+seconds with mean request generation time 0.720568 seconds and maximum 2.23
+seconds. It scored 0.06071366707084705 fair WER,
+0.09181073703366698 strict WER, and 0.436 exact. The hypothesis, score, and
+server-log SHA-256 values are
+`bc999fdfb90bb2526c18ed2766f96fdf0aa0f0b7d21055e30be07f088e952b8f`,
+`0b57993a39ed629874bffa01737f5551c14ee13198095c29055b2e3da881acb2`, and
+`657b743c1daf72b8da2c940f8b97c506cc24d314647f2023cb0c51444a39ad32`. Against
+Aqua raw per-row fair WER, Voxtral wins 11 rows, ties 305, and loses 184; it
+has five Voxtral-only exact rows versus 124 Aqua-only exact rows. This is a
+complete registered quality result, not a pilot, but it does not justify
+replacing or unconditionally ensemble-voting against Aqua raw. No BF16
+Voxtral reference or technical-term damage audit has yet been run, so the
+remaining decision is whether the gap comes from model/domain mismatch or
+MXFP4/GPTQ damage.
 
 ### 2026-10-02: offline ASR teachers and independent GLM reconciliation
 

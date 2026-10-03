@@ -69,6 +69,10 @@
   The canonical verified base is
   `/home/kearm/salm-lora/build/asr-teachers/voxtral-small-24b-hfd-da5b424`;
   transfer it with pinned `hfd ... --verify full`, not the stalled Xet path.
+  The full-calibration HF artifact is
+  `voxtral-mxfp4-audio256-v1` and its vLLM Mistral-name variant is
+  `voxtral-mxfp4-audio256-v1-vllm`; preserve both receipts. The full-slice
+  result is 0.060714 fair WER and does not replace Aqua raw.
 - Public dataset revision:
   `espnet/yodas-granary@969944574ea3f37890beaf67ea651e160cfaf043`
 

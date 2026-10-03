@@ -20,6 +20,7 @@ DEFAULT_PIPELINE = "sequential"
 DEFAULT_SEQUENTIAL_OFFLOAD_DEVICE = "cuda:1"
 EXPECTED_SHARDS = 11
 IGNORED_LAYERS = (
+    "output",
     "lm_head",
     "re:.*audio_tower.*",
     "re:.*multi_modal_projector.*",

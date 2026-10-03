@@ -27,6 +27,8 @@ VLLM_IGNORE_LAYERS = (
 
 def rename_weight(name: str) -> str | None:
     """Map official HF Voxtral names to vLLM 0.30 Mistral names."""
+    if name.startswith("language_model."):
+        return name.removeprefix("language_model.")
     if name == "audio_tower.embed_positions.weight":
         return None
     if name == "audio_tower.layer_norm.weight":
@@ -77,7 +79,11 @@ def update_vllm_config(config: dict[str, Any]) -> dict[str, Any]:
     validate_output_config(config)
     patch_audio_config(config)
     quantization = config["quantization_config"]
-    ignore = list(dict.fromkeys([*quantization.get("ignore", []), *VLLM_IGNORE_LAYERS]))
+    ignore = [
+        "output" if entry == "lm_head" else entry
+        for entry in quantization.get("ignore", [])
+    ]
+    ignore = list(dict.fromkeys([*ignore, "output", *VLLM_IGNORE_LAYERS]))
     quantization["ignore"] = ignore
     return config
 

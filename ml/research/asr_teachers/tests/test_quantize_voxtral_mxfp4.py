@@ -106,6 +106,10 @@ def test_runtime_uses_sequential_two_gpu_plan() -> None:
 
 
 def test_vllm_weight_names_use_exact_mistral_layout() -> None:
+    assert (
+        converter.rename_weight("language_model.model.layers.1.mlp.up_proj.weight_packed")
+        == "model.layers.1.mlp.up_proj.weight_packed"
+    )
     assert converter.rename_weight("audio_tower.embed_positions.weight") is None
     assert (
         converter.rename_weight("audio_tower.conv1.weight")
@@ -149,6 +153,8 @@ def test_vllm_config_adds_runtime_audio_ignores() -> None:
         },
     }
     updated = converter.update_vllm_config(config)
+    assert "output" in updated["quantization_config"]["ignore"]
+    assert "lm_head" not in updated["quantization_config"]["ignore"]
     assert "re:.*whisper_encoder.*" in updated["quantization_config"]["ignore"]
     assert "re:.*audio_language_adapter.*" in updated["quantization_config"]["ignore"]
 

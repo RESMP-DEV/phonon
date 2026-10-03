@@ -90,6 +90,12 @@ def test_download_contract_excludes_duplicate_consolidated_file() -> None:
     assert module.EXPECTED_SHARDS == 11
 
 
+def test_runtime_uses_sequential_two_gpu_plan() -> None:
+    assert module.DEFAULT_DEVICE_MAP == "cpu"
+    assert module.DEFAULT_PIPELINE == "sequential"
+    assert module.DEFAULT_SEQUENTIAL_OFFLOAD_DEVICE == "cuda:1"
+
+
 def test_output_audit_rejects_quantized_audio_or_lm_head() -> None:
     packed = {
         "model.layers.0.self_attn.q_proj.weight_packed": ("uint8", [8, 16]),

@@ -15,6 +15,9 @@ from typing import Any
 
 DEFAULT_MODEL = "mistralai/Voxtral-Small-24B-2507"
 DEFAULT_REVISION = "da5b42409f279fdd92febee0511a6c32828569c1"
+DEFAULT_DEVICE_MAP = "cpu"
+DEFAULT_PIPELINE = "sequential"
+DEFAULT_SEQUENTIAL_OFFLOAD_DEVICE = "cuda:1"
 EXPECTED_SHARDS = 11
 IGNORED_LAYERS = (
     "lm_head",
@@ -539,7 +542,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-existing-output", action="store_true")
     parser.add_argument("--dampening-frac", type=float, default=0.01)
     parser.add_argument("--max-seq-length", type=int, default=8192)
-    parser.add_argument("--device-map", default="auto")
+    parser.add_argument("--device-map", default=DEFAULT_DEVICE_MAP)
+    parser.add_argument("--pipeline", default=DEFAULT_PIPELINE)
+    parser.add_argument(
+        "--sequential-offload-device",
+        default=DEFAULT_SEQUENTIAL_OFFLOAD_DEVICE,
+    )
     parser.add_argument("--require-cuda", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
@@ -566,6 +574,11 @@ def _base_receipt(args: argparse.Namespace, selection: CalibrationSelection) -> 
             "dampening_frac": args.dampening_frac,
         },
         "calibration": selection.stats,
+        "runtime": {
+            "device_map": args.device_map,
+            "pipeline": args.pipeline,
+            "sequential_offload_device": args.sequential_offload_device,
+        },
         "output": str(args.output),
         "privacy": {
             "eval_slice_excluded": True,
@@ -669,6 +682,8 @@ def run(args: argparse.Namespace) -> None:
             shuffle_calibration_samples=False,
             max_seq_length=args.max_seq_length,
             pad_to_max_length=False,
+            pipeline=args.pipeline,
+            sequential_offload_device=args.sequential_offload_device,
         )
 
         output_config_path = args.output / "config.json"

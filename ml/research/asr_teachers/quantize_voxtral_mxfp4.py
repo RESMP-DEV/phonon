@@ -23,6 +23,8 @@ IGNORED_LAYERS = (
     "lm_head",
     "re:.*audio_tower.*",
     "re:.*multi_modal_projector.*",
+    "re:.*whisper_encoder.*",
+    "re:.*audio_language_adapter.*",
 )
 AUDIO_CONFIG = {
     "downsample_factor": 4,

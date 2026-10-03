@@ -66,6 +66,9 @@
   never from the third-party C4-calibrated INT4 checkpoint. Keep B550 base,
   calibration, output, and receipt artifacts under
   `/home/kearm/salm-lora/build/asr-teachers/`.
+  The canonical verified base is
+  `/home/kearm/salm-lora/build/asr-teachers/voxtral-small-24b-hfd-da5b424`;
+  transfer it with pinned `hfd ... --verify full`, not the stalled Xet path.
 - Public dataset revision:
   `espnet/yodas-granary@969944574ea3f37890beaf67ea651e160cfaf043`
 
@@ -77,6 +80,8 @@ Run the scope appropriate to the change, and state exactly what ran:
 uvx ruff check ml/research/asr_teachers ml/research/final_sweep ml/research/reverse_vl_v0
 cd ml/research/asr_teachers/tests && \
   uv run --python 3.12 --with pytest python -m pytest . -q -p no:cacheprovider --noconftest
+shellcheck ml/research/asr_teachers/*.sh
+shfmt --diff ml/research/asr_teachers/*.sh
 PYTHONPATH=ml/research/final_sweep uv run --python 3.12 --with optuna \
   pytest ml/research/final_sweep/tests/test_optuna_plan.py -q -p no:cacheprovider
 cargo fmt --all -- --check

@@ -15,6 +15,15 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
+CONVERTER_PATH = HERE.parent / "convert_voxtral_mxfp4_vllm.py"
+converter_spec = importlib.util.spec_from_file_location(
+    "convert_voxtral_mxfp4_vllm", CONVERTER_PATH
+)
+assert converter_spec is not None
+converter = importlib.util.module_from_spec(converter_spec)
+sys.modules[converter_spec.name] = converter
+converter_spec.loader.exec_module(converter)
+
 
 def write_audio(root: Path, name: str, content: bytes) -> None:
     path = root / name
@@ -94,6 +103,54 @@ def test_runtime_uses_sequential_two_gpu_plan() -> None:
     assert module.DEFAULT_DEVICE_MAP == "cpu"
     assert module.DEFAULT_PIPELINE == "sequential"
     assert module.DEFAULT_SEQUENTIAL_OFFLOAD_DEVICE == "cuda:1"
+
+
+def test_vllm_weight_names_use_exact_mistral_layout() -> None:
+    assert converter.rename_weight("audio_tower.embed_positions.weight") is None
+    assert (
+        converter.rename_weight("audio_tower.conv1.weight")
+        == "mm_whisper_embeddings.whisper_encoder.conv_layers.0.weight"
+    )
+    assert (
+        converter.rename_weight("audio_tower.layer_norm.bias")
+        == "mm_whisper_embeddings.whisper_encoder.transformer.norm.bias"
+    )
+    assert (
+        converter.rename_weight("audio_tower.layers.7.self_attn.q_proj.weight")
+        == "mm_whisper_embeddings.whisper_encoder.transformer.layers.7.attention.wq.weight"
+    )
+    assert (
+        converter.rename_weight("audio_tower.layers.7.fc2.bias")
+        == "mm_whisper_embeddings.whisper_encoder.transformer.layers.7.feed_forward.w2.bias"
+    )
+    assert (
+        converter.rename_weight("multi_modal_projector.linear_1.weight")
+        == "mm_whisper_embeddings.audio_language_projection.0.weight"
+    )
+
+
+def test_vllm_config_adds_runtime_audio_ignores() -> None:
+    config = {
+        **module.AUDIO_CONFIG,
+        "quantization_config": {
+            "quant_method": "compressed-tensors",
+            "ignore": ["lm_head", "re:.*audio_tower.*"],
+            "config_groups": {
+                "group_0": {
+                    "format": "mxfp4-pack-quantized",
+                    "weights": {
+                        "num_bits": 4,
+                        "group_size": 32,
+                        "type": "float",
+                        "scale_dtype": "torch.uint8",
+                    },
+                }
+            },
+        },
+    }
+    updated = converter.update_vllm_config(config)
+    assert "re:.*whisper_encoder.*" in updated["quantization_config"]["ignore"]
+    assert "re:.*audio_language_adapter.*" in updated["quantization_config"]["ignore"]
 
 
 def test_output_audit_rejects_quantized_audio_or_lm_head() -> None:

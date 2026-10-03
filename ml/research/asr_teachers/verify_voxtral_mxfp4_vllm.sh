@@ -90,7 +90,8 @@ if [ "$quant_status" != 0 ]; then
 fi
 
 if [ ! -f "$convert_exit" ]; then
-	if "$repo_root/ml/research/asr_teachers/convert_voxtral_mxfp4_vllm.py" \
+	if "$base_dir/venvs/voxtral-mxfp4/bin/python" \
+		"$repo_root/ml/research/asr_teachers/convert_voxtral_mxfp4_vllm.py" \
 		--model "$source_model" \
 		--output "$vllm_model" \
 		--receipt "$base_dir/$run_name-vllm-convert-receipt.json"; then

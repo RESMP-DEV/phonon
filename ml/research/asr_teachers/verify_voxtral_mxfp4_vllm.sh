@@ -113,6 +113,7 @@ echo "vLLM version=$vllm_version"
 
 : >"$server_log"
 CUDA_VISIBLE_DEVICES=0 HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}" \
+	VLLM_USE_FLASHINFER_SAMPLER=0 \
 	"$base_dir/venvs/vllm-0p30/bin/vllm" serve "$vllm_model" \
 	--tokenizer-mode mistral \
 	--served-model-name "$run_name" \

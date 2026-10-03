@@ -79,11 +79,16 @@ def update_vllm_config(config: dict[str, Any]) -> dict[str, Any]:
     validate_output_config(config)
     patch_audio_config(config)
     quantization = config["quantization_config"]
-    ignore = [
-        "output" if entry == "lm_head" else entry
-        for entry in quantization.get("ignore", [])
-    ]
-    ignore = list(dict.fromkeys([*ignore, "output", *VLLM_IGNORE_LAYERS]))
+    ignore = list(
+        dict.fromkeys(
+            [
+                *quantization.get("ignore", []),
+                "output",
+                "language_model.lm_head",
+                *VLLM_IGNORE_LAYERS,
+            ]
+        )
+    )
     quantization["ignore"] = ignore
     return config
 

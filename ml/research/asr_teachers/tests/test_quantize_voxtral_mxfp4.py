@@ -154,7 +154,7 @@ def test_vllm_config_adds_runtime_audio_ignores() -> None:
     }
     updated = converter.update_vllm_config(config)
     assert "output" in updated["quantization_config"]["ignore"]
-    assert "lm_head" not in updated["quantization_config"]["ignore"]
+    assert "language_model.lm_head" in updated["quantization_config"]["ignore"]
     assert "re:.*whisper_encoder.*" in updated["quantization_config"]["ignore"]
     assert "re:.*audio_language_adapter.*" in updated["quantization_config"]["ignore"]
 

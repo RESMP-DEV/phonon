@@ -25,10 +25,9 @@ run_variant() {
 	CUDA_VISIBLE_DEVICES="$device" \
 		TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-8}" \
 		nsys profile \
-		--trace=cuda,nvtx,osrt \
+		--trace=cuda,nvtx \
 		--sample=none \
 		--cpuctxsw=none \
-		--cuda-memory-usage=true \
 		--force-overwrite=true \
 		--output "$output/report" \
 		"$python_bin" "$repo_root/ml/research/reverse_vl_v0/train_reverse_audio_vl.py" \
@@ -45,6 +44,11 @@ run_variant() {
 		--out "$output/train" \
 		"${extra_args[@]+"${extra_args[@]}"}" \
 		2>&1 | tee "$output/run.log"
+
+	/usr/lib/nsight-systems/host-linux-x64/QdstrmImporter \
+		-i "$output/report.qdstrm" \
+		-o "$output/report.nsys-rep" \
+		-f >"$output/import.log" 2>&1
 
 	nsys stats \
 		--report cuda_gpu_kern_sum \

@@ -59,6 +59,11 @@ def main() -> None:
     parser.add_argument("--out", default="reverse-audio-vl-v1")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="profile-only Torch Inductor/Triton compilation of the logits path",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(0)
@@ -87,6 +92,9 @@ def main() -> None:
     )
     model.vl.to(device)
     model.audio.to(device)
+    logits_function = model.logits
+    if args.torch_compile:
+        logits_function = torch.compile(model.logits, dynamic=True)
 
     lora_parameters = [p for n, p in model.vl.named_parameters() if p.requires_grad]
     adapter_parameters = list(model.audio.audio_adapter.parameters())
@@ -157,13 +165,19 @@ def main() -> None:
                 path.unlink()
 
     while step < args.steps:
+        torch.cuda.nvtx.range_push(f"step_{step:06d}")
+        torch.cuda.nvtx.range_push("load_batch")
         try:
             batch = next(iterator)
         except StopIteration:
             iterator = iter(loader)
             batch = next(iterator)
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("batch_to_device")
         batch = batch.to(device)
-        logits = model.logits(batch)
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("forward")
+        logits = logits_function(batch)
         ids = model.full_ids(batch)
         supervision = value(batch, "supervision_mask")
         labels = ids[:, 1:].clone()
@@ -171,7 +185,11 @@ def main() -> None:
         flat_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1]).float()
         flat_labels = labels.reshape(-1)
         loss = F.cross_entropy(flat_logits, flat_labels, ignore_index=-100)
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("backward")
         loss.backward()
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("optimizer")
         optimizer.param_groups[0]["lr"] = lr_at(step)
         torch.nn.utils.clip_grad_norm_(
             [p for p in model.vl.parameters() if p.requires_grad]
@@ -180,8 +198,10 @@ def main() -> None:
         )
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
+        torch.cuda.nvtx.range_pop()
         losses.append(float(loss.detach()))
         step += 1
+        torch.cuda.nvtx.range_pop()
         if step == 1 or step % 10 == 0:
             mean = sum(losses[-10:]) / min(10, len(losses))
             print(f"step {step}/{args.steps} loss {mean:.4f} ({time.time()-started:.0f}s)", flush=True)
@@ -198,6 +218,7 @@ def main() -> None:
                 "lr": args.lr,
                 "adapter_lr": args.adapter_lr,
                 "rank": args.rank,
+                "torch_compile": args.torch_compile,
                 "mean_last10": sum(losses[-10:]) / min(10, len(losses)),
                 "wall_s": round(time.time() - started, 1),
             },

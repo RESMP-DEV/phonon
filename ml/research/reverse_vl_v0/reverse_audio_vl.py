@@ -114,14 +114,19 @@ class ReverseAudioVL:
         embeds[audio_mask] = audio.to(embeds.dtype)
         return embeds
 
-    def logits(
+    def hidden_states(
         self, batch: dict[str, torch.Tensor], *, use_cache: bool = False
     ) -> torch.Tensor:
         embeds = self.inputs_embeds(batch)
         output = self.vl.model.language_model(
             inputs_embeds=embeds, use_cache=use_cache
         )
-        return self.vl.lm_head(output.last_hidden_state)
+        return output.last_hidden_state
+
+    def logits(
+        self, batch: dict[str, torch.Tensor], *, use_cache: bool = False
+    ) -> torch.Tensor:
+        return self.vl.lm_head(self.hidden_states(batch, use_cache=use_cache))
 
     @torch.no_grad()
     def generate(

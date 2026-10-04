@@ -89,6 +89,7 @@ def wandb_config(args: argparse.Namespace, contract: dict[str, Any]) -> dict[str
             "lora_dropout": args.lora_dropout,
             "warmup": args.warmup,
             "torch_compile": args.torch_compile,
+            "liger_cross_entropy": args.liger_cross_entropy,
         },
         "runtime": {
             "torch": torch.__version__,
@@ -172,7 +173,12 @@ def main() -> None:
     parser.add_argument(
         "--torch-compile",
         action="store_true",
-        help="profile-only Torch Inductor/Triton compilation of the logits path",
+        help="profile-only Torch Inductor/Triton compilation of the selected forward path",
+    )
+    parser.add_argument(
+        "--liger-cross-entropy",
+        action="store_true",
+        help="fuse lm_head and cross entropy without materializing logits",
     )
     parser.add_argument("--wandb-project", default=None)
     parser.add_argument(
@@ -216,9 +222,19 @@ def main() -> None:
     )
     model.vl.to(device)
     model.audio.to(device)
-    logits_function = model.logits
+    liger_loss = None
+    if args.liger_cross_entropy:
+        try:
+            from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
+        except ImportError as error:
+            raise RuntimeError(
+                "--liger-cross-entropy requires liger-kernel in the research environment"
+            ) from error
+        liger_loss = LigerFusedLinearCrossEntropyLoss(ignore_index=-100)
+
+    forward_function = model.hidden_states if args.liger_cross_entropy else model.logits
     if args.torch_compile:
-        logits_function = torch.compile(model.logits, dynamic=True)
+        forward_function = torch.compile(forward_function, dynamic=True)
 
     lora_parameters = [p for n, p in model.vl.named_parameters() if p.requires_grad]
     adapter_parameters = list(model.audio.audio_adapter.parameters())
@@ -305,14 +321,24 @@ def main() -> None:
         batch = batch.to(device)
         torch.cuda.nvtx.range_pop()
         torch.cuda.nvtx.range_push("forward")
-        logits = logits_function(batch)
+        hidden_or_logits = forward_function(batch)
         ids = model.full_ids(batch)
         supervision = value(batch, "supervision_mask")
         labels = ids[:, 1:].clone()
         labels[~supervision[:, 1:]] = -100
-        flat_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1]).float()
         flat_labels = labels.reshape(-1)
-        loss = F.cross_entropy(flat_logits, flat_labels, ignore_index=-100)
+        if liger_loss is None:
+            flat_logits = hidden_or_logits[:, :-1, :].reshape(
+                -1, hidden_or_logits.shape[-1]
+            ).float()
+            loss = F.cross_entropy(flat_logits, flat_labels, ignore_index=-100)
+        else:
+            flat_hidden = hidden_or_logits[:, :-1, :].reshape(
+                -1, hidden_or_logits.shape[-1]
+            )
+            loss = liger_loss(
+                model.vl.lm_head.weight, flat_hidden, flat_labels
+            )
         torch.cuda.nvtx.range_pop()
         torch.cuda.nvtx.range_push("backward")
         loss.backward()
@@ -363,6 +389,7 @@ def main() -> None:
                 "adapter_lr": args.adapter_lr,
                 "rank": args.rank,
                 "torch_compile": args.torch_compile,
+                "liger_cross_entropy": args.liger_cross_entropy,
                 "mean_last10": final_loss,
                 "wall_s": round(time.time() - started, 1),
                 "adapter_sha256": adapter_sha256,

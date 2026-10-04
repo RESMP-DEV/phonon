@@ -1,6 +1,6 @@
 use phonon_asr::{
     AsrEngineSelection, ASR_MODEL_ID, ASR_MODEL_REVISION, ASR_RUNTIME_REQUIREMENT,
-    PYTHON_REQUIREMENT,
+    PYTHON_REQUIREMENT, REVERSE_SALM_RUNTIME_REQUIREMENTS,
 };
 use std::path::Path;
 
@@ -57,6 +57,38 @@ fn custom_salm_selection_replaces_runtime_and_skips_parakeet_pins() {
             "soundfile",
             "python",
             "/repo/sidecar/salm_server.py",
+        ]
+    );
+}
+
+#[test]
+fn reverse_salm_is_an_explicit_non_default_engine() {
+    let root = Path::new("/repo");
+    let engine = AsrEngineSelection::reverse_salm();
+
+    assert!(engine.uses_custom_script());
+    assert!(engine.uses_custom_runtime());
+    let requirements: Vec<_> = REVERSE_SALM_RUNTIME_REQUIREMENTS
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
+    assert_eq!(engine.runtime_requirements(), requirements.as_slice());
+    assert_eq!(
+        engine.uv_arguments(root),
+        vec![
+            "run".to_owned(),
+            "--python".to_owned(),
+            PYTHON_REQUIREMENT.to_owned(),
+            "--with".to_owned(),
+            "liquid-audio==1.3.0".to_owned(),
+            "--with".to_owned(),
+            "peft".to_owned(),
+            "--with".to_owned(),
+            "soundfile".to_owned(),
+            "--with".to_owned(),
+            "transformers>=5.4,<6".to_owned(),
+            "python".to_owned(),
+            "/repo/sidecar/reverse_salm_server.py".to_owned(),
         ]
     );
 }

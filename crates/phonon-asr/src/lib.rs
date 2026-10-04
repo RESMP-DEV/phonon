@@ -13,6 +13,12 @@ use std::time::Instant;
 pub const ASR_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v2";
 pub const ASR_MODEL_REVISION: &str = "8ae155301e23d820d82aa60d24817c900e69e487";
 pub const ASR_RUNTIME_REQUIREMENT: &str = "parakeet-mlx==0.5.2";
+pub const REVERSE_SALM_RUNTIME_REQUIREMENTS: [&str; 4] = [
+    "liquid-audio==1.3.0",
+    "peft",
+    "soundfile",
+    "transformers>=5.4,<6",
+];
 
 /// Pinned interpreter for both sidecars. Without this, uv falls back to whatever
 /// `python3` it finds, which on a Mac with no developer tooling is the system
@@ -288,6 +294,16 @@ impl AsrEngineSelection {
         }
     }
 
+    pub fn reverse_salm() -> Self {
+        Self {
+            script: "sidecar/reverse_salm_server.py".into(),
+            runtime_requirements: REVERSE_SALM_RUNTIME_REQUIREMENTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+        }
+    }
+
     pub fn custom(script: impl Into<String>, runtime_requirements: Vec<String>) -> Self {
         Self {
             script: script.into(),
@@ -300,6 +316,12 @@ impl AsrEngineSelection {
     }
 
     pub fn from_environment() -> Self {
+        if std::env::var("PHONON_ASR_ENGINE")
+            .ok()
+            .is_some_and(|value| value == "reverse_salm")
+        {
+            return Self::reverse_salm();
+        }
         let script = std::env::var("PHONON_ASR_SCRIPT")
             .ok()
             .filter(|value| !value.trim().is_empty())

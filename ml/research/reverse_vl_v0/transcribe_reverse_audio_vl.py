@@ -35,6 +35,9 @@ def load_adapter(
         parameter.requires_grad_(False)
     for parameter in model.audio.parameters():
         parameter.requires_grad_(False)
+    state = load_file(str(path), device="cpu")
+    if rank <= 0:
+        rank = infer_lora_rank(state)
     inject_adapter_in_model(
         LoraConfig(
             r=rank,
@@ -44,9 +47,6 @@ def load_adapter(
         ),
         model.vl,
     )
-    state = load_file(str(path), device="cpu")
-    if rank <= 0:
-        rank = infer_lora_rank(state)
     vl_state = {key.removeprefix("vl."): value for key, value in state.items() if key.startswith("vl.")}
     adapter_state = {
         key.removeprefix("audio_adapter."): value

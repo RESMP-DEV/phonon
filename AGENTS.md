@@ -36,6 +36,10 @@
 - W&B telemetry may contain prompt IDs, hashes, scalar metrics, package
   versions, and adapter hashes. It must never contain Aqua audio, transcript or
   accepted text, raw ASR text, screen content, or unnecessary personal paths.
+- The packaged reverse SALM prompt is owned by `sidecar/phonon_prompts.py`.
+  Its current sole contract is `prose_dictation_v1` with SHA-256
+  `3ccd2adee6411c68fa0126b7af9cfaf838d95cf89d87643c8f00cfd87cea11a5`;
+  training, evaluation, and runtime must remain byte-identical.
 - A small pilot cannot be presented as a full-slice improvement. Record the row
   count, frozen manifest, protocol, and non-claims with every quality claim.
 
@@ -86,6 +90,13 @@
   `/home/kearm/salm-lora/build/format-bakeoff/trial-*`
 - Reverse-training NSys profile root:
   `/home/kearm/salm-lora/build/nsys/reverse-training-v1`
+- B550 reverse SALM product adapter:
+  `/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`,
+  currently prose trial 0100 SHA-256
+  `74bd889172b886b07bc658426df1de047a4185dda2f8ec593e6a60c3888e6f7e`.
+- CUDA extension packages are not active just because a wheel resolved. Record
+  the Torch/CUDA build, import result, real model load, and matched profile
+  before reporting FlashAttention, causal-convolution, or fused-loss kernels.
 
 ## Required local checks
 

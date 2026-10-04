@@ -12,7 +12,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
 | macOS app surface | `bar/Sources/*.swift` | Native app, settings, retention, backup mirror, microphone and screen capture |
 | Engine process | `crates/phonon-core`, `phonon-cli` | Warm JSONL engine, speech gate, dictionary retrieval, correction orchestration |
-| ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming |
+| ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming; reverse SALM remains explicit non-default |
 | Correction sidecar | `sidecar/polish_server.py`, `phonon-llm` | Pinned Gemma MLX process, prefix cache and MTP |
 | Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR-only today; image path and sidecar protocol still open |
 | Audio front end | `MicRecorder`, `phonon-audio` | Hardware-rate capture with independent streaming and final paths |
@@ -30,7 +30,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Topic | Current position | Decision gate |
 | --- | --- | --- |
 | Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
-| Final-training hyperparameters | `xml_dictation_v1` fixed; eight effective configurations completed; recovered rank-32/context-512 trial 4 is best | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
+| Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
 | Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
@@ -1118,6 +1118,73 @@ under the B550 user account so the extensions can be rebuilt against the live
 Torch headers for SM 8.6. FlashAttention, causal convolution, and any fused
 cross-entropy implementation require import, real model-load, and matched
 profile evidence before they can be reported as active.
+
+### 2026-10-04: prose promotion and offline-telemetry completion
+
+The separate trial-0101 repair resumed at step 10,000, completed all 1,000 Aqua
+steps, and evaluated all 500 frozen rows. `xml_transcript_v1` scored
+0.1449852762861597 fair WER, 0.1827115559599636 strict WER, and 0.294 exact.
+Its repaired hypothesis SHA-256 is
+`1316afb8844e1f8492fb9c8470e5189b19684df9537906e198efdb27743e0f58`, score
+SHA-256 is
+`3a3a0285f3875d7d9c63b8f61b27b9a75c0b4ac2c84e4e156371fbeb7d6e636f`, adapter
+SHA-256 is
+`dc2a78926431de8e7d7cd6cfe4e92651346782349cf3abe61ed4d29018771c28`, and repair
+receipt SHA-256 is
+`6966c6712f6abb3344af59e97c86c683b04ef7d2b5f05e8a3f3586050367d30f`. The
+orchestrator's failed receipt remains untouched. `prose_dictation_v1` is the
+full-slice winner at 0.1243720769097523 fair WER, 0.15959963603275706 strict
+WER, and 0.296 exact; guarded XML and verbatim XML are both worse.
+
+The product now owns that winning prompt in `sidecar/phonon_prompts.py`, with
+prompt SHA-256
+`3ccd2adee6411c68fa0126b7af9cfaf838d95cf89d87643c8f00cfd87cea11a5`. The reverse
+sidecar passes the prompt text directly instead of importing the research
+registry. The prose trial-0100 adapter was copied to B550's controlled product
+path, `/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`,
+and its SHA-256 is
+`74bd889172b886b07bc658426df1de047a4185dda2f8ec593e6a60c3888e6f7e`. The engine
+remains an explicit non-default selection.
+
+The repaired trial's three same-ID offline W&B transactions were copied back to
+the Mac and synchronized in timestamp order. The live run is
+`https://wandb.ai/retis_labs/phonon/runs/format-0101-xml_transcript_v1`; it has
+100 Aqua history points and final score, adapter-hash, loss, and wall-time
+summaries. The first transaction records the pre-training path failure, the
+second records Aqua, and the third records the score. Public-stage steps were
+not invented retroactively. No W&B credential was present on or copied to B550.
+
+The real Rust launch gate now exists and ran on B550. With the reverse engine,
+CUDA 0, the product adapter, and a local audio file, `AsrSidecar::spawn_engine`
+reached ready and returned a non-empty result; the opt-in test passed in 13.22
+seconds after the runtime cache was populated. It was rerun with `uv` absent
+from PATH to prove the Linux `$HOME/.local/bin/uv` fallback. The test does not
+print or persist transcript text. Local Python tests passed 16/16, Cargo Clippy
+passed with warnings denied, and the full Rust workspace test suite passed.
+
+Kernel work advanced from package presence to real execution evidence. A
+user-local CUDA 13.0 toolkit was installed at `/home/kearm/cuda-13.0` (nvcc
+13.0.48); the installer SHA-256 is
+`c64969f35ad99bf3f9e8acb8e3d22355150c6ca07acc16a853778600a9b65ba6`. CUDA 13.0
+has a known glibc `rsqrt`/`rsqrtf` declaration mismatch, so a two-declaration
+local `noexcept` compatibility patch was recorded with pre/post header hashes
+and `build/cuda-13.0-glibc-noexcept.patch`. `causal-conv1d==1.7.0` was then
+built from source against Torch 2.14/CUDA 13; import exposed
+`causal_conv1d_fn`, and a real `ReverseAudioVL.from_pretrained` model load
+succeeded. `liger-kernel==0.8.4` was installed, its fused linear cross entropy
+matched a reference CUDA probe within `9.54e-7`, and the trainer now has an
+explicit `--liger-cross-entropy` hidden-state path. A real one-step training
+smoke completed with that option and produced adapter SHA-256
+`992d6892701ceea72e602e4a9bb79278e6a90028686d6dab88eb7b2e9ecb34e8`; this is
+execution evidence only, not a speed or quality claim.
+
+FlashAttention is still under a source build, not claimed active. The published
+wheel is ABI-incompatible. The local source build patches the emitted
+architecture from SM 80 to SM 86 for the RTX 3090 Ti and moves host/device
+compilation from C++17 to C++20 for Torch 2.14 headers; both patches are
+recorded under `/home/kearm/salm-lora/build/flash-attn-*.patch`. Its final
+import, model-load, and matched-profile status must be recorded before it can
+affect a training claim.
 
 ## Contracts to preserve
 

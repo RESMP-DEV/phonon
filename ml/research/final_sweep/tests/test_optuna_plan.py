@@ -13,6 +13,13 @@ import sys
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
+FORMAT_PATH = HERE.parent / "format_bakeoff.py"
+format_spec = importlib.util.spec_from_file_location("format_bakeoff", FORMAT_PATH)
+format_module = importlib.util.module_from_spec(format_spec)
+assert format_spec is not None and format_spec.loader is not None
+sys.modules[format_spec.name] = format_module
+format_spec.loader.exec_module(format_module)
+
 
 def make_config() -> module.SweepConfig:
     return module.SweepConfig(
@@ -96,3 +103,11 @@ def test_pack_is_valid_rejects_wrong_context_length(tmp_path) -> None:
         '{"prompt_id": "xml_dictation_v1", "context_length": 512}'
     )
     assert not module.pack_is_valid(pack, "xml_dictation_v1", 1024)
+
+
+def test_format_bakeoff_fixes_best_hyperparameters() -> None:
+    assert format_module.BEST_TRIAL_4["rank"] == 32
+    assert format_module.BEST_TRIAL_4["context_length"] == 512
+    assert format_module.BEST_TRIAL_4["lr"] == 6.505720091093967e-05
+    assert format_module.BEST_TRIAL_4["adapter_lr"] == 4.943429131224935e-05
+    assert format_module.BEST_TRIAL_4["warmup"] == 50

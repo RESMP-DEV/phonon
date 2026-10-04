@@ -90,6 +90,8 @@
   `/home/kearm/salm-lora/build/format-bakeoff/trial-*`
 - Reverse-training NSys profile root:
   `/home/kearm/salm-lora/build/nsys/reverse-training-v1`
+- Current kernel-stack profile root:
+  `/home/kearm/salm-lora/build/nsys/reverse-training-kernels-v1`
 - B550 reverse SALM product adapter:
   `/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`,
   currently prose trial 0100 SHA-256

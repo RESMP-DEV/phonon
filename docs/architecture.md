@@ -31,6 +31,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | --- | --- | --- |
 | Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
+| Training kernel stack | FlashAttention and causal convolution are active; Liger is correct but slower and not selected | A warm-cache two-phase Inductor profile showing a wall-time win without changing training semantics |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
 | Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
@@ -1153,6 +1154,11 @@ the Mac and synchronized in timestamp order. The live run is
 summaries. The first transaction records the pre-training path failure, the
 second records Aqua, and the third records the score. Public-stage steps were
 not invented retroactively. No W&B credential was present on or copied to B550.
+The two format trials that completed before telemetry existed were then added
+as score-only transactions, without fabricated historical steps:
+`format-0100-prose_dictation_v1` and
+`format-0102-xml_dictation_guarded_v1` are now live in the same project with
+their full-slice scores and adapter hashes.
 
 The real Rust launch gate now exists and ran on B550. With the reverse engine,
 CUDA 0, the product adapter, and a local audio file, `AsrSidecar::spawn_engine`
@@ -1178,13 +1184,40 @@ smoke completed with that option and produced adapter SHA-256
 `992d6892701ceea72e602e4a9bb79278e6a90028686d6dab88eb7b2e9ecb34e8`; this is
 execution evidence only, not a speed or quality claim.
 
-FlashAttention is still under a source build, not claimed active. The published
-wheel is ABI-incompatible. The local source build patches the emitted
-architecture from SM 80 to SM 86 for the RTX 3090 Ti and moves host/device
-compilation from C++17 to C++20 for Torch 2.14 headers; both patches are
-recorded under `/home/kearm/salm-lora/build/flash-attn-*.patch`. Its final
-import, model-load, and matched-profile status must be recorded before it can
-affect a training claim.
+FlashAttention's published wheel was ABI-incompatible, so the source build
+patched the emitted architecture from SM 80 to SM 86 for the RTX 3090 Ti and
+moved host/device compilation from C++17 to C++20 for Torch 2.14 headers. Both
+patches are recorded under `/home/kearm/salm-lora/build/flash-attn-*.patch`.
+The 25m45s build succeeded. A direct `flash_attn_func` probe on CUDA returned
+the same output as scaled dot-product attention with maximum absolute difference
+0.0, and a real `ReverseAudioVL.from_pretrained` load succeeded with both
+FlashAttention and causal convolution present.
+
+The matched 300-step, 500-context, rank-32 profile at source `acb7be3` then
+ran the current baseline and Liger variants with NSys and offline W&B. Both
+launched named FlashAttention forward/backward kernels and causal-convolution
+forward/backward kernels; hierarchical NVTX recorded 300 instances of each
+load, transfer, forward, backward, and optimizer range.
+The profile metadata SHA-256 is
+`123c0effaa7965b0968268144c7261724cb32690bb0ceee5d4ee1798b2dcfba0`; baseline
+NSys report/SQLite hashes are `0fe7fbae5ad2a43264123def07dfc1cdcd8f80116b0fc8c3d9e2fbcde5236939`
+and `a52c645348f69dda66d1ef5665f1fa181c6d8eec79d0678ab17a652f1d23eb6f`; Liger
+report/SQLite hashes are `256f86ff056f5c5e3bba8d4783f7175ff1451f4a2bb4b9b4fa79fbb946845e24`
+and `08f838703c997d3e572101c68e9177b7c5818fffd34c600648fc14a6cb5e21d2`.
+
+| Variant | Wall time | Kernel instances | Total GPU kernel time | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Current baseline | 77.3354 s | 1,301,432 | 19.9120 s | FlashAttention and causal convolution active |
+| Liger fused loss | 80.7633 s | 1,348,594 | 24.5041 s | 9,600 `liger_cross_entropy_kernel` launches |
+
+Liger reduced forward NVTX time from 57.6291 to 56.4887 seconds but increased
+backward time from 16.1556 to 20.6844 seconds. It is numerically correct and
+wired as an explicit option, but it is not selected for the next full run. The
+live telemetry runs are
+`https://wandb.ai/retis_labs/phonon/runs/reverse-profile-baseline-v1` and
+`https://wandb.ai/retis_labs/phonon/runs/reverse-profile-liger-v1`. The current
+optimized stack is active, but its 300-step wall time is still effectively the
+pre-kernel baseline; GEMMs and elementwise work remain the dominant costs.
 
 ## Contracts to preserve
 

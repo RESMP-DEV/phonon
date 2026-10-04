@@ -8,10 +8,12 @@ steps="${PHONON_PROFILE_STEPS:-300}"
 pack="${PHONON_PROFILE_PACK:-$research_root/build/format-bakeoff/granary-prose_dictation_v1-10000-969944574ea3-ctx512}"
 out_root="${PHONON_PROFILE_ROOT:-$research_root/build/nsys/reverse-training-v1}"
 python_bin="${PHONON_RESEARCH_PYTHON:-/home/kearm/envs/salm-lora/bin/python}"
+nsys_root="${PHONON_NSYS_ROOT:-/usr/local/cuda-12.8/nsight-systems-2024.6.2}"
+nsys_bin="$nsys_root/bin/nsys"
 
 test -d "$pack"
 test -x "$python_bin"
-test -x /usr/bin/nsys
+test -x "$nsys_bin"
 mkdir -p "$out_root"
 
 run_variant() {
@@ -24,7 +26,7 @@ run_variant() {
 	fi
 	CUDA_VISIBLE_DEVICES="$device" \
 		TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-8}" \
-		nsys profile \
+		"$nsys_bin" profile \
 		--trace=cuda,nvtx \
 		--sample=none \
 		--cpuctxsw=none \
@@ -45,12 +47,14 @@ run_variant() {
 		"${extra_args[@]+"${extra_args[@]}"}" \
 		2>&1 | tee "$output/run.log"
 
-	/usr/lib/nsight-systems/host-linux-x64/QdstrmImporter \
-		-i "$output/report.qdstrm" \
-		-o "$output/report.nsys-rep" \
-		-f >"$output/import.log" 2>&1
+	if [[ -f "$output/report.qdstrm" ]]; then
+		"$nsys_root/host-linux-x64/QdstrmImporter" \
+			-i "$output/report.qdstrm" \
+			-o "$output/report.nsys-rep" \
+			-f >"$output/import.log" 2>&1
+	fi
 
-	nsys stats \
+	"$nsys_bin" stats \
 		--report cuda_gpu_kern_sum \
 		--report cuda_gpu_mem_time_sum \
 		--format csv \

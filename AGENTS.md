@@ -99,6 +99,19 @@
 - CUDA extension packages are not active just because a wheel resolved. Record
   the Torch/CUDA build, import result, real model load, and matched profile
   before reporting FlashAttention, causal-convolution, or fused-loss kernels.
+- Kernel mode is part of a training and inference receipt. Trial 0200 showed
+  that active FlashAttention/causal kernels can change full-slice training
+  quality, but the unchanged trial-0100 adapter subsequently matched its exact
+  full-slice inference score under the current runtime. Record kernel mode with
+  both training and runtime quality claims.
+- Trial-0200 final-repeat root:
+  `/home/kearm/salm-lora/build/format-bakeoff/trial-0200`
+- Warm-cache and 1,000-step controls:
+  `/home/kearm/salm-lora/build/nsys/reverse-triton-warm-cache-v1`,
+  `/home/kearm/salm-lora/build/nsys/reverse-triton-warm1000-v1`, and
+  `/home/kearm/salm-lora/build/nsys/reverse-baseline-1000-v1`
+- Trial-0100 current-runtime parity receipt:
+  `/home/kearm/salm-lora/build/product-runtime-eval/trial-0100-active-kernels-v1/receipt.json`
 
 ## Required local checks
 

@@ -31,7 +31,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | --- | --- | --- |
 | Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
-| Training kernel stack | FlashAttention and causal convolution are active; Liger is correct but slower and not selected | A warm-cache two-phase Inductor profile showing a wall-time win without changing training semantics |
+| Training kernel stack | Reference execution remains the training-quality winner; active FlashAttention/causal kernels degraded the full repeat, Liger and warm Triton are slower | A kernel mode must match the full-slice quality of its reference-trained adapter before product or final-training promotion |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
 | Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
@@ -1218,6 +1218,74 @@ live telemetry runs are
 `https://wandb.ai/retis_labs/phonon/runs/reverse-profile-liger-v1`. The current
 optimized stack is active, but its 300-step wall time is still effectively the
 pre-kernel baseline; GEMMs and elementwise work remain the dominant costs.
+
+### 2026-10-04: final prose repeat and Triton amortization control
+
+The controlled final prose repeat was trial 0200 at source `39ea165`, on GPU 0,
+with the exact validated public and Aqua packs, prompt SHA-256
+`3ccd2adee6411c68fa0126b7af9cfaf838d95cf89d87643c8f00cfd87cea11a5`, rank 32,
+context 512, 10,000 public steps, 1,000 Aqua steps, and all 500 evaluation
+rows. It used FlashAttention 2.8.3.post1 and causal-convolution 1.7.0, but did
+not use Liger or Torch Inductor. Public CPT took 1,193.4 seconds and Aqua took
+165.5 seconds.
+
+The parent orchestrator was mistakenly launched through its `python3` shebang
+rather than the research Python, so after public training, Aqua training,
+evaluation, and scoring had all completed, only its score-logger import failed.
+The orchestrator receipt remains in `failed` state. A separate completion
+receipt records the model result and the research-Python score transaction; no
+training or evaluation was rerun. The completion receipt SHA-256 is
+`056f9d4cd9700b240f348aeb075168d13de3cdb060cb62f944e03cf34ccd378c`.
+
+Trial 0200 scored 0.1377100294474277 fair WER, 0.17288444040036396 strict WER,
+and 0.298 exact. Its public checkpoint SHA-256 is
+`d96882817aad3c099cb10866ce2fbb2a86193b32ec4d806cdced9050d89510c5`, adapter
+SHA-256 is
+`089883eab0d4ca8953f71c304ce7668bbc1d49989f7e816495d8d89b9fa35a90`,
+hypothesis SHA-256 is
+`02cb826ca52c3236606dcbf1319fc933ae2ea8a1b3218a4263987307170f398f`, and score
+SHA-256 is
+`ff6456769707f43768a87b76f680fb3c44093af54b83f10eda6a65e4e594d9cc`. It does
+not replace trial 0100, which remains the selected 0.124372 fair-WER adapter.
+This is evidence that the optimized execution mode is not training-quality
+neutral even when hyperparameters, data, prompt, rank, and context are fixed.
+
+The unchanged trial-0100 product adapter was then evaluated under the same
+active FlashAttention/causal runtime on all 500 rows. It scored exactly
+0.1243720769097523 fair WER, 0.15959963603275706 strict WER, and 0.296 exact,
+matching its reference-runtime result. Its active-runtime hypothesis SHA-256 is
+`0ae5b6ae5c510eb77af900f1eaa57ca5448fb14cb59c26cc2d9a6c211a27bfb5`, score
+SHA-256 is
+`00e5c5f4e4990db13f9aa441a404fd91eaeeac4424b8259f45d2ffba8fdf94bb`, and receipt
+SHA-256 is `d0c8e9c162f205cd030188a71ac5d254f77d4441339801557af71d58b34bdbe3`.
+Therefore the installed trial-0100 adapter remains valid for current inference,
+while future training must record kernel mode and cannot assume quality
+equivalence. The W&B receipt is
+`https://wandb.ai/retis_labs/phonon/runs/trial-0100-active-runtime-v1`.
+
+W&B run `format-0200-prose_dictation_v1` contains 1,101 history points across
+public and Aqua plus the repaired score summary:
+`https://wandb.ai/retis_labs/phonon/runs/format-0200-prose_dictation_v1`.
+
+GPU 1 ran an isolated warm-cache experiment while trial 0200 trained. Cold
+Triton took 268.767 seconds for 300 steps; the warm cache reduced that to
+136.293 seconds. A 1,000-step warm control then took 224.703 seconds with
+2,174,022 kernel instances, 57.238491 seconds of GPU kernel time, and 581,000
+Triton launches. The like-for-like baseline took 208.547 seconds with
+4,266,544 kernels and 65.691366 GPU seconds. Triton reduced kernel count by
+about 49 percent and GPU time by about 13 percent, but increased forward
+range time from 142.262 to 180.726 seconds and lost by 7.8 percent in wall
+time. Baseline execution therefore remains the production choice; Inductor is
+useful for kernel analysis but not this trainer's dispatch path.
+
+The baseline 1,000-step NSys report SHA-256 is
+`d56b25cdd0ab4c1e620de0e642eb8b7f3313768aef315f3915ef932a08e9983a`; the
+1,000-step Triton report SHA-256 is
+`0c24d30a0f31a2f3ae0f09f8c1fbb2a42d17893c58350111e930356df40067c4`. Live
+telemetry is recorded under `reverse-profile-baseline-1000-v1`,
+`reverse-profile-triton-warm1000-v1`, and `reverse-profile-triton-cache-v1`.
+The profile runner now refuses to overwrite an existing variant directory and
+force-refreshes a stale SQLite export at `7336865`.
 
 ## Contracts to preserve
 

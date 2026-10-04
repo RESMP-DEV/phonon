@@ -190,7 +190,7 @@ def main() -> None:
     parser.add_argument("--wandb-name", default=None)
     parser.add_argument(
         "--wandb-stage",
-        choices=("public", "aqua"),
+        choices=("public", "aqua", "profile"),
     )
     args = parser.parse_args()
     if args.wandb_project and args.wandb_mode != "disabled" and not args.wandb_stage:

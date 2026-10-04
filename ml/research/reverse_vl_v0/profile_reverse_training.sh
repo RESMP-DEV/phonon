@@ -7,9 +7,12 @@ device="${PHONON_PROFILE_DEVICE:-0}"
 steps="${PHONON_PROFILE_STEPS:-300}"
 pack="${PHONON_PROFILE_PACK:-$research_root/build/format-bakeoff/granary-prose_dictation_v1-10000-969944574ea3-ctx512}"
 out_root="${PHONON_PROFILE_ROOT:-$research_root/build/nsys/reverse-training-v1}"
+variants="${PHONON_PROFILE_VARIANTS:-baseline,triton}"
 python_bin="${PHONON_RESEARCH_PYTHON:-/home/kearm/envs/salm-lora/bin/python}"
 nsys_root="${PHONON_NSYS_ROOT:-/usr/local/cuda-12.8/nsight-systems-2024.6.2}"
 nsys_bin="$nsys_root/bin/nsys"
+wandb_project="${PHONON_PROFILE_WANDB_PROJECT:-phonon}"
+wandb_mode="${PHONON_PROFILE_WANDB_MODE:-offline}"
 
 test -d "$pack"
 test -x "$python_bin"
@@ -20,14 +23,37 @@ run_variant() {
 	local variant="$1"
 	local output="$out_root/$variant"
 	local extra_args=()
+	case "$variant" in
+	baseline | triton | liger | triton-liger) ;;
+	*)
+		printf 'unknown profile variant: %s\n' "$variant" >&2
+		return 2
+		;;
+	esac
 	mkdir -p "$output"
 	if [[ "$variant" == triton ]]; then
 		extra_args+=("--torch-compile")
+	fi
+	if [[ "$variant" == liger ]]; then
+		extra_args+=("--liger-cross-entropy")
+	fi
+	if [[ "$variant" == triton-liger ]]; then
+		extra_args+=("--torch-compile" "--liger-cross-entropy")
+	fi
+	if [[ -n "$wandb_project" && "$wandb_mode" != disabled ]]; then
+		extra_args+=(
+			"--wandb-project" "$wandb_project"
+			"--wandb-mode" "$wandb_mode"
+			"--wandb-run-id" "reverse-profile-${variant}-v1"
+			"--wandb-name" "reverse-profile-${variant}-v1"
+			"--wandb-stage" "profile"
+		)
 	fi
 	CUDA_VISIBLE_DEVICES="$device" \
 		TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-8}" \
 		"$nsys_bin" profile \
 		--trace=cuda,nvtx \
+		--nvtx-capture=hierarchical \
 		--sample=none \
 		--cpuctxsw=none \
 		--force-overwrite=true \
@@ -62,7 +88,10 @@ run_variant() {
 		"$output/report.nsys-rep" >"$output/stats-stdout.txt"
 }
 
-printf '%s\n' "pack=$pack" "device=$device" "steps=$steps" >"$out_root/profile-meta.txt"
-run_variant baseline "$steps"
-run_variant triton "$steps"
+IFS=, read -r -a requested_variants <<<"$variants"
+printf '%s\n' "pack=$pack" "device=$device" "steps=$steps" \
+	"variants=$variants" >"$out_root/profile-meta.txt"
+for variant in "${requested_variants[@]}"; do
+	run_variant "$variant" "$steps"
+done
 printf 'DONE %s\n' "$out_root"

@@ -156,6 +156,7 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
     )
     return {
         "prompt_id": params["prompt_id"],
+        "research_python": config.research_python,
         "context_length": params["context_length"],
         "trial_root": trial_root,
         "public_pack": public_pack,

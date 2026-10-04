@@ -158,3 +158,29 @@ def test_wandb_offline_sync_orders_transactions(tmp_path) -> None:
     assert ignored not in directories
     assert command[command.index("--id") + 1] == "format-0100-prose"
     assert command[-1].endswith("offline-run-20260101_000002-format-0100-prose")
+
+
+def test_wandb_score_logging_uses_research_python(tmp_path, monkeypatch) -> None:
+    score_path = tmp_path / "score.json"
+    score_path.write_text('{"fair_wer": 0.1, "n": 5}\n')
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], *, check: bool) -> None:
+        assert check is True
+        calls.append(argv)
+
+    monkeypatch.setattr(format_module.subprocess, "run", fake_run)
+    args = type("Args", (), {"wandb_project": "phonon", "wandb_mode": "offline"})()
+    plan = {
+        "research_python": Path("/research/python"),
+        "trial_root": tmp_path,
+        "score": score_path,
+        "wandb_run_id": "format-0100-prose",
+    }
+    format_module.record_score_wandb(
+        args, plan, {"fair_wer": 0.1, "n": 5}
+    )
+    assert len(calls) == 1
+    assert calls[0][0] == "/research/python"
+    assert calls[0][1].endswith("log_wandb_score.py")
+    assert calls[0][calls[0].index("--run-id") + 1] == "format-0100-prose"

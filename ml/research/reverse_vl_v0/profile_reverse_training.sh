@@ -13,10 +13,15 @@ nsys_root="${PHONON_NSYS_ROOT:-/usr/local/cuda-12.8/nsight-systems-2024.6.2}"
 nsys_bin="$nsys_root/bin/nsys"
 wandb_project="${PHONON_PROFILE_WANDB_PROJECT:-phonon}"
 wandb_mode="${PHONON_PROFILE_WANDB_MODE:-offline}"
+wandb_suffix="${PHONON_PROFILE_WANDB_SUFFIX:-}"
 
 test -d "$pack"
 test -x "$python_bin"
 test -x "$nsys_bin"
+if [[ -n "$wandb_suffix" && ! "$wandb_suffix" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+	printf 'invalid PHONON_PROFILE_WANDB_SUFFIX: %s\n' "$wandb_suffix" >&2
+	exit 2
+fi
 mkdir -p "$out_root"
 
 run_variant() {
@@ -48,8 +53,8 @@ run_variant() {
 		extra_args+=(
 			"--wandb-project" "$wandb_project"
 			"--wandb-mode" "$wandb_mode"
-			"--wandb-run-id" "reverse-profile-${variant}-v1"
-			"--wandb-name" "reverse-profile-${variant}-v1"
+			"--wandb-run-id" "reverse-profile-${variant}${wandb_suffix:+-${wandb_suffix}}"
+			"--wandb-name" "reverse-profile-${variant}${wandb_suffix:+-${wandb_suffix}}"
 			"--wandb-stage" "profile"
 		)
 	fi

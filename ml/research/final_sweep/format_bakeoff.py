@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +12,8 @@ from typing import Any
 
 from optuna_sweep import SweepConfig, build_trial_plan, execute_plan
 from prompts import PROMPTS, prompt_sha256
+
+HERE = Path(__file__).resolve().parent
 
 BEST_TRIAL_4 = {
     "lr": 6.505720091093967e-05,
@@ -52,50 +52,28 @@ def record_score_wandb(
 
     if not args.wandb_project or args.wandb_mode == "disabled":
         return
-    try:
-        import wandb
-    except ImportError as error:
-        raise RuntimeError(
-            "--wandb-project requires the wandb package in the research environment"
-        ) from error
-
-    trial_root = Path(plan["trial_root"])
-    wandb_dir = trial_root / "wandb"
-    wandb_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["WANDB_DIR"] = str(wandb_dir)
-    adapter_path = Path(plan["aqua_adapter"])
-    adapter_sha256 = (
-        hashlib.sha256(adapter_path.read_bytes()).hexdigest()
-        if adapter_path.is_file()
-        else None
+    score_path = Path(plan["score"])
+    if not score_path.is_file():
+        raise RuntimeError(f"missing score file for W&B score transaction: {score_path}")
+    if score != json.loads(score_path.read_text(encoding="utf-8")):
+        raise RuntimeError("in-memory score does not match the durable score receipt")
+    subprocess.run(
+        [
+            str(plan["research_python"]),
+            str(HERE / "log_wandb_score.py"),
+            "--root",
+            str(plan["trial_root"]),
+            "--project",
+            args.wandb_project,
+            "--mode",
+            args.wandb_mode,
+            "--run-id",
+            str(plan["wandb_run_id"]),
+            "--name",
+            str(plan["wandb_run_id"]),
+        ],
+        check=True,
     )
-    run = wandb.init(
-        project=args.wandb_project,
-        mode=args.wandb_mode,
-        id=str(plan["wandb_run_id"]),
-        name=str(plan["wandb_run_id"]),
-        resume="must",
-        job_type="format_score",
-        config={
-            "prompt_id": plan["prompt_id"],
-            "prompt_sha256": prompt_sha256(plan["prompt_id"]),
-            "fixed_params": BEST_TRIAL_4,
-            "eval_rows": score.get("n"),
-            "adapter_sha256": adapter_sha256,
-        },
-        tags=["phonon", "format-bakeoff", "final-score"],
-        allow_val_change=True,
-    )
-    run.summary.update(
-        {
-            "eval/fair_wer": score.get("fair_wer"),
-            "eval/strict_wer": score.get("strict_lc_wer"),
-            "eval/exact": score.get("fair_exact"),
-            "eval/rows": score.get("n"),
-            "artifact/adapter_sha256": adapter_sha256,
-        }
-    )
-    run.finish()
 
 
 def write_receipt(

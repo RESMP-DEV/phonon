@@ -30,6 +30,10 @@ run_variant() {
 		return 2
 		;;
 	esac
+	if [[ -e "$output/report.nsys-rep" || -e "$output/run.log" ]]; then
+		printf 'refusing to overwrite existing profile: %s\n' "$output" >&2
+		return 3
+	fi
 	mkdir -p "$output"
 	if [[ "$variant" == triton ]]; then
 		extra_args+=("--torch-compile")
@@ -78,6 +82,15 @@ run_variant() {
 			-i "$output/report.qdstrm" \
 			-o "$output/report.nsys-rep" \
 			-f >"$output/import.log" 2>&1
+	fi
+
+	if [[ ! -f "$output/report.sqlite" ||
+		"$output/report.nsys-rep" -nt "$output/report.sqlite" ]]; then
+		"$nsys_bin" export \
+			--type sqlite \
+			--force-overwrite=true \
+			--output "$output/report.sqlite" \
+			"$output/report.nsys-rep" >"$output/export.log" 2>&1
 	fi
 
 	"$nsys_bin" stats \

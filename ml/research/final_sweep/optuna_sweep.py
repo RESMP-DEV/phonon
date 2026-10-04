@@ -37,6 +37,8 @@ class SweepConfig:
     eval_limit: int
     prompt_ids: tuple[str, ...]
     timeout: int
+    wandb_project: str | None = None
+    wandb_mode: str = "offline"
 
 
 def command(python: Path, script: Path, *arguments: str) -> list[str]:
@@ -67,6 +69,18 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
     hyps = trial_root / "hyps.jsonl"
     score = trial_root / "score.json"
     public_checkpoint = public_output / f"ckpt_step{config.public_steps:05d}.pt"
+    wandb_run_id = f"format-{trial_number:04d}-{params['prompt_id']}"
+    wandb_name = wandb_run_id
+    wandb_arguments = (
+        []
+        if not config.wandb_project or config.wandb_mode == "disabled"
+        else [
+            "--wandb-project", config.wandb_project,
+            "--wandb-mode", config.wandb_mode,
+            "--wandb-run-id", wandb_run_id,
+            "--wandb-name", wandb_name,
+        ]
+    )
 
     build_public = command(
         config.research_python,
@@ -101,7 +115,10 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
         "--ckpt-every", max(100, config.public_steps // 10),
         "--keep-ckpts", 3,
         "--out", public_output,
+        *wandb_arguments,
     )
+    if config.wandb_project and config.wandb_mode != "disabled":
+        train_public += ["--wandb-stage", "public"]
     train_aqua = command(
         config.research_python,
         REVERSE_DIR / "train_reverse_audio_vl.py",
@@ -117,7 +134,10 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
         "--ckpt-every", max(100, config.aqua_steps // 2),
         "--keep-ckpts", 3,
         "--out", aqua_output,
+        *wandb_arguments,
     )
+    if config.wandb_project and config.wandb_mode != "disabled":
+        train_aqua += ["--wandb-stage", "aqua"]
     evaluate = command(
         config.research_python,
         REVERSE_DIR / "transcribe_reverse_audio_vl.py",
@@ -141,6 +161,8 @@ def build_trial_plan(trial_number: int, params: dict[str, Any], config: SweepCon
         "public_pack": public_pack,
         "aqua_pack": aqua_pack,
         "public_checkpoint": public_checkpoint,
+        "aqua_adapter": aqua_output / "reverse_audio_vl_adapter.safetensors",
+        "wandb_run_id": wandb_run_id,
         "hyps": hyps,
         "score": score,
         "commands": {
@@ -232,6 +254,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-limit", type=int, default=500)
     parser.add_argument("--prompt-ids", default=",".join(PROMPTS))
     parser.add_argument("--timeout", type=int, default=86_400)
+    parser.add_argument("--wandb-project", default=None)
+    parser.add_argument(
+        "--wandb-mode", choices=("online", "offline", "disabled"), default="offline"
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -256,6 +282,8 @@ def make_config(args: argparse.Namespace) -> SweepConfig:
         eval_limit=args.eval_limit,
         prompt_ids=prompt_ids,
         timeout=args.timeout,
+        wandb_project=args.wandb_project,
+        wandb_mode=args.wandb_mode,
     )
 
 

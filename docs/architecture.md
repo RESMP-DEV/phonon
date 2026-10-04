@@ -1037,6 +1037,88 @@ Implemented the first takeover slices. Added `AsrEngineSelection` as one tested 
 
 Added the canonical architecture after auditing the repository. Encoded the parody plane as a deterministic-first, consent-gated, meaning-locked transform architecture with registered semantic, style, rights, and product gates. Classified the SALM transplant as implementation-first and measurement-gated, and defined preservation, protocol, stock-load, adapter, benchmark, product, and distribution gates. No application code or model behavior was changed in this edit.
 
+### 2026-10-04: matched prompt bake-off, telemetry, kernel boundary, and repair receipt
+
+Live host selection was measured rather than inferred. Tetra was running an
+external `train_puffer.py --envs 1024` workload with load average above 320,
+three heavily resident GPUs, and GPU 3 management-dead, so it was not used for
+Phonon. B550 remained the research boundary.
+
+The matched Liquid format bake-off fixed the recovered Optuna trial-4 recipe
+(LoRA rank 32, context 512, LR `6.505720091093967e-5`, adapter LR
+`4.943429131224935e-5`, dropout `0.033694424584220395`, warmup 50), 10,000
+public rows/steps, 1,000 Aqua steps, and all 500 frozen evaluation rows. The
+results at this receipt were:
+
+| Trial | Prompt | Status | Fair WER | Strict WER | Exact |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 0100 | `prose_dictation_v1` | complete | 0.1243720769097523 | 0.15959963603275706 | 0.296 |
+| Optuna 4 | `xml_dictation_v1` | complete baseline | 0.12783648016629134 | 0.16642402183803456 | 0.294 |
+| 0102 | `xml_dictation_guarded_v1` | complete | 0.14368612506495756 | 0.18089171974522292 | 0.296 |
+| 0101 | `xml_transcript_v1` | public complete; Aqua repaired below | pending | pending | pending |
+
+Trial 0101 completed its public phase at step 10,000, but the first Aqua
+process failed during model import after an investigation installed published
+FlashAttention and causal-convolution wheels built against a different Torch
+C++ ABI. Transformers selected FlashAttention merely because the package was
+present and failed on `c10_cuda_check_implementation`. The incompatible wheels
+were removed, a real `ReverseAudioVL.from_pretrained` load succeeded, and Aqua
+was resumed from the intact public checkpoint in a separate tmux lane. The
+failed `format-receipt.json`, logs, and public checkpoint remain unchanged; the
+completion uses `hyps-repair.jsonl`, `score-repair.json`, and
+`resume-aqua-repair.log`. This incident is the reason kernel packages must be
+installed only when import and a real model load pass against the exact Torch
+and CUDA build.
+
+The reverse SALM application seam was exercised on B550 with the existing rank-32
+XML adapter SHA-256
+`542588cf601a31b5376a4f9b13f583fab64ce646386fd6a84da465b1a1e07b59` and prompt
+SHA-256
+`a805969f94dd4075a6f8abfae95ba0117a824a5ac8f9321a74f6d59ac514bf88`.
+One warmup request took 1.9759 seconds; two warm product-protocol requests took
+0.7869 and 0.7750 seconds (0.7810 seconds mean). This is a resident sidecar
+protocol measurement, not an end-to-end macOS application or UI latency claim.
+The packaged product still needs a product-owned prompt asset and an actual Rust
+`AsrSidecar::spawn_engine` exercise.
+
+NSys profiling also established a tooling boundary. System `/usr/bin/nsys`
+2023.4 recorded no CUDA kernels with Torch 2.14/CUDA 13; the CUDA-13-capable
+NSys 2024.6.2 install did. Over 300 training steps, the baseline took 77
+seconds wall time, 1,307,347 kernel instances, and 20.1011 seconds of total GPU
+kernel time. Torch Inductor/Triton took 370 seconds compile-inclusive, but
+reduced kernels to 670,943, total GPU kernel time to 17.8731 seconds, and showed
+163,820 Triton launches. The first-step compile delay was about 315 seconds.
+This proves kernel-count and GPU-time reduction, not yet a warm-cache wall-time
+win; the decisive next profile must warm compilation and then time a separate
+300-1,000-step phase in one process.
+
+Optional W&B telemetry is now part of the training contract. B550 writes
+offline transactions only; it receives no W&B credential. The trainer records
+scalar loss, both learning rates, gradient norm, step rate, wall time, prompt
+and pack identity hashes, runtime versions, and adapter SHA-256. It never logs
+audio bytes, transcript text, accepted text, raw ASR text, or screen content.
+The format orchestrator uses one run ID per full format trial across public,
+Aqua, and final-score transactions. W&B 0.30 warns that offline resume is
+ignored and creates separate same-ID local transaction files; this is expected.
+`ml/research/final_sweep/sync_wandb_offline.py` runs only on the main machine,
+orders those transactions by timestamp, and passes their common ID to
+`wandb sync --id`. A three-transaction public/Aqua/score smoke test merged into
+one cloud run with two history rows and a final score summary at
+`https://wandb.ai/retis_labs/phonon-smoke/runs/offline-two-stage-smoke-v2`.
+Local checks passed with `ruff check ml/research/final_sweep
+ml/research/reverse_vl_v0` and nine passing tests in
+`ml/research/final_sweep/tests/test_optuna_plan.py`. These checks prove the
+telemetry and command contract, not model quality.
+
+The CUDA kernel work is deliberately left unclaimed. `wandb==0.30.0` is
+installed on B550. The published `flash-attn==2.8.3.post1` and
+`causal-conv1d==1.7.0` wheels are not usable with Torch `2.14.0+cu130`; both
+were removed after the failed import. A CUDA 13.0 toolkit is being provisioned
+under the B550 user account so the extensions can be rebuilt against the live
+Torch headers for SM 8.6. FlashAttention, causal convolution, and any fused
+cross-entropy implementation require import, real model-load, and matched
+profile evidence before they can be reported as active.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

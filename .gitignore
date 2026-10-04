@@ -1,4 +1,6 @@
 /target/
+/build/
+/wandb/
 /bar/.build/
 /bar/dist/
 /ref/

@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -38,7 +40,62 @@ def make_config(args: argparse.Namespace) -> SweepConfig:
         eval_limit=args.eval_limit,
         prompt_ids=tuple(PROMPTS),
         timeout=args.timeout,
+        wandb_project=args.wandb_project,
+        wandb_mode=args.wandb_mode,
     )
+
+
+def record_score_wandb(
+    args: argparse.Namespace, plan: dict[str, Any], score: dict[str, Any]
+) -> None:
+    """Append an aggregate-score transaction for later same-ID W&B sync."""
+
+    if not args.wandb_project or args.wandb_mode == "disabled":
+        return
+    try:
+        import wandb
+    except ImportError as error:
+        raise RuntimeError(
+            "--wandb-project requires the wandb package in the research environment"
+        ) from error
+
+    trial_root = Path(plan["trial_root"])
+    wandb_dir = trial_root / "wandb"
+    wandb_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["WANDB_DIR"] = str(wandb_dir)
+    adapter_path = Path(plan["aqua_adapter"])
+    adapter_sha256 = (
+        hashlib.sha256(adapter_path.read_bytes()).hexdigest()
+        if adapter_path.is_file()
+        else None
+    )
+    run = wandb.init(
+        project=args.wandb_project,
+        mode=args.wandb_mode,
+        id=str(plan["wandb_run_id"]),
+        name=str(plan["wandb_run_id"]),
+        resume="must",
+        job_type="format_score",
+        config={
+            "prompt_id": plan["prompt_id"],
+            "prompt_sha256": prompt_sha256(plan["prompt_id"]),
+            "fixed_params": BEST_TRIAL_4,
+            "eval_rows": score.get("n"),
+            "adapter_sha256": adapter_sha256,
+        },
+        tags=["phonon", "format-bakeoff", "final-score"],
+        allow_val_change=True,
+    )
+    run.summary.update(
+        {
+            "eval/fair_wer": score.get("fair_wer"),
+            "eval/strict_wer": score.get("strict_lc_wer"),
+            "eval/exact": score.get("fair_exact"),
+            "eval/rows": score.get("n"),
+            "artifact/adapter_sha256": adapter_sha256,
+        }
+    )
+    run.finish()
 
 
 def write_receipt(
@@ -50,6 +107,7 @@ def write_receipt(
     started: float,
     score: dict[str, Any] | None = None,
     error: str | None = None,
+    wandb: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -62,6 +120,7 @@ def write_receipt(
         "updated_at_unix": time.time(),
         "score": score,
         "error": error,
+        "wandb": wandb,
         "non_claims": [
             "does not vary hyperparameters",
             "does not prove product latency on macOS",
@@ -69,6 +128,17 @@ def write_receipt(
         ],
     }
     path.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def wandb_receipt(args: argparse.Namespace, plan: dict[str, Any]) -> dict[str, Any]:
+    enabled = bool(args.wandb_project) and args.wandb_mode != "disabled"
+    return {
+        "enabled": enabled,
+        "project": args.wandb_project if enabled else None,
+        "mode": args.wandb_mode if enabled else "disabled",
+        "run_id": str(plan["wandb_run_id"]) if enabled else None,
+        "credential_boundary": "offline capture on B550; sync only from the Mac",
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,6 +189,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--aqua-steps", type=int, default=1_000)
     parser.add_argument("--eval-limit", type=int, default=500)
     parser.add_argument("--timeout", type=int, default=86_400)
+    parser.add_argument("--wandb-project", default=None)
+    parser.add_argument(
+        "--wandb-mode",
+        choices=("online", "offline", "disabled"),
+        default="offline",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     unknown = sorted(set(args.prompt_id) - set(PROMPTS))
@@ -149,15 +225,18 @@ def main() -> None:
             json.dumps({**BEST_TRIAL_4, "prompt_id": prompt_id}, indent=1) + "\n",
             encoding="utf-8",
         )
+        telemetry = wandb_receipt(args, plan)
         write_receipt(
             receipt,
             status="running",
             prompt_id=prompt_id,
             trial_root=trial_root,
             started=started,
+            wandb=telemetry,
         )
         try:
             score = execute_plan(plan, config.timeout)
+            record_score_wandb(args, plan, score)
             write_receipt(
                 receipt,
                 status="complete",
@@ -165,6 +244,7 @@ def main() -> None:
                 trial_root=trial_root,
                 started=started,
                 score=score,
+                wandb=telemetry,
             )
             print("FORMAT_DONE", prompt_id, json.dumps(score, sort_keys=True), flush=True)
         except (RuntimeError, subprocess.TimeoutExpired) as error:
@@ -175,6 +255,7 @@ def main() -> None:
                 trial_root=trial_root,
                 started=started,
                 error=f"{type(error).__name__}: {error}",
+                wandb=telemetry,
             )
             raise
 

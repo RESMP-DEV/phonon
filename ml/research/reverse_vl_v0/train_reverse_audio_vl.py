@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -25,6 +28,113 @@ def trainable_state(model: ReverseAudioVL) -> dict[str, torch.Tensor]:
     for name, parameter in model.audio.audio_adapter.named_parameters():
         payload["audio_adapter." + name] = parameter.detach().cpu().contiguous()
     return payload
+
+
+def pack_contract(dataset: Path) -> dict[str, Any]:
+    """Read only non-textual pack identity fields for telemetry."""
+
+    metadata_path = dataset / "pack_meta.json"
+    metadata: dict[str, Any] = (
+        json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata_path.is_file()
+        else {}
+    )
+    safe_keys = {
+        "source",
+        "revision",
+        "manifest_sha256",
+        "prompt_id",
+        "prompt_sha256",
+        "rows",
+        "scanned",
+        "skipped",
+        "duration_range",
+        "context_length",
+    }
+    safe_metadata = {key: metadata[key] for key in safe_keys if key in metadata}
+    encoded = json.dumps(safe_metadata, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "metadata": safe_metadata,
+        "metadata_sha256": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
+def optional_module_version(name: str) -> str | None:
+    try:
+        module = __import__(name)
+    except (ImportError, AttributeError, RuntimeError):
+        return None
+    return str(getattr(module, "__version__", "present"))
+
+
+def wandb_config(args: argparse.Namespace, contract: dict[str, Any]) -> dict[str, Any]:
+    metadata = contract["metadata"]
+    return {
+        "stage": args.wandb_stage,
+        "dataset": {
+            "prompt_id": metadata.get("prompt_id"),
+            "prompt_sha256": metadata.get("prompt_sha256"),
+            "metadata_sha256": contract["metadata_sha256"],
+            "rows": metadata.get("rows"),
+            "source": metadata.get("source"),
+            "revision": metadata.get("revision"),
+            "manifest_sha256": metadata.get("manifest_sha256"),
+        },
+        "training": {
+            "steps": args.steps,
+            "context_length": args.context_length,
+            "lr": args.lr,
+            "adapter_lr": args.adapter_lr,
+            "rank": args.rank,
+            "lora_dropout": args.lora_dropout,
+            "warmup": args.warmup,
+            "torch_compile": args.torch_compile,
+        },
+        "runtime": {
+            "torch": torch.__version__,
+            "cuda": torch.version.cuda,
+            "device": args.device,
+            "flash_attn": optional_module_version("flash_attn"),
+            "causal_conv1d": optional_module_version("causal_conv1d"),
+            "liger_kernel": optional_module_version("liger_kernel"),
+        },
+    }
+
+
+def start_wandb(
+    args: argparse.Namespace,
+    out_dir: Path,
+    contract: dict[str, Any],
+):
+    """Start optional telemetry; no audio, transcript, or path payload leaves here."""
+
+    if not args.wandb_project or args.wandb_mode == "disabled":
+        return None
+    try:
+        import wandb
+    except ImportError as error:
+        raise RuntimeError(
+            "--wandb-project requires the wandb package in the research environment"
+        ) from error
+
+    # W&B writes its local transaction log beside the public/Aqua stage outputs.
+    # Keeping it outside the stage directory prevents checkpoint retention from
+    # disturbing a resumed run.
+    # Offline mode intentionally ignores resume and emits one transaction per
+    # process; sync_wandb_offline.py merges those transactions by run ID.
+    wandb_dir = out_dir.parent / "wandb"
+    wandb_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["WANDB_DIR"] = str(wandb_dir)
+    return wandb.init(
+        project=args.wandb_project,
+        mode=args.wandb_mode,
+        id=args.wandb_run_id,
+        name=args.wandb_name,
+        resume="allow" if args.wandb_run_id else "never",
+        config=wandb_config(args, contract),
+        tags=["phonon", "reverse-audio-vl", args.wandb_stage],
+        allow_val_change=True,
+    )
 
 
 def load_checkpoint(
@@ -64,7 +174,21 @@ def main() -> None:
         action="store_true",
         help="profile-only Torch Inductor/Triton compilation of the logits path",
     )
+    parser.add_argument("--wandb-project", default=None)
+    parser.add_argument(
+        "--wandb-mode",
+        choices=("online", "offline", "disabled"),
+        default="offline",
+    )
+    parser.add_argument("--wandb-run-id", default=None)
+    parser.add_argument("--wandb-name", default=None)
+    parser.add_argument(
+        "--wandb-stage",
+        choices=("public", "aqua"),
+    )
     args = parser.parse_args()
+    if args.wandb_project and args.wandb_mode != "disabled" and not args.wandb_stage:
+        parser.error("--wandb-stage is required when W&B telemetry is enabled")
 
     torch.manual_seed(0)
     device = torch.device(args.device)
@@ -117,7 +241,10 @@ def main() -> None:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    contract = pack_contract(Path(args.dataset))
+    wandb_run = start_wandb(args, out_dir, contract)
     step = 0
+    stage_start_step = 0
     if args.resume:
         path = Path(args.resume)
         if args.resume == "auto":
@@ -126,6 +253,7 @@ def main() -> None:
                 raise RuntimeError(f"no checkpoints in {out_dir}")
             path = candidates[-1]
         step = load_checkpoint(path, model, optimizer)
+        stage_start_step = step
         print(f"resumed step {step} from {path}", flush=True)
 
     dataset = LFM2DataLoader(args.dataset, context_length=args.context_length)
@@ -191,7 +319,7 @@ def main() -> None:
         torch.cuda.nvtx.range_pop()
         torch.cuda.nvtx.range_push("optimizer")
         optimizer.param_groups[0]["lr"] = lr_at(step)
-        torch.nn.utils.clip_grad_norm_(
+        grad_norm = torch.nn.utils.clip_grad_norm_(
             [p for p in model.vl.parameters() if p.requires_grad]
             + list(model.audio.audio_adapter.parameters()),
             1.0,
@@ -205,10 +333,26 @@ def main() -> None:
         if step == 1 or step % 10 == 0:
             mean = sum(losses[-10:]) / min(10, len(losses))
             print(f"step {step}/{args.steps} loss {mean:.4f} ({time.time()-started:.0f}s)", flush=True)
+            if wandb_run is not None:
+                elapsed = time.time() - started
+                wandb_run.log(
+                    {
+                        "train/loss": mean,
+                        "train/learning_rate": optimizer.param_groups[0]["lr"],
+                        "train/adapter_learning_rate": optimizer.param_groups[1]["lr"],
+                        "train/gradient_norm": float(grad_norm.detach()),
+                        "train/steps_per_second": (step - stage_start_step) / elapsed,
+                        "train/wall_s": elapsed,
+                    },
+                    step=step,
+                )
         if args.ckpt_every and step % args.ckpt_every == 0:
             save_checkpoint(step)
 
-    save_file(trainable_state(model), str(out_dir / "reverse_audio_vl_adapter.safetensors"))
+    adapter_path = out_dir / "reverse_audio_vl_adapter.safetensors"
+    save_file(trainable_state(model), str(adapter_path))
+    adapter_sha256 = hashlib.sha256(adapter_path.read_bytes()).hexdigest()
+    final_loss = sum(losses[-10:]) / min(10, len(losses))
     (out_dir / "train_meta.json").write_text(
         json.dumps(
             {
@@ -219,12 +363,28 @@ def main() -> None:
                 "adapter_lr": args.adapter_lr,
                 "rank": args.rank,
                 "torch_compile": args.torch_compile,
-                "mean_last10": sum(losses[-10:]) / min(10, len(losses)),
+                "mean_last10": final_loss,
                 "wall_s": round(time.time() - started, 1),
+                "adapter_sha256": adapter_sha256,
+                "wandb": {
+                    "project": args.wandb_project,
+                    "mode": args.wandb_mode,
+                    "run_id": args.wandb_run_id,
+                    "stage": args.wandb_stage,
+                },
             },
             indent=1,
         )
     )
+    if wandb_run is not None:
+        wandb_run.summary.update(
+            {
+                "train/final_loss": final_loss,
+                "train/final_wall_s": time.time() - started,
+                "artifact/adapter_sha256": adapter_sha256,
+            }
+        )
+        wandb_run.finish()
     print("DONE", flush=True)
 
 

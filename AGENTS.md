@@ -29,6 +29,13 @@
   local vision head only through an explicit opt-in image protocol with declared
   retention, provenance, capability, and deletion behavior. Do not persist it merely
   because capture succeeded.
+- W&B on B550 is offline-only. Never copy `/Users/kearm/.netrc`, a W&B API key,
+  or an online W&B environment to the compute host. Copy only offline run
+  transaction directories back to the Mac and sync them with
+  `ml/research/final_sweep/sync_wandb_offline.py` from this machine.
+- W&B telemetry may contain prompt IDs, hashes, scalar metrics, package
+  versions, and adapter hashes. It must never contain Aqua audio, transcript or
+  accepted text, raw ASR text, screen content, or unnecessary personal paths.
 - A small pilot cannot be presented as a full-slice improvement. Record the row
   count, frozen manifest, protocol, and non-claims with every quality claim.
 
@@ -75,6 +82,10 @@
   result is 0.060714 fair WER and does not replace Aqua raw.
 - Public dataset revision:
   `espnet/yodas-granary@969944574ea3f37890beaf67ea651e160cfaf043`
+- Matched format bake-off root:
+  `/home/kearm/salm-lora/build/format-bakeoff/trial-*`
+- Reverse-training NSys profile root:
+  `/home/kearm/salm-lora/build/nsys/reverse-training-v1`
 
 ## Required local checks
 

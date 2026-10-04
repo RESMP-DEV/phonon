@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -19,6 +20,13 @@ format_module = importlib.util.module_from_spec(format_spec)
 assert format_spec is not None and format_spec.loader is not None
 sys.modules[format_spec.name] = format_module
 format_spec.loader.exec_module(format_module)
+
+SYNC_PATH = HERE.parent / "sync_wandb_offline.py"
+sync_spec = importlib.util.spec_from_file_location("sync_wandb_offline", SYNC_PATH)
+sync_module = importlib.util.module_from_spec(sync_spec)
+assert sync_spec.loader is not None
+sys.modules[sync_spec.name] = sync_module
+sync_spec.loader.exec_module(sync_module)
 
 
 def make_config() -> module.SweepConfig:
@@ -111,3 +119,42 @@ def test_format_bakeoff_fixes_best_hyperparameters() -> None:
     assert format_module.BEST_TRIAL_4["lr"] == 6.505720091093967e-05
     assert format_module.BEST_TRIAL_4["adapter_lr"] == 4.943429131224935e-05
     assert format_module.BEST_TRIAL_4["warmup"] == 50
+
+
+def test_wandb_uses_one_run_id_across_training_stages() -> None:
+    config = replace(
+        make_config(),
+        wandb_project="phonon",
+        wandb_mode="offline",
+    )
+    plan = module.build_trial_plan(100, params(), config)
+    public = plan["commands"]["train_public"]
+    aqua = plan["commands"]["train_aqua"]
+
+    assert plan["wandb_run_id"] == "format-0100-xml_dictation_v1"
+    assert public[public.index("--wandb-run-id") + 1] == plan["wandb_run_id"]
+    assert aqua[aqua.index("--wandb-run-id") + 1] == plan["wandb_run_id"]
+    assert public[public.index("--wandb-stage") + 1] == "public"
+    assert aqua[aqua.index("--wandb-stage") + 1] == "aqua"
+    assert public[public.index("--wandb-mode") + 1] == "offline"
+    assert aqua[aqua.index("--wandb-mode") + 1] == "offline"
+
+
+def test_wandb_offline_sync_orders_transactions(tmp_path) -> None:
+    root = tmp_path / "wandb"
+    root.mkdir()
+    for timestamp in ("20260101_000001", "20260101_000002"):
+        path = root / f"offline-run-{timestamp}-format-0100-prose"
+        path.mkdir()
+        (path / "run-format-0100-prose.wandb").write_bytes(b"transaction")
+    ignored = root / "offline-run-20260101_000003-format-0100-other"
+    ignored.mkdir()
+
+    directories = sync_module.offline_run_directories(root, "format-0100-prose")
+    command = sync_module.sync_command("format-0100-prose", directories)
+
+    assert len(directories) == 2
+    assert directories == sorted(directories)
+    assert ignored not in directories
+    assert command[command.index("--id") + 1] == "format-0100-prose"
+    assert command[-1].endswith("offline-run-20260101_000002-format-0100-prose")

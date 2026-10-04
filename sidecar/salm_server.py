@@ -23,17 +23,18 @@ import time
 import traceback
 from pathlib import Path
 
+try:
+    from sidecar.phonon_prompts import get_prompt
+except ModuleNotFoundError:
+    from phonon_prompts import get_prompt
+
 
 def emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
     sys.stdout.flush()
 
 
-SYSTEM = (
-    "You are a personal dictation engine. Transcribe the user's audio into the "
-    "text they intended, including technical terms, identifiers and punctuation. "
-    "Text only."
-)
+SYSTEM = get_prompt("prose_dictation_v1")
 
 LORA_TARGETS = (
     r"^lfm\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|out_proj)"
@@ -82,7 +83,7 @@ def load(model_id: str, adapter: str | None, rank: int, device_name: str):
                        target_modules=LORA_TARGETS),
             model,
         )
-        missing, unexpected = model.load_state_dict(
+        missing, _unexpected = model.load_state_dict(
             load_file(adapter), strict=False
         )
         missing_lora = [k for k in missing if "lora" in k]

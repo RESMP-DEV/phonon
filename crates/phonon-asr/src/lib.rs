@@ -227,12 +227,20 @@ pub fn resolve_uv() -> Option<std::path::PathBuf> {
             .map(|directory| directory.join("uv"))
             .filter(|path| path.is_file())
     });
-    bundled.or_else(|| which::which("uv").ok()).or_else(|| {
-        ["/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .find(|path| path.is_file())
-    })
+    bundled
+        .or_else(|| which::which("uv").ok())
+        .or_else(|| {
+            ["/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .find(|path| path.is_file())
+        })
+        .or_else(|| {
+            std::env::var_os("HOME").and_then(|home| {
+                let path = std::path::PathBuf::from(home).join(".local/bin/uv");
+                path.is_file().then_some(path)
+            })
+        })
 }
 
 /// True when uv can assemble the sidecar environment for `requirement` from

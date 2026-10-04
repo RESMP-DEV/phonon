@@ -12,15 +12,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESEARCH_ROOT = REPO_ROOT / "ml/research"
-for path in (REPO_ROOT, RESEARCH_ROOT / "final_sweep", RESEARCH_ROOT / "reverse_vl_v0"):
+for path in (REPO_ROOT, RESEARCH_ROOT / "reverse_vl_v0"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+try:
+    from sidecar.phonon_prompts import get_prompt, prompt_sha256
+except ModuleNotFoundError:
+    from phonon_prompts import get_prompt, prompt_sha256
 from reverse_audio_vl import AUDIO_REPO, VL_REPO, ReverseAudioVL
 from salm_server import handle_requests
 from transcribe_reverse_audio_vl import load_adapter
-
-from prompts import get_prompt, prompt_sha256
 
 DEFAULT_ADAPTER = os.environ.get(
     "PHONON_REVERSE_SALM_ADAPTER",
@@ -106,7 +108,7 @@ def main() -> None:
             wave,
             int(sampling_rate),
             max_new_tokens=args.max_new_tokens,
-            prompt_id=args.prompt_id,
+            system=get_prompt(args.prompt_id),
         )
 
     emit(

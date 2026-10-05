@@ -2,23 +2,29 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-output=${PHONON_UI_SNAPSHOT_DIR:-"$repo_root/build/ui-snapshots"}
-support=${PHONON_UI_FIXTURE_DIR:-"$repo_root/build/ui-snapshot-fixture"}
+run_id=$(date +%Y%m%dT%H%M%S)-$$
+snapshot_root=${PHONON_UI_SNAPSHOT_ROOT:-"$repo_root/build/ui-snapshots"}
+output=${PHONON_UI_SNAPSHOT_DIR:-"$snapshot_root/run-$run_id"}
+support=${PHONON_UI_FIXTURE_DIR:-"$snapshot_root/fixture-$run_id"}
+mkdir -p "$snapshot_root"
+if [[ -e "$output" || -e "$support" ]]; then
+	echo "ui snapshot output and fixture directories must not already exist" >&2
+	exit 2
+fi
+if [[ "$support" == "$output" || "$support" == "$output"/* || "$output" == "$support"/* ]]; then
+	echo "ui snapshot output and fixture directories must be disjoint" >&2
+	exit 2
+fi
+mkdir -p "$output" "$support"
 
 python3 - "$output" "$support" <<'PY'
 import json
 import pathlib
-import shutil
 import sys
 import time
 
 output = pathlib.Path(sys.argv[1])
 support = pathlib.Path(sys.argv[2])
-for path in (output, support):
-    if path.exists():
-        shutil.rmtree(path)
-output.mkdir(parents=True)
-support.mkdir(parents=True)
 
 (support / "settings.json").write_text(json.dumps({
     "schema_version": 2,

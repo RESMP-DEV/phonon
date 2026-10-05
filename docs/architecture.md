@@ -1660,6 +1660,12 @@ future-capture rejection, corrupt-expired deletion, expired-export skipping,
 and non-string-hypothesis rejection at
 `~/.cache/phonon-pr12-review-repair-20261005T130943/receipt.json`, SHA-256
 `10174e52452f82d57bdce651d03a69c47e9c843ae0e6f1f46f7df2961e28c892`.
+CodeRabbit also found that the snapshot script could recursively remove an
+environment-selected directory. It now creates a unique output/fixture pair,
+requires both paths not to exist and to be disjoint, and performs no recursive
+deletion. Refusal of an existing path and a fresh nine-render run passed; the
+new receipt is `build/ui-snapshots/run-20261005T131204-65111/receipt.json`,
+SHA-256 `b9359d4b12b2676e6a56d9adf5005665d30467790496bd701391c018b77acd84`.
 
 ## Contracts to preserve
 

@@ -1,9 +1,9 @@
 use anyhow::{bail, Context, Result};
 use phonon_core::data::{
     app_support_dir, corpus_dir, delete_recording, dictionary_path, import_recording,
-    list_recordings, load_recording_by_id, polish_config, safe_polish_output,
-    set_intended_transcript, settings_path, usage_stats, DictionaryEntry, DictionaryFile,
-    SettingsFile,
+    list_recordings, load_recording_by_id, polish_config, register_screen_image,
+    safe_polish_output, set_intended_transcript, settings_path, usage_stats, CorpusExportOptions,
+    DictionaryEntry, DictionaryFile, ScreenImageCaptureRequest, SettingsFile,
 };
 use phonon_llm::{ServeJson, ServeJsonResp};
 use serde::{Deserialize, Serialize};
@@ -641,6 +641,77 @@ pub fn set_intended(id: &str, text: &str) -> Result<()> {
 pub fn delete_corpus_recording(id: &str) -> Result<()> {
     delete_recording(id)?;
     println!("deleted recording {id}");
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn attach_screenshot(
+    audio_path: &Path,
+    image_path: &Path,
+    display_id: String,
+    pixel_width: u32,
+    pixel_height: u32,
+    scale_factor: f64,
+    capture_origin: String,
+    captured_at_ms: Option<u64>,
+    consented_at_ms: Option<u64>,
+    permission_granted: bool,
+) -> Result<()> {
+    let request = ScreenImageCaptureRequest {
+        display_id,
+        pixel_width,
+        pixel_height,
+        scale_factor,
+        capture_origin,
+        captured_at_unix_ms: captured_at_ms.map(u128::from),
+        consented_at_unix_ms: consented_at_ms.map(u128::from),
+        screen_capture_permission_granted: permission_granted,
+    };
+    let recording = register_screen_image(audio_path, image_path, request, "bar")?;
+    println!(
+        "screenshot attached to {}",
+        corpus_dir()?.join(&recording.id).display()
+    );
+    Ok(())
+}
+
+pub fn export_corpus(out: Option<&Path>, options: CorpusExportOptions, json: bool) -> Result<()> {
+    let output = out.map(Path::to_path_buf).unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_default().join(format!(
+            "phonon-corpus-export-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or_default()
+        ))
+    });
+    let output = phonon_core::data::export_corpus(&output, options)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "output": output,
+                "manifest": output.join("manifest.json"),
+            }))?
+        );
+    } else {
+        println!("corpus exported to {}", output.display());
+    }
+    Ok(())
+}
+
+pub fn expire_screenshots(now_ms: Option<u64>) -> Result<()> {
+    let now = now_ms.map_or_else(
+        || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or_default()
+        },
+        u128::from,
+    );
+    let deleted = phonon_core::data::delete_expired_screenshots(now)?;
+    println!("expired {} screenshots", deleted.len());
     Ok(())
 }
 

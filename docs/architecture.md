@@ -1641,6 +1641,15 @@ probes showed batch 2 and batch 4 are wall-clock regressions on one RTX 3090 Ti
 for this model, so the first long structural arms use batch 1 while preserving
 the new controls for quality experiments.
 
+The first two long structural arms completed. A 30,000-row public pack with
+20,000 public steps followed by one full Aqua epoch scored 0.11908886194353023
+fair WER, 0.15304822565969062 strict WER, and 0.312 exact; it does not replace
+the promoted soup. Unfreezing the last four conformer layers for 8,000 public
+steps followed by one full Aqua epoch scored 0.11406547722154858 fair WER,
+0.14804367606915378 strict WER, and 0.354 exact. Its exact score beats the
+promoted soup, but fair and strict WER remain worse; it is retained as a
+candidate for souping rather than promoted.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

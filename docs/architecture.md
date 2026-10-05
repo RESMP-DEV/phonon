@@ -1712,6 +1712,113 @@ An external visual audit of the synthetic Settings render found that the
 Training capture section matches the existing graphite instrument-panel
 hierarchy; the native switch states are materially legible and artifact-free.
 The audit receipt is `zai-settings-native.json` beside that snapshot run.
+### 2026-10-05: redacted macOS Accessibility and Screen Recording probe
+
+Research findings
+
+macOS exposes two different consent surfaces, and neither is a substitute for
+the other. The Accessibility surface makes the current process a trusted AX
+client, represented by `AXIsProcessTrusted()` or the optional prompt variant
+`AXIsProcessTrustedWithOptions(_:)`. With that grant, `AXUIElement` reads the
+semantic interface tree: `AXUIElementGetPid(_:_:)` identifies the process,
+`AXUIElementCopyAttributeValue(_:_:_:)` reads the focused application, focused
+UI element, role, subrole, action names, and selected-text range, and
+`AXUIElementIsAttributeSettable(_:_:_:)` reports whether a selection or text
+attribute may be set without attempting a mutation. The same Accessibility
+grant is the insertion path for keyboard automation; passive keyboard listening
+can additionally involve the separate Input Monitoring surface, whose read-only
+preflight is `CGPreflightListenEventAccess()` and whose prompt is
+`CGRequestListenEventAccess()`. An AX grant does not authorize display pixels.
+
+The Screen Recording surface authorizes pixels. `CGPreflightScreenCaptureAccess()`
+is the non-prompting availability check, `CGRequestScreenCaptureAccess()` is the
+requesting path, and ScreenCaptureKit's shareable content, filters, streams, and
+`SCScreenshotManager.captureImage(contentFilter:configuration:completionHandler:)`
+operate under that consent. Screen pixels or OCR can reveal rendered characters
+but cannot provide reliable focused-element identity, action availability,
+subrole semantics, or a settable semantic selection. Conversely, an AX tree can
+supply edit-mode selection and actions but cannot reconstruct pixels for a
+vision model. Microphone consent is separate again: `AVCaptureDevice`
+`authorizationStatus(for:)` and `requestAccess(for:completionHandler:)` govern
+audio only.
+
+These boundaries mean edit mode and screen context must be gated independently.
+Selection capture/replacement may start only with Accessibility granted and a
+successful read-only AX copy/settable probe on the focused element; if the
+focused element does not expose a usable selection, Phonon must fail closed
+rather than guessing pixels. OCR or image conditioning may start only with
+Screen Recording granted and an explicit ScreenCaptureKit path; it must never be
+used as the authority for insertion or selection ownership. Microphone grant
+status never implies either visual lane.
+
+Redacted probe
+
+`tools/macos_access_probe.swift` is a dependency-free single-file CLI using
+system frameworks only. No arguments performs a live, non-prompting, read-only
+probe; `--fixture` emits the deterministic test fixture; every output, including
+usage and argument errors, is JSON. It reports the macOS version; Accessibility,
+Input Monitoring, microphone, and Screen Recording booleans or status; whether
+AX copy is available; whether setting was queried (never attempted); selected
+text-range presence and settability; focused-application existence and a
+12-hex-digit SHA-256 prefix of its AX process ID; focused role/subrole; action,
+child, and attribute counts. Role and subrole values pass an Apple-standard
+allowlist; every unknown or custom value becomes `AXUnreportedCustomName`, and
+action names are reduced to a count. The fixture schema is versioned at
+`schema_version = 1`.
+
+The probe does not emit selected text, text values, control contents, window
+titles, bundle identifiers, or bundle paths. It does not call
+`AXIsProcessTrustedWithOptions`, an AX setter, `AXUIElementPerformAction`,
+ScreenCaptureKit, `CGRequestScreenCaptureAccess`,
+`CGRequestListenEventAccess`, AVFoundation access requests, URL loading, or any
+other network interface. `privacy.*` records these non-actions explicitly.
+
+Local compiler evidence on this macOS 26.7.1/arm64 host confirms the SDK
+contract: `AXIsProcessTrustedWithOptions` is documented in
+`ApplicationServices/HIServices/AXUIElement.h`, `.apiDisabled` and
+`.cannotComplete` are AX failures, and the probe deliberately uses the non
+prompting trust call. The live run observed Accessibility false, Input
+Monitoring false, microphone denied, Screen Recording false, no focused
+application, and AX copy unavailable; it changed no permission state. The
+deterministic fixture emitted identical bytes twice. Probe output is at
+`build/reports/macos-access-probe/live.json`, with fixture copies at
+`fixture-a.json` and `fixture-b.json` and the machine receipt at
+`receipt.json`. Parent review tightened role/subrole publication to an
+Apple-standard allowlist and reran compilation, live and fixture probes, all 39
+root Python tests, Ruff, `git diff --check`, and live HTTP checks for all 14
+Apple URLs. The final ignored receipt SHA-256 is
+`499690175938b209c969468beabb6d4777e435f1e57e9e7cf415f42c0df61b30`.
+
+Apple source URLs consulted:
+
+- `https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions`
+- `https://developer.apple.com/documentation/applicationservices/1460720-axisprocesstrusted`
+- `https://developer.apple.com/documentation/applicationservices/1462085-axuielementcopyattributevalue`
+- `https://developer.apple.com/documentation/applicationservices/1459972-axuielementisattributesettable`
+- `https://developer.apple.com/documentation/applicationservices/1460337-axuielementgetpid`
+- `https://developer.apple.com/documentation/applicationservices/axuielementref`
+- `https://developer.apple.com/documentation/coregraphics/cgpreflightscreencaptureaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgrequestscreencaptureaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgrequestlisteneventaccess()`
+- `https://developer.apple.com/documentation/screencapturekit`
+- `https://developer.apple.com/documentation/screencapturekit/scscreenshotmanager/captureimage(contentfilter:configuration:completionhandler:)`
+- `https://developer.apple.com/documentation/avfoundation/avcapturedevice/authorizationstatus(for:)`
+- `https://developer.apple.com/documentation/avfoundation/avcapturedevice/requestaccess(for:completionhandler:)`
+
+Decision gates
+
+| Use | Required evidence | Forbidden substitution |
+| --- | --- | --- |
+| Edit-mode selection/insertion | Accessibility true, AX copy available, selection/range settability as applicable, target identity stable for the transaction | OCR, screenshot coordinates, window titles, or inferred text |
+| Screen context pixels/OCR | Screen Recording preflight true and an explicit ScreenCaptureKit transaction | AX text reads treated as pixels or used as a screen-image replacement |
+| Dictation audio | Microphone status `.authorized` through AVFoundation | Accessibility or Screen Recording grant inferred as audio consent |
+| Passive keyboard diagnostics | Input Monitoring preflight true when a listening event tap is required | Accessibility grant alone treated as keyboard-listening consent |
+
+Non-claims: this probe observes one focused element and does not recursively
+walk the application tree; a granted preflight is not a successful capture or
+insertion transaction; and the current denied live state proves redaction and
+non-prompting, not edit-mode product behavior.
 
 ## Contracts to preserve
 

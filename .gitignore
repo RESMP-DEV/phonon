@@ -1,4 +1,6 @@
 /target/
+/build/
+/wandb/
 /bar/.build/
 /bar/dist/
 /ref/
@@ -10,6 +12,7 @@
 .env
 .env.*
 .worktrees/
+.sindexer/
 .vercel
 /AGENTS.md
 /CLAUDE.md

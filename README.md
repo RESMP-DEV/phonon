@@ -76,6 +76,7 @@ setting, and there is no way to point it at a remote model.
 cargo install --path crates/phonon-cli --force --root ~/.local
 phonon bar --rebuild   # once, builds Swift floating pill
 scripts/ui_snapshots.sh # synthetic, non-personal native UI renders
+scripts/check_permissions.py # app-process TCC JSON report; no prompt by default
 ```
 
 ## Commands
@@ -105,7 +106,9 @@ contacts Aqua. Screen-image corpus capture is default-off and requires both
 native Settings, one main-display capture from dictation start can be attached
 after speech and final text exist; `phonon corpus attach-screenshot` remains the
 auditable registration boundary, and export still requires explicit image/text
-consent flags. Live ScreenCaptureKit and TCC acceptance has not yet been run.
+consent flags. Live app-bundle Screen Recording enrollment and diagnostics pass
+locally; full consented OCR/corpus acceptance remains tracked in the
+architecture plan.
 
 ## Surviving an uninstall
 

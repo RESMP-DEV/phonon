@@ -218,31 +218,6 @@ final class AppDataTests: XCTestCase {
         XCTAssertEqual(store.usage.activeDays, 2)
     }
 
-    func testEveryPermissionHasADirectSystemSettingsURL() {
-        XCTAssertEqual(
-            Set(PrivacyPane.allCases.map(\.rawValue)),
-            Set([
-                "Privacy_Microphone",
-                "Privacy_Accessibility",
-                "Privacy_ListenEvent",
-                "Privacy_ScreenCapture",
-            ]))
-        for pane in PrivacyPane.allCases {
-            XCTAssertEqual(pane.settingsURL.scheme, "x-apple.systempreferences")
-            XCTAssertTrue(pane.settingsURL.absoluteString.contains(pane.rawValue))
-        }
-    }
-
-    func testManualPermissionGuidesTargetTheCorrectPrivacyPanes() {
-        XCTAssertEqual(PermissionGuide.inputMonitoring.pane, .inputMonitoring)
-        XCTAssertEqual(PermissionGuide.screenRecording.pane, .screenRecording)
-        XCTAssertTrue(PermissionGuide.inputMonitoring.detail.contains("shortcut"))
-        XCTAssertTrue(PermissionGuide.screenRecording.detail.contains("screen context"))
-        XCTAssertEqual(
-            PermissionGuide.inputMonitoring.manualInstructions,
-            "Click + in System Settings, type Phonon, press Return, then turn Phonon on.")
-    }
-
     func testMicrophonePermissionPresentationMatchesTCCState() {
         let store = NativeAppStore(supportDirectory: directory)
         switch store.microphoneAuthorizationStatus {

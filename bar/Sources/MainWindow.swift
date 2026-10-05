@@ -759,43 +759,6 @@ struct SettingsView: View {
 
 }
 
-struct PermissionSummary: View {
-    @ObservedObject var store: NativeAppStore
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Permissions and health").font(.headline)
-                    Spacer()
-                    Button("Refresh") { store.refreshPermissions() }
-                        .buttonStyle(.borderless)
-                }
-                PermissionRow(
-                    name: "Microphone", granted: store.microphonePermission,
-                    statusText: store.microphoneStatusText,
-                    actionTitle: store.microphoneActionTitle,
-                    action: { store.performMicrophonePermissionAction() })
-                PermissionRow(
-                    name: "Accessibility", granted: store.accessibilityPermission,
-                    action: { openPrivacy(.accessibility) })
-                PermissionRow(
-                    name: "Input Monitoring", granted: store.inputMonitoringAvailable,
-                    actionTitle: store.inputMonitoringActionTitle,
-                    action: { store.performInputMonitoringPermissionAction() })
-                PermissionRow(
-                    name: "Screen Recording", granted: store.screenRecordingPermission,
-                    actionTitle: store.screenRecordingActionTitle,
-                    action: { store.performScreenRecordingPermissionAction() })
-            }
-        }
-    }
-
-    private func openPrivacy(_ pane: PrivacyPane) {
-        NSWorkspace.shared.open(pane.settingsURL)
-    }
-}
-
 /// First run only. Both switches retain data, so neither is on until asked.
 struct PrivacyChoiceView: View {
     @ObservedObject var store: NativeAppStore
@@ -849,68 +812,6 @@ struct PrivacyChoiceView: View {
         .background(EmberTheme.background)
         .foregroundStyle(EmberTheme.text)
         .preferredColorScheme(.dark)
-    }
-}
-
-struct PermissionGuideView: View {
-    let guide: PermissionGuide
-    let onDone: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(guide.title)
-                .font(.title2.bold())
-            Text(guide.detail)
-                .foregroundStyle(EmberTheme.muted)
-
-            HStack(spacing: 14) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path))
-                    .resizable()
-                    .frame(width: 58, height: 58)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Phonon.app").font(.headline)
-                    Text("Installed in Applications and ready to add in System Settings.")
-                        .font(.caption)
-                        .foregroundStyle(EmberTheme.muted)
-                }
-            }
-            .padding(14)
-            .background(EmberTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-
-            Text(guide.manualInstructions)
-                .font(.headline)
-            Text("After enabling Phonon, quit it completely before reopening so macOS applies the permission.")
-                .font(.callout)
-
-            HStack {
-                Button("Open Applications") {
-                    NSWorkspace.shared.open(
-                        URL(fileURLWithPath: "/Applications", isDirectory: true))
-                }
-                Spacer()
-                Button("Open System Settings") {
-                    NSWorkspace.shared.open(guide.pane.settingsURL)
-                }
-                .buttonStyle(.borderedProminent)
-                Button("Quit Phonon", action: onDone)
-            }
-        }
-        .padding(24)
-        .frame(width: 540)
-        .background(EmberTheme.background)
-        .foregroundStyle(EmberTheme.text)
-        .preferredColorScheme(.dark)
-    }
-}
-
-enum PrivacyPane: String, CaseIterable {
-    case microphone = "Privacy_Microphone"
-    case accessibility = "Privacy_Accessibility"
-    case inputMonitoring = "Privacy_ListenEvent"
-    case screenRecording = "Privacy_ScreenCapture"
-
-    var settingsURL: URL {
-        URL(string: "x-apple.systempreferences:com.apple.preference.security?\(rawValue)")!
     }
 }
 

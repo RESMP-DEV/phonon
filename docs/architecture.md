@@ -47,6 +47,74 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 4. **Parody plane.** Transform text only after the user has selected a parody mode. It is an explicit mode, never a hidden personality applied to ordinary dictation.
 5. **Evaluation plane.** Freeze fixtures, register protocols, and gate every user-visible model or transform on measured fidelity, restraint, latency, and privacy invariants.
 
+## Aqua Voice parity program
+
+### Scope and target baseline
+
+This program targets a macOS daily-driver replacement for the owner's current
+Aqua Voice installation. It does not reproduce Aqua's account, subscription,
+cloud orchestration, telemetry, mobile clients, or team administration. Those
+are deliberately replaced by local execution, explicit data ownership, and
+offline distribution. Parity is claimed only for interaction and final-text
+quality on the owner's real dictation distribution.
+
+The target is the installed Aqua desktop 0.20.10, observed locally on
+2026-10-05 at settings schema 89. Its live local cache reports deep context on,
+the fast-LLM selector on automatic, correction enabled, 782 dictionary values,
+65 replacements, and a 12,830-character instruction sheet. Only counts and
+settings were inspected for this plan; no instruction, dictionary, replacement,
+history text, or audio was copied into the repository. Aqua's rendered controls
+still require a live accessibility walk because account gating can hide bundle
+features.
+
+The existing frozen 500-clip Aqua slice remains the quality ledger. Its current
+Aqua raw baseline is 0.032912 fair WER, 0.055232 strict WER, and 0.674 exact.
+That is the number to beat or credibly match; the selected reverse-SALM
+adapter at 0.124372 fair WER is not close enough to promote. No single-model
+directive waives this gate. The default cascade can remain the safe product
+path while the SALM lane catches up.
+
+### Parity matrix
+
+| Capability | Aqua target | Phonon current position | Parity work |
+| --- | --- | --- | --- |
+| Push to talk | Hold the activation key, then release and insert | Hold Globe or Right Option, release to finalize | Qualify key ownership and insertion against Aqua on the same target apps |
+| Hands-free mode | Latch or realtime session with endpointing | Double-tap latch exists; stopping still requires the key | Add a measured silence/endpoint mode without regressing the hold path |
+| Streaming preview | Realtime transcript while speaking | Parakeet partials exist and are shown when enabled | Preserve partial state, cancellation, and supersession under long utterances |
+| Custom dictionary | Cloud-synced dictionary of names and jargon | Local dictionary UI and CLI exist | Add a read-only, idempotent Aqua import and reconciliation report |
+| Exact replacements | Spoken phrase to exact written form | Replacement field exists in the same local dictionary format | Map Aqua replacements without duplicating entries and preserve manual edits |
+| Style instructions | A long correction instruction sheet sent with each request | `profile/user.md` and `profile/vocab.md` exist behind a default-off setting | Import to a local reviewed profile, enforce length/versioning, and measure correction restraint |
+| Deep context | Screen context contributes to cloud correction | Local OCR ranks only relevant dictionary terms | Preserve OCR as default; vision image conditioning remains a separate consented model gate |
+| Edit mode | Select text, speak an edit instruction, replace selection safely | Not implemented | Add selection capture, replacement/undo policy, failure rollback, and edit fixtures |
+| History | Search, inspect, delete, and replay source behavior | Local paired corpus, intended text, search, deletion, and stats exist | Add audio playback/rerun affordances only after retention and deletion remain proven |
+| Network/status surface | Account, network, server model, and usage reporting | Local doctor, model readiness, and local stats | Expose offline/runtime status without implying cloud health |
+| Clipboard sovereignty | Avoid clipboard history where possible | Short output types directly; long output uses clipboard and restores it | Measure and honor an avoid-clipboard-history mode on supported systems |
+| Languages | Aqua offers multiple dictation languages | English product path | Language parity is a separate model/protocol gate, not a UI relabel |
+| Cloud/mobile account | Login, plans, sync, and mobile clients | Explicit non-target | Local export/backup and pinned runtime artifacts are the replacement |
+
+### Work order
+
+1. **Freeze the owner baseline.** Record the rendered Aqua 0.20.10 controls with a live accessibility walk, then run one matched macOS interaction probe across representative apps. Register the existing frozen slice, term subsets, end-to-end timing fields, and Aqua/Phonon output identifiers. Personal rows stay local; only aggregate metrics and hashes enter evidence.
+2. **Make migration reversible.** Add `phonon dictionary import-aqua --dry-run` and a real run that reads only the Aqua settings cache, writes a dated backup, maps dictionary and replacement entries, reports collisions/changes, and never contacts Aqua. Keep the instruction sheet as a versioned local profile asset with explicit review and disable controls.
+3. **Close daily interaction gaps.** Implement endpointing as an optional hands-free mode, edit mode with selected-text recovery and undo, and an avoid-clipboard-history insertion mode. Each must retain the existing raw transcript and fail closed when accessibility or selection ownership is uncertain.
+4. **Requalify the shipped cascade.** Run current Parakeet plus Gemma and Aqua raw over the complete frozen slice under one scorer, then measure term hit, worse-than-input rate, fair/strict WER, exactness, and p50/p95 keyboard-to-insertion latency. A correction may not be promoted if it creates more harm than it repairs.
+5. **Improve the single-model lane from the real gap.** The reverse SALM remains the architectural destination, but next training must target the diagnosed difference between 0.124372 and 0.032912 fair WER: onset/clipping, named entities, punctuation/formatting, correction restraint, and long-utterance state. Repeat adapters only through prompt-, context-, rank-, and kernel-aware protocols.
+6. **Gate vision context separately.** The image protocol and consented retention policy must pass before a screenshot reaches a model. Screen OCR remains useful even after vision qualification because it supplies auditable dictionary confirmation.
+7. **Qualify daily-driver status.** Require at least five consecutive working days where the owner chooses Phonon for real dictation, all failures are journaled, no Aqua fallback is needed for a blocked capability, and the registered quality/latency gates remain green.
+8. **Package the selected runtime.** Pin every model and adapter, package offline weights or a verified first-run fetch, measure cold and warm launch on the target Mac, and retain the default cascade until a single-model candidate wins the same gate.
+
+### Acceptance gates
+
+Functional parity requires the matrix rows marked present to pass their existing
+Rust, Swift, and Python checks plus the migration and interaction gates above.
+Quality parity requires no regression against the registered Aqua raw baseline
+on the full 500-clip slice and a matched live-use sample; no small pilot may be
+extrapolated. A single-model promotion additionally requires the audio gate,
+restraint gate, latency gate, offline packaging gate, and default-path
+regression gate to pass at the same pinned adapter and runtime. Until then,
+Phonon can be a usable local alternative or experimental engine, but not a
+claimed Aqua replacement.
+
 ## Dataset creation and teacher curation
 
 ### Current output flow
@@ -1286,6 +1354,32 @@ telemetry is recorded under `reverse-profile-baseline-1000-v1`,
 `reverse-profile-triton-warm1000-v1`, and `reverse-profile-triton-cache-v1`.
 The profile runner now refuses to overwrite an existing variant directory and
 force-refreshes a stale SQLite export at `7336865`.
+
+### 2026-10-05: Aqua Voice daily-driver parity plan
+
+Added the repository's Aqua parity program to this architecture document rather
+than creating a parallel roadmap. The program targets a macOS local daily
+driver, not Aqua's account, cloud, mobile, or team-administration surface. It
+keeps the frozen 500-clip slice as the quality ledger and makes the current
+reverse-SALM promotion boundary explicit: the selected 0.124372 fair-WER
+adapter does not meet the locally observed Aqua raw 0.032912 baseline.
+
+The plan records eight milestones: baseline freeze, reversible Aqua migration,
+interaction gaps, cascade requalification, single-model improvement, separate
+vision qualification, five-day owner dogfood, and distribution packaging. Its
+parity matrix marks streaming preview, local history, stats, screen OCR, and
+dictionary/replacement management as present or partial; edit mode, language
+support, optional endpointing, and instruction migration as gaps.
+
+Target evidence was local only. The installed desktop package reports Aqua
+0.20.10. Its local settings cache reports schema 89, deep context on, fast-LLM
+selection automatic, correction enabled, 782 dictionary values, 65
+replacements, and 12,830 instruction characters. No Aqua audio, transcript,
+instruction text, dictionary value, or replacement text was copied into the
+checkout. A bundle/settings inspection is structural evidence only; milestone 1
+still requires a live accessibility walk because server and account gating can
+hide packaged features. This entry is a plan, not a claim that any parity gate
+has run.
 
 ## Contracts to preserve
 

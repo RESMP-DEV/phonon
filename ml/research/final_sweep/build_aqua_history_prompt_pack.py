@@ -10,6 +10,7 @@ from pathlib import Path
 
 from history_prompt import (
     HISTORY_SELECTOR_VERSION,
+    build_history_index,
     history_contract,
     history_prompt_sha256,
     render_history_prompt,
@@ -79,12 +80,18 @@ def main() -> None:
     if not rows:
         raise RuntimeError("no eligible Aqua rows")
     selected_rows = rows[: args.limit] if args.limit else rows
+    history_index = build_history_index(rows)
 
     chats = []
     history_ids: dict[str, list[str]] = {}
     dynamic_hashes: dict[str, str] = {}
     for row in selected_rows:
-        contract = history_contract(row, rows, count=args.history_count)
+        contract = history_contract(
+            row,
+            rows,
+            count=args.history_count,
+            index=history_index,
+        )
         prompt = render_history_prompt(contract)
         audio_path = args.audio_root / str(row["audio"])
         chats.append(

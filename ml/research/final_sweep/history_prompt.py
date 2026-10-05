@@ -17,36 +17,23 @@ def tokenize(text: str) -> list[str]:
     return TOKEN_RE.findall((text or "").lower())
 
 
-def history_contract(
-    target: dict[str, object], pool: list[dict[str, object]], *, count: int = 2
-) -> dict[str, object]:
-    """Select historical raw-to-accepted pairs without exposing target labels.
+def build_history_index(pool: list[dict[str, object]]) -> dict[str, object]:
+    """Precompute candidate text, tokens, IDF, and normalized vectors."""
 
-    The target's raw Aqua transcript is the query. Its accepted text is never
-    read or selected. Candidates come only from the supplied training pool and
-    are excluded by audio ID.
-    """
-
-    if count < 1:
-        raise ValueError("history count must be positive")
-    target_audio = str(target.get("audio") or "")
-    query = tokenize(str(target.get("raw") or target.get("raw_aqua") or ""))
     candidates: list[dict[str, object]] = []
     for row in pool:
         raw = str(row.get("raw") or "").strip()
         accepted = str(row.get("corrected") or "").strip()
-        audio = str(row.get("audio") or "")
         if (
             not raw
             or not accepted
-            or audio == target_audio
             or len(tokenize(raw)) > 55
             or len(tokenize(accepted)) > 55
         ):
             continue
         candidates.append(
             {
-                "audio": audio,
+                "audio": str(row.get("audio") or ""),
                 "raw": raw,
                 "corrected": accepted,
                 "tokens": tokenize(raw),
@@ -66,7 +53,9 @@ def history_contract(
 
     def vector(values: list[str]) -> dict[str, float]:
         counts = Counter(values)
-        scale = math.sqrt(sum((idf.get(term, 0.0) * count) ** 2 for term, count in counts.items()))
+        scale = math.sqrt(
+            sum((idf.get(term, 0.0) * count) ** 2 for term, count in counts.items())
+        )
         if scale == 0:
             return {}
         return {
@@ -74,10 +63,37 @@ def history_contract(
             for term, count in counts.items()
         }
 
-    query_vector = vector(query)
-    ranked: list[tuple[float, str, dict[str, object]]] = []
     for candidate in candidates:
-        candidate_vector = vector(candidate["tokens"])
+        candidate["vector"] = vector(candidate["tokens"])
+    return {"idf": idf, "candidates": candidates, "vectorizer": vector}
+
+
+def history_contract(
+    target: dict[str, object],
+    pool: list[dict[str, object]],
+    *,
+    count: int = 2,
+    index: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Select historical raw-to-accepted pairs without exposing target labels.
+
+    The target's raw Aqua transcript is the query. Its accepted text is never
+    read or selected. Candidates come only from the supplied training pool and
+    are excluded by audio ID.
+    """
+
+    if count < 1:
+        raise ValueError("history count must be positive")
+    target_audio = str(target.get("audio") or "")
+    query = tokenize(str(target.get("raw") or target.get("raw_aqua") or ""))
+    selected_index = index or build_history_index(pool)
+    vectorizer = selected_index["vectorizer"]
+    query_vector = vectorizer(query)
+    ranked: list[tuple[float, str, dict[str, object]]] = []
+    for candidate in selected_index["candidates"]:
+        if str(candidate["audio"]) == target_audio:
+            continue
+        candidate_vector = candidate["vector"]
         score = sum(
             weight * candidate_vector.get(term, 0.0)
             for term, weight in query_vector.items()

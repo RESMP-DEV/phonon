@@ -46,3 +46,17 @@ def test_history_prompt_is_deterministic_and_contains_no_labels() -> None:
     assert first == second
     assert "<history>" in first
     assert "target" not in first
+
+
+def test_precomputed_history_index_preserves_selection() -> None:
+    target = make_row("target", "CUDA kernel launch", "CUDA kernel launch")
+    pool = [
+        target,
+        make_row("same", "CUDA kernel launch", "CUDA kernel launch"),
+        make_row("other", "unrelated cooking note", "unrelated cooking note"),
+    ]
+    index = module.build_history_index(pool)
+    expected = module.history_contract(target, pool, count=1)
+    optimized = module.history_contract(target, pool, count=1, index=index)
+    assert optimized["history_audio"] == expected["history_audio"] == ["same"]
+    assert optimized["examples"] == expected["examples"]

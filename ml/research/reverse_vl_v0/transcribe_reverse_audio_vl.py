@@ -9,7 +9,12 @@ from pathlib import Path
 
 import soundfile as sf
 import torch
-from history_prompt import history_contract, history_prompt_sha256, render_history_prompt
+from history_prompt import (
+    build_history_index,
+    history_contract,
+    history_prompt_sha256,
+    render_history_prompt,
+)
 from peft import LoraConfig, inject_adapter_in_model
 from prompts import get_prompt, prompt_sha256
 from reverse_audio_vl import LORA_TARGETS, ReverseAudioVL
@@ -114,6 +119,7 @@ def main() -> None:
             for line in args.history_manifest.read_text().splitlines()
             if line.strip()
         ]
+    history_index = build_history_index(history_pool) if dynamic_prompt else None
 
     device = torch.device(args.device)
     model = ReverseAudioVL.from_pretrained(device=device)
@@ -142,6 +148,7 @@ def main() -> None:
                     row,
                     history_pool,
                     count=args.history_count,
+                    index=history_index,
                 )
                 system_prompt = render_history_prompt(contract)
                 dynamic_hash = history_prompt_sha256(contract)

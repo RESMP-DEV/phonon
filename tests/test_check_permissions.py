@@ -45,6 +45,32 @@ def test_diagnostic_schema_rejects_identity_and_flag_drift(checker) -> None:
     assert "unexpected bundle identifier" in result["errors"]
 
 
+def test_diagnostic_schema_reports_non_objects_instead_of_crashing(checker) -> None:
+    invocation = checker.parse_arguments([])
+    list_result = checker.validate_diagnostic(
+        {"stdout": "[]", "exit_code": 0}, invocation
+    )
+    null_request = {
+        "schemaVersion": 1,
+        "diagnostic": "permissions",
+        "bundleIdentifier": "com.infatoshi.phonon",
+        "isAppBundle": True,
+        "accessibilityGranted": False,
+        "inputMonitoringGranted": False,
+        "screenRecordingGranted": False,
+        "microphoneStatus": "not_determined",
+        "screenRecordingRequest": None,
+    }
+    null_result = checker.validate_diagnostic(
+        {"stdout": json.dumps(null_request), "exit_code": 0}, invocation
+    )
+
+    assert list_result["passed"] is False
+    assert "diagnostic must be a JSON object" in list_result["errors"]
+    assert null_result["passed"] is False
+    assert "screenRecordingRequest must be a JSON object" in null_result["errors"]
+
+
 def test_invalidated_app_contract_writes_a_failing_receipt(
     checker, tmp_path: Path
 ) -> None:

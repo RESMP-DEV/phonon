@@ -131,6 +131,9 @@ def validate_diagnostic(
         diagnostic = json.loads(result["stdout"])
     except (TypeError, json.JSONDecodeError) as error:
         errors.append(f"diagnostic is not JSON: {error}")
+    if not isinstance(diagnostic, dict):
+        errors.append("diagnostic must be a JSON object")
+        diagnostic = {}
 
     expected_keys = {
         "schemaVersion",
@@ -153,9 +156,10 @@ def validate_diagnostic(
         errors.append("unexpected bundle identifier")
     if diagnostic.get("isAppBundle") is not True:
         errors.append("diagnostic did not run from an app bundle")
-    if diagnostic.get("screenRecordingRequest", {}).get("performed") is not (
-        invocation.request_screen_recording
-    ):
+    request = diagnostic.get("screenRecordingRequest")
+    if not isinstance(request, dict):
+        errors.append("screenRecordingRequest must be a JSON object")
+    elif request.get("performed") is not invocation.request_screen_recording:
         errors.append("request flag was not honored")
     if (
         invocation.require_granted

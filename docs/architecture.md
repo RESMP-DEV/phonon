@@ -531,7 +531,7 @@ specification.
 
 | Property | Current behavior | Owner |
 | --- | --- | --- |
-| Permission | `CGPreflightScreenCaptureAccess`, then `CGRequestScreenCaptureAccess`; denial returns empty text silently | `ScreenContextCapture` |
+| Permission | `CGPreflightScreenCaptureAccess`; denial returns empty text without requesting access | `ScreenContextCapture` |
 | Scope | Every display returned by `SCShareableContent`, not the active display | `ScreenContextCapture` |
 | Self-exclusion | Phonon's own application is excluded from every filter | `ScreenContextCapture` |
 | Filter | One `SCContentFilter` per display over the whole display, no window selection | `ScreenContextCapture` |

@@ -25,6 +25,10 @@
 - API teachers may receive only the minimum fields explicitly approved by the
   active architecture document. OpenRouter is not an approved dataset-generation
   provider for this thread.
+- The Hugging Face placeholder
+  `RESMP-DEV/phonon-reverse-salm` is private and metadata-only. Do not upload
+  adapter weights, tokenizer payloads, Aqua audio, transcripts, accepted text,
+  dictionaries, or screenshots without a new explicit release decision.
 - Screen context is OCR-only in the product today. A screenshot may be passed to a
   local vision head only through an explicit opt-in image protocol with declared
   retention, provenance, capability, and deletion behavior. Do not persist it merely
@@ -127,6 +131,8 @@
   `/home/kearm/salm-lora/build/aqua-length-bracket-v3/soup-8000-full-receipt.json`
   and
   `/home/kearm/.local/share/phonon/reverse-salm/installed-adapter-receipt.json`.
+- Private HF placeholder:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm`
 
 ## Required local checks
 

@@ -1620,6 +1620,27 @@ unchanged. W&B runs include
 `https://wandb.ai/retis_labs/phonon/runs/full-epoch-active-runtime-v1`, and
 `https://wandb.ai/retis_labs/phonon/runs/soup-8000-full-active-v1`.
 
+### 2026-10-05: private model placeholder and training-control implementation
+
+Created the private Hugging Face placeholder
+`https://huggingface.co/RESMP-DEV/phonon-reverse-salm`. The Hub API confirmed
+`private: true`; it contains only `README.md` and `config.json`. The card records
+the prompt contract, pinned public-data revision, aggregate scores, hashes, and
+non-claims. It intentionally contains no weights, tokenizer, audio, transcript,
+accepted text, dictionary value, screenshot, or other personal data. The current
+trained adapter remains on controlled compute storage pending an explicit
+release decision.
+
+The trainer now exposes real `--batch-size`, `--gradient-accumulation`,
+`--conformer-blocks`, and `--conformer-lr` controls. Batching uses the native
+LFM2 collator's real batch dimension, accumulation averages microbatch losses,
+and selective conformer tensors are included in checkpoints and restored on both
+resume and inference. A real one-step CUDA smoke with batch 4, accumulation 2,
+and the last four conformer layers unfrozen completed successfully. Timing
+probes showed batch 2 and batch 4 are wall-clock regressions on one RTX 3090 Ti
+for this model, so the first long structural arms use batch 1 while preserving
+the new controls for quality experiments.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

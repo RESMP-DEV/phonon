@@ -197,6 +197,11 @@ def load_checkpoint(
         load_conformer_state(model, conformer_state)
     if result_vl.unexpected_keys:
         raise RuntimeError(f"unexpected LoRA keys: {result_vl.unexpected_keys[:5]}")
+    # Older checkpoints may contain an empty trailing conformer group. Removing
+    # it preserves the global parameter indices while allowing a two-group resume.
+    payload["opt"]["param_groups"] = [
+        group for group in payload["opt"]["param_groups"] if group["params"]
+    ]
     optimizer.load_state_dict(payload["opt"])
     torch.set_rng_state(payload["torch_rng"].cpu())
     if torch.cuda.is_available() and "cuda_rng" in payload:
@@ -317,12 +322,16 @@ def main() -> None:
             for p in layer.parameters()
             if p.requires_grad
         ]
+    parameter_groups = [
+        {"params": lora_parameters, "lr": args.lr},
+        {"params": adapter_parameters, "lr": args.adapter_lr},
+    ]
+    if conformer_parameters:
+        parameter_groups.append(
+            {"params": conformer_parameters, "lr": args.conformer_lr}
+        )
     optimizer = torch.optim.AdamW(
-        [
-            {"params": lora_parameters, "lr": args.lr},
-            {"params": adapter_parameters, "lr": args.adapter_lr},
-            {"params": conformer_parameters, "lr": args.conformer_lr},
-        ],
+        parameter_groups,
         betas=(0.9, 0.95),
         weight_decay=0.0,
         fused=(device.type == "cuda"),
@@ -435,7 +444,8 @@ def main() -> None:
             optimizer.param_groups[0]["lr"] = lr_at(step - 1)
             scale = lr_at(step - 1) / max(args.lr, 1e-12)
             optimizer.param_groups[1]["lr"] = args.adapter_lr * scale
-            optimizer.param_groups[2]["lr"] = args.conformer_lr * scale
+            if len(optimizer.param_groups) > 2:
+                optimizer.param_groups[2]["lr"] = args.conformer_lr * scale
             all_trainable = (
                 lora_parameters + adapter_parameters + conformer_parameters
             )

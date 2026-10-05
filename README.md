@@ -74,10 +74,14 @@ setting, and there is no way to point it at a remote model.
 
 ```bash
 cargo install --path crates/phonon-cli --force --root ~/.local
+just quality           # common product Python/shell/repo checks
 phonon bar --rebuild   # once, builds Swift floating pill
 scripts/ui_snapshots.sh # synthetic, non-personal native UI renders
 scripts/check_permissions.py # app-process TCC JSON report; no prompt by default
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full required-check matrix,
+receipt contract, result-reuse rules, and native-platform boundaries.
 
 ## Commands
 

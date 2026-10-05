@@ -1969,6 +1969,34 @@ rather than runtime reproductions unless separately receipted. Workers did not
 read Aqua audio/transcripts, capture owner screen content, mutate TCC, or run
 dictation. Their completed turns are evidence, not integration acceptance.
 
+### 2026-10-05: Lapis-style quality scaffold
+
+Phonon now has the missing process anchor. `AGENTS.md` is the tracked canonical
+instruction file, `CLAUDE.md` is its literal relative symlink, and
+`CONTRIBUTING.md` owns setup, work records, receipt format, result-reuse rules,
+code standards, native debugging boundaries, and the required-check matrix. The
+thin `justfile` routes common checks rather than duplicating command policy:
+`quality` is non-GUI product repository hygiene, `rust` owns the compiled
+workspace, `swift` owns native unit behavior, `ui` owns deterministic synthetic
+renders, and `permissions` builds then exercises the signed non-prompting
+diagnostic.
+
+`scripts/check_quality.py` is the receipt-writing common gate. It invalidates a
+prior receipt without following a final-path symlink, records revision/dirty
+state, writes command output only to ignored logs, aggregates all failures, and
+atomically publishes `build/reports/quality/receipt.json` with explicit
+non-claims. Its behavioral tests cover instruction and ignore contracts, stable
+check ordering, dynamic check-runner discovery, runner failure receipts, symlink
+safety, and direct invocation. Product Python tests now include root sidecar,
+Aqua-baseline, and runner tests in one bounded command.
+
+`scripts/check_rust.py` and `scripts/check_swift.py` apply the same receipt,
+invalidation, source-provenance, and non-claim contract to their native domains.
+The common gate deliberately does not launch the app, acquire TCC, run models,
+capture a screen, claim adapter quality, or replace the Rust/Swift/native gates.
+Those remain separate matrix rows. This is process scaffolding only: it changes
+no runtime behavior and does not repair the audited consent/retention P0s.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

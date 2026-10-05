@@ -1707,7 +1707,10 @@ It then passed the full parent-session Swift suite (77 tests), `cargo fmt --all
 -- --check`, Clippy with warnings denied, the full Rust workspace tests, both
 shell checks, and a real synthetic UI run with all nine renders. The final UI
 receipt is `build/ui-snapshots/run-20261005T135144-52638/receipt.json`,
-SHA-256 `738139ee1de9db0bb682a30278da6cb1e4364727ecb0254fee32fdf07ac0b57d`.
+SHA-256 `738139ee1de9db0bb682a30278da6cb1e4364727ecb0254fee32fdf07ac0b57d`;
+the combined-head rerun is
+`build/ui-snapshots/run-20261005T135452-58904/receipt.json`, SHA-256
+`bc648c33f0dd7553f7c2f0fcf4aced1db2cc4fec0a2528c2314f549fa7d94b44`.
 An external visual audit of the synthetic Settings render found that the
 Training capture section matches the existing graphite instrument-panel
 hierarchy; the native switch states are materially legible and artifact-free.
@@ -1785,7 +1788,7 @@ deterministic fixture emitted identical bytes twice. Probe output is at
 `fixture-a.json` and `fixture-b.json` and the machine receipt at
 `receipt.json`. Parent review tightened role/subrole publication to an
 Apple-standard allowlist and reran compilation, live and fixture probes, all 39
-root Python tests, Ruff, `git diff --check`, and live HTTP checks for all 14
+repository Python tests, Ruff, `git diff --check`, and live HTTP checks for all 14
 Apple URLs. The final ignored receipt SHA-256 is
 `499690175938b209c969468beabb6d4777e435f1e57e9e7cf415f42c0df61b30`.
 

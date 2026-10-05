@@ -164,6 +164,53 @@ enum CorpusCommands {
     MigrateLegacy,
     /// Delete one recording directory and its paired WAV/metadata.
     Delete { id: String },
+    /// Atomically attach one consented screen image to a corpus recording.
+    AttachScreenshot {
+        /// Paired WAV inside the Phonon corpus.
+        #[arg(long)]
+        audio_path: PathBuf,
+        /// PNG staged in the same recording directory.
+        #[arg(long)]
+        image_path: PathBuf,
+        #[arg(long)]
+        display_id: String,
+        #[arg(long)]
+        pixel_width: u32,
+        #[arg(long)]
+        pixel_height: u32,
+        #[arg(long)]
+        scale_factor: f64,
+        #[arg(long)]
+        capture_origin: String,
+        #[arg(long)]
+        captured_at_ms: Option<u64>,
+        #[arg(long)]
+        consented_at_ms: Option<u64>,
+        /// The Swift caller must preflight TCC; this flag records that check.
+        #[arg(long)]
+        permission_granted: bool,
+    },
+    /// Export local corpus metadata outside the personal data directory.
+    Export {
+        /// Export directory; defaults beside the current directory.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        include_screen_images: bool,
+        #[arg(long)]
+        only_consented: bool,
+        /// Include only intended transcripts, never generated/raw ASR text.
+        #[arg(long)]
+        include_text: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove only screenshots past their recorded deletion deadline.
+    ExpireScreenshots {
+        /// Explicit current time for deterministic local maintenance.
+        #[arg(long)]
+        now_ms: Option<u64>,
+    },
     /// Run the warmed correction path over labeled corpus recordings (and
     /// fixture files), reporting text and timing per case. Prompt options
     /// come from settings.json plus PHONON_PROFILE_* overrides.
@@ -294,6 +341,45 @@ fn run_corpus(command: CorpusCommands) -> Result<()> {
         CorpusCommands::SetIntended { id, text } => data_cmd::set_intended(&id, &text),
         CorpusCommands::MigrateLegacy => data_cmd::migrate_legacy_history(),
         CorpusCommands::Delete { id } => data_cmd::delete_corpus_recording(&id),
+        CorpusCommands::AttachScreenshot {
+            audio_path,
+            image_path,
+            display_id,
+            pixel_width,
+            pixel_height,
+            scale_factor,
+            capture_origin,
+            captured_at_ms,
+            consented_at_ms,
+            permission_granted,
+        } => data_cmd::attach_screenshot(
+            &audio_path,
+            &image_path,
+            display_id,
+            pixel_width,
+            pixel_height,
+            scale_factor,
+            capture_origin,
+            captured_at_ms,
+            consented_at_ms,
+            permission_granted,
+        ),
+        CorpusCommands::Export {
+            out,
+            include_screen_images,
+            only_consented,
+            include_text,
+            json,
+        } => data_cmd::export_corpus(
+            out.as_deref(),
+            phonon_core::data::CorpusExportOptions {
+                include_screen_images,
+                only_consented,
+                include_text,
+            },
+            json,
+        ),
+        CorpusCommands::ExpireScreenshots { now_ms } => data_cmd::expire_screenshots(now_ms),
         CorpusCommands::PolishEval {
             fixtures,
             unlabeled,

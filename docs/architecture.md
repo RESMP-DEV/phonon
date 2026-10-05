@@ -1650,6 +1650,18 @@ steps followed by one full Aqua epoch scored 0.11406547722154858 fair WER,
 promoted soup, but fair and strict WER remain worse; it is retained as a
 candidate for souping rather than promoted.
 
+The learning-rate audit found a real schedule asymmetry in the winning runs:
+the language LoRA used linear warmup followed by cosine decay, while the audio
+adapter learning rate remained static. Optuna tuned the two initial learning
+rates, rank, context, and warmup; it did not tune schedule shape. Two full-epoch
+controls then scaled the adapter learning rate with the existing cosine. The
+Optuna initial adapter LR scored 0.11458513771002944 fair WER, 0.1475887170154686
+strict WER, and 0.340 exact. Half that initial adapter LR scored 0.1144119175472025,
+0.14749772520473156, and 0.338. Both are worse than the static-adapter
+full-epoch checkpoint and promoted soup, so the static adapter LR remains the
+quality winner. W&B histories confirm the new adapter LR actually decayed from
+approximately `2.96e-5` or `1.48e-5` to near zero.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

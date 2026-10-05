@@ -17,6 +17,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR-only today; image path and sidecar protocol still open |
 | Audio front end | `MicRecorder`, `phonon-audio` | Hardware-rate capture with independent streaming and final paths |
 | Local user data | `phonon-core::data`, `AppData.swift` | Dictionary, settings, paired corpus, retention, and explicit export |
+| Training-corpus capture | `phonon-core::data`, `phonon-cli` | Core consent/hash/retention/export path; macOS automatic capture wiring remains unimplemented |
 | Final-training Optuna sweep | `ml/research/final_sweep` | Prompt-baked, context-keyed packs; live study running on B550 |
 | ML correction and research | `ml/` | Canonical text-refiner research pipeline |
 | Profile and vocabulary mining | `tools/profile-miner` | Local consent-gated personal context lane |
@@ -38,6 +39,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
 | Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
+| Aqua baseline receipts | `tools/aqua_baseline.py` scores explicit local JSONL inputs with redaction | Registration of the actual frozen slice and live candidate/baseline comparison receipts |
 
 ## Product planes
 
@@ -1488,6 +1490,54 @@ screenshot/audio training-candidate capture and redacted export, and a
 no-model Aqua baseline/score harness. Their results are not accepted at launch;
 the parent must inspect each diff and rerun decisive checks. No gate, migration,
 capture, export, or quality measurement in this plan has run yet.
+
+### 2026-10-05: first Aqua parity implementation slices
+
+Three worker slices completed after parent review and repair. The worker runs
+themselves timed out before final self-reports, so none was accepted on worker
+output alone; the parent inspected every diff, repaired the corpus privacy
+boundary, reran the decisive checks, merged the slices, and ran one combined
+synthetic CLI integration pass.
+
+`phonon dictionary import-aqua` is implemented with `--settings`, `--dry-run`,
+and `--json`. It reads only Aqua's local cache, maps dictionary values and
+from/to replacements, counts instruction characters without copying their text,
+creates a dated dictionary backup when a dictionary already exists, and reports
+first-run and idempotent-repeat counts. The synthetic integration imported
+three values on first run, zero on repeat, counted two invalid values, and
+created the expected backup.
+
+The training-corpus core is implemented, but automatic macOS screenshot capture
+is deliberately not wired into the bar yet. `phonon corpus attach-screenshot`
+requires both default-off settings, a PNG, explicit display/provenance fields,
+and a TCC preflight declaration. It writes `screenshot.png` plus a
+`screenshot.json` sidecar with hash, dimensions, scale, consent, capability,
+and deletion deadline. `phonon corpus expire-screenshots` removes only an
+expired verified image and its sidecar; `phonon corpus export` refuses an
+existing destination, verifies hashes and sidecars, copies consented images only
+on request, and omits transcript text unless explicitly requested. The worker's
+Swift stop-path diff was rejected and preserved outside the tree because it
+left an untracked image copy and could block ordinary dictation; app wiring
+remains open.
+
+`tools/aqua_baseline.py` registers the no-model scoring protocol for explicit
+local JSONL inputs. It supports field mappings, stable-ID validation, optional
+manifest and baseline inputs, fair/strict WER, exactness, wins/ties/losses,
+worse-than-input rate, latency percentiles, input hashes, and allowlisted
+metadata. Its receipt excludes references, hypotheses, and per-row timings.
+The synthetic two-row run scored 0.2 fair WER with one win and one loss; it
+proves the harness, not product quality.
+
+Combined verification passed: `cargo fmt --all -- --check`; `cargo clippy
+--workspace --all-targets -- -D warnings`; full `cargo test --workspace`; Ruff
+and 13 focused baseline tests; the existing 16 root Python tests; and the
+synthetic integration receipt at
+`~/.cache/phonon-parity-integration-20261005T105937/receipt.json`. The Rust run
+included 40 core tests, four Aqua-import CLI tests, and the opt-in reverse-SALM
+spawn test. Non-claims: no real Aqua settings were imported, no real screenshot
+or personal text entered Git, no live Aqua UI walk ran, no macOS app capture
+path is enabled, and no full-slice quality gate or five-day dogfood claim is
+made.
 
 ## Contracts to preserve
 

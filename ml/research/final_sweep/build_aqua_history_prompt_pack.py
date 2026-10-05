@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--audio-root", type=Path, required=True)
     parser.add_argument("--exclude", type=Path, default=None)
-    parser.add_argument("--prompt-id", default="prose_history_dictation_v1")
+    parser.add_argument("--prompt-id", default="prose_history_dictation_v2")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--min-dur", type=float, default=2.0)
     parser.add_argument("--max-dur", type=float, default=20.0)
@@ -92,7 +92,7 @@ def main() -> None:
             count=args.history_count,
             index=history_index,
         )
-        prompt = render_history_prompt(contract)
+        prompt = render_history_prompt(contract, prompt_id=args.prompt_id)
         audio_path = args.audio_root / str(row["audio"])
         chats.append(
             [
@@ -108,7 +108,9 @@ def main() -> None:
         )
         audio_id = str(row["audio"])
         history_ids[audio_id] = [str(value) for value in contract["history_audio"]]
-        dynamic_hashes[audio_id] = history_prompt_sha256(contract)
+        dynamic_hashes[audio_id] = history_prompt_sha256(
+            contract, prompt_id=args.prompt_id
+        )
 
     LFM2AudioDetokenizer.cuda = lambda self, device=None: self
     processor = LFM2AudioProcessor.from_pretrained(

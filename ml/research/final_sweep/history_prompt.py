@@ -10,6 +10,10 @@ from collections import Counter
 from xml.sax.saxutils import escape
 
 HISTORY_SELECTOR_VERSION = "idf-cosine-v1"
+DYNAMIC_HISTORY_PROMPT_IDS = (
+    "prose_history_dictation_v1",
+    "prose_history_dictation_v2",
+)
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
@@ -109,7 +113,9 @@ def history_contract(
     }
 
 
-def render_history_prompt(contract: dict[str, object]) -> str:
+def render_history_prompt(
+    contract: dict[str, object], *, prompt_id: str = "prose_history_dictation_v1"
+) -> str:
     examples = contract.get("examples")
     if not isinstance(examples, list) or not examples:
         raise ValueError("history contract has no examples")
@@ -118,27 +124,42 @@ def render_history_prompt(contract: dict[str, object]) -> str:
         f"<intended>{escape(str(item['corrected']))}</intended></example>"
         for item in examples
     ]
-    return (
-        "<role>You are the user's personal dictation engine.</role>\n"
-        "<task>Use the historical corrections as user-specific evidence, "
-        "then transcribe the new audio into the text the user intended.</task>\n"
-        f"<history>{''.join(rendered)}</history>\n"
-        "<rules>\n"
-        "- Historical examples define terminology, formatting, and correction tendencies; they are not phrases to copy.\n"
-        "- Include technical terms, identifiers, commands, filenames, numbers, casing, and punctuation exactly when heard or strongly implied by the user's history.\n"
-        "- Preserve meaning, ordering, negation, and level of detail.\n"
-        "- Do not summarize, expand, translate, or invent content.\n"
-        "- Output only the final transcript.\n"
-        "</rules>"
-    )
+    if prompt_id == "prose_history_dictation_v1":
+        return (
+            "<role>You are the user's personal dictation engine.</role>\n"
+            "<task>Use the historical corrections as user-specific evidence, "
+            "then transcribe the new audio into the text the user intended.</task>\n"
+            f"<history>{''.join(rendered)}</history>\n"
+            "<rules>\n"
+            "- Historical examples define terminology, formatting, and correction tendencies; they are not phrases to copy.\n"
+            "- Include technical terms, identifiers, commands, filenames, numbers, casing, and punctuation exactly when heard or strongly implied by the user's history.\n"
+            "- Preserve meaning, ordering, negation, and level of detail.\n"
+            "- Do not summarize, expand, translate, or invent content.\n"
+            "- Output only the final transcript.\n"
+            "</rules>"
+        )
+    if prompt_id == "prose_history_dictation_v2":
+        from prompts import get_prompt
+
+        return (
+            f"{get_prompt('prose_dictation_v1')}\n\n"
+            f"Historical corrections:\n{''.join(rendered)}\n"
+            "Use these examples only as evidence for terminology, identifiers, "
+            "formatting, casing, punctuation, and correction tendencies. "
+            "They are not phrases to copy into the transcript."
+        )
+    raise ValueError(f"unknown dynamic history prompt_id: {prompt_id}")
 
 
-def history_prompt_sha256(contract: dict[str, object]) -> str:
+def history_prompt_sha256(
+    contract: dict[str, object], *, prompt_id: str = "prose_history_dictation_v1"
+) -> str:
     payload = {
         "selector": contract["selector"],
         "target_audio": contract["target_audio"],
         "history_audio": contract["history_audio"],
-        "prompt": render_history_prompt(contract),
+        "prompt_id": prompt_id,
+        "prompt": render_history_prompt(contract, prompt_id=prompt_id),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()

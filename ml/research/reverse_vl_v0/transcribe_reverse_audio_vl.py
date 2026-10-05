@@ -10,6 +10,7 @@ from pathlib import Path
 import soundfile as sf
 import torch
 from history_prompt import (
+    DYNAMIC_HISTORY_PROMPT_IDS,
     build_history_index,
     history_contract,
     history_prompt_sha256,
@@ -108,7 +109,7 @@ def main() -> None:
     args = parser.parse_args()
     get_prompt(args.prompt_id)
     history_pool: list[dict[str, object]] = []
-    dynamic_prompt = args.prompt_id == "prose_history_dictation_v1"
+    dynamic_prompt = args.prompt_id in DYNAMIC_HISTORY_PROMPT_IDS
     if dynamic_prompt:
         if args.history_manifest is None:
             raise RuntimeError(
@@ -150,8 +151,8 @@ def main() -> None:
                     count=args.history_count,
                     index=history_index,
                 )
-                system_prompt = render_history_prompt(contract)
-                dynamic_hash = history_prompt_sha256(contract)
+                system_prompt = render_history_prompt(contract, prompt_id=args.prompt_id)
+                dynamic_hash = history_prompt_sha256(contract, prompt_id=args.prompt_id)
                 history_audio = contract["history_audio"]
             else:
                 system_prompt = get_prompt(args.prompt_id)

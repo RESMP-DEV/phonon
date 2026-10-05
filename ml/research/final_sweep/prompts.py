@@ -53,9 +53,17 @@ XML_TRANSCRIPT_V1 = """<role>You are an exact speech transcription engine.</role
 - Output only the transcript with no commentary.
 </rules>"""
 
+PROSE_HISTORY_DICTATION_V2 = (
+    "Personal-dictation prompt with two dynamic historical-correction examples. "
+    "The rendered prompt begins with prose_dictation_v1 unchanged, appends "
+    "<example><heard>...</heard><intended>...</intended></example> pairs, and "
+    "instructs the model to use history as evidence without copying it."
+)
+
 PROMPTS: dict[str, str] = {
     "prose_dictation_v1": PROSE_DICTATION_V1,
     "prose_history_dictation_v1": PROSE_HISTORY_DICTATION_V1,
+    "prose_history_dictation_v2": PROSE_HISTORY_DICTATION_V2,
     "xml_dictation_v1": XML_DICTATION_V1,
     "xml_dictation_guarded_v1": XML_DICTATION_GUARDED_V1,
     "xml_transcript_v1": XML_TRANSCRIPT_V1,

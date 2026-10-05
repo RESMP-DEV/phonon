@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from prompts import get_prompt
+
 HERE = Path(__file__).resolve().parent
 MODULE_PATH = HERE.parent / "history_prompt.py"
 spec = importlib.util.spec_from_file_location("history_prompt", MODULE_PATH)
@@ -60,3 +62,27 @@ def test_precomputed_history_index_preserves_selection() -> None:
     optimized = module.history_contract(target, pool, count=1, index=index)
     assert optimized["history_audio"] == expected["history_audio"] == ["same"]
     assert optimized["examples"] == expected["examples"]
+
+
+def test_v2_history_prompt_preserves_static_prefix() -> None:
+    contract = module.history_contract(
+        make_row("target", "deploy the service", "deploy the service"),
+        [
+                make_row(
+                "history",
+                "deploy the Kubernetes service",
+                "deploy the Kubernetes service",
+            )
+        ],
+        count=1,
+    )
+    rendered = module.render_history_prompt(
+        contract, prompt_id="prose_history_dictation_v2"
+    )
+    assert rendered.startswith(get_prompt("prose_dictation_v1"))
+    assert "<history>" not in rendered
+    assert "<example><heard>" in rendered
+    assert "not phrases to copy" in rendered
+    assert module.history_prompt_sha256(
+        contract, prompt_id="prose_history_dictation_v2"
+    ) != module.history_prompt_sha256(contract)

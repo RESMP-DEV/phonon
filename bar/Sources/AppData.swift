@@ -25,6 +25,13 @@ struct NativeSettings: Codable, Equatable {
     /// Bundle IDs of competing dictation apps the owner answered "Don't ask
     /// again" for. See `CompetingApps.swift`.
     var competitorQuitMuted: [String]
+    var trainingCaptureEnabled: Bool
+    var includeScreenImages: Bool
+    var screenshotRetentionSeconds: Int
+    /// Set only when both training consents became true in the native UI. The
+    /// corpus CLI uses this as the consent timestamp; manual flags in
+    /// settings.json do not fabricate one.
+    var trainingCaptureConsentedAtUnixMs: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -38,6 +45,10 @@ struct NativeSettings: Codable, Equatable {
         case privacyChoiceMade = "privacy_choice_made"
         case historyRetentionDays = "history_retention_days"
         case competitorQuitMuted = "competitor_quit_muted"
+        case trainingCaptureEnabled = "training_capture_enabled"
+        case includeScreenImages = "include_screen_images"
+        case screenshotRetentionSeconds = "screenshot_retention_seconds"
+        case trainingCaptureConsentedAtUnixMs = "training_capture_consented_at_unix_ms"
     }
 
     init(
@@ -51,7 +62,11 @@ struct NativeSettings: Codable, Equatable {
         shortcutMode: String = "fn",
         privacyChoiceMade: Bool = false,
         historyRetentionDays: Int = NativeSettings.keepRecordingsForever,
-        competitorQuitMuted: [String] = []
+        competitorQuitMuted: [String] = [],
+        trainingCaptureEnabled: Bool = false,
+        includeScreenImages: Bool = false,
+        screenshotRetentionSeconds: Int = NativeSettings.defaultScreenshotRetentionSeconds,
+        trainingCaptureConsentedAtUnixMs: UInt64? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.streaming = streaming
@@ -64,6 +79,10 @@ struct NativeSettings: Codable, Equatable {
         self.privacyChoiceMade = privacyChoiceMade
         self.historyRetentionDays = historyRetentionDays
         self.competitorQuitMuted = competitorQuitMuted
+        self.trainingCaptureEnabled = trainingCaptureEnabled
+        self.includeScreenImages = includeScreenImages
+        self.screenshotRetentionSeconds = screenshotRetentionSeconds
+        self.trainingCaptureConsentedAtUnixMs = trainingCaptureConsentedAtUnixMs
     }
 
     init(from decoder: Decoder) throws {
@@ -92,6 +111,31 @@ struct NativeSettings: Codable, Equatable {
             ?? NativeSettings.keepRecordingsForever
         competitorQuitMuted =
             try values.decodeIfPresent([String].self, forKey: .competitorQuitMuted) ?? []
+        trainingCaptureEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .trainingCaptureEnabled) ?? false
+        includeScreenImages =
+            try values.decodeIfPresent(Bool.self, forKey: .includeScreenImages) ?? false
+        screenshotRetentionSeconds =
+            try values.decodeIfPresent(
+                Int.self, forKey: .screenshotRetentionSeconds)
+            ?? NativeSettings.defaultScreenshotRetentionSeconds
+        trainingCaptureConsentedAtUnixMs = try values.decodeIfPresent(
+            UInt64.self, forKey: .trainingCaptureConsentedAtUnixMs)
+    }
+
+    /// The Rust settings owner uses one day when an older file omits the key.
+    /// Keep that shared default here so the native picker does not turn a
+    /// missing value into zero (which the corpus path rejects fail-closed).
+    static let defaultScreenshotRetentionSeconds = 86_400
+
+    /// Both explicit consents and a finite retention window are required. The
+    /// native consent timestamp is also required so CLI provenance never
+    /// guesses when the owner agreed.
+    var screenImageTrainingAllowed: Bool {
+        trainingCaptureEnabled
+            && includeScreenImages
+            && screenshotRetentionSeconds > 0
+            && trainingCaptureConsentedAtUnixMs != nil
     }
 }
 
@@ -443,6 +487,23 @@ final class NativeAppStore: ObservableObject {
             $0.localHistory = localHistory
             $0.screenContext = screenContext
             $0.privacyChoiceMade = true
+        }
+    }
+
+    /// Consent is recorded when the second of the two required switches turns
+    /// on. Turning either switch off invalidates the prior timestamp, so a
+    /// later re-enable records a fresh consent.
+    func setTrainingCapture(enabled: Bool, includesScreenImages: Bool) {
+        updateSettings { settings in
+            settings.trainingCaptureEnabled = enabled
+            settings.includeScreenImages = includesScreenImages
+            if enabled, includesScreenImages {
+                settings.trainingCaptureConsentedAtUnixMs =
+                    settings.trainingCaptureConsentedAtUnixMs
+                    ?? UInt64(Date().timeIntervalSince1970 * 1_000)
+            } else {
+                settings.trainingCaptureConsentedAtUnixMs = nil
+            }
         }
     }
 

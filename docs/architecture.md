@@ -35,8 +35,8 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Training kernel stack | Reference execution remains the training-quality winner; active FlashAttention/causal kernels degraded the full repeat, Liger and warm Triton are slower | A kernel mode must match the full-slice quality of its reference-trained adapter before product or final-training promotion |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
-| Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
-| Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
+| Screen context input | OCR-only by default; a separate two-switch training mode can retain only the main display | Real-capture TCC acceptance and a model capability declaration remain before image conditioning |
+| Screenshot scope | All displays are captured for OCR; training retention is limited to one in-memory main-display image | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
 | Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
@@ -203,7 +203,7 @@ public artifact destination.
    export redaction, hash mismatch, malformed manifest, and refusal to export
    raw ASR or unlabeled text.
 
-The capture path is implemented only when default-off behavior, explicit
+The Swift capture wiring is implemented only when default-off behavior, explicit
 consent, finite retention, provenance, integrity, and deletion are covered by
 tests. It is product-ready only after a real macOS capture, a retention expiry,
 an explicit export, a malformed-image rejection, and a full corpus deletion are
@@ -1666,6 +1666,52 @@ requires both paths not to exist and to be disjoint, and performs no recursive
 deletion. Refusal of an existing path and a fresh nine-render run passed; the
 new receipt is `build/ui-snapshots/run-20261005T131204-65111/receipt.json`,
 SHA-256 `b9359d4b12b2676e6a56d9adf5005665d30467790496bd701391c018b77acd84`.
+
+### 2026-10-05: safe native screen-image training capture
+
+The macOS bar now has a native two-switch training-capture mode, finite image
+retention choices, and a native consent timestamp. It remains off unless both
+`training_capture_enabled` and `include_screen_images` are on. Ordinary screen
+context still captures displays for OCR only. When training is consented, the
+same recording-start acquisition retains at most one main-display
+`CGImage` in memory; other displays are OCR-only. No PNG is staged before the
+engine reports speech and final text.
+
+At that final boundary, insertion proceeds first. The bar asynchronously stages
+a uniquely named PNG outside the corpus, invokes `phonon corpus
+attach-screenshot` with display, pixel, backing-scale, origin, capture time,
+consent time, and TCC-preflight fields, then removes the unique staging
+directory on success or failure. If local history is off, only successful
+attachment promotes the pass to a retained training candidate. Screenshot
+expiry and PNG encoding run on a utility queue and report failure without
+blocking inserted text; quit removes the per-process staging root. The Rust
+settings contract preserves the native consent timestamp across CLI rewrites so
+an existing consent is not silently invalidated.
+
+Focused Swift tests cover settings defaults and decoding, consent recording,
+CLI argument shape, successful/rejected/TCC-blocked staged cleanup, retention
+selection, and expiry failure. No real ScreenCaptureKit capture, live TCC
+grant, model load, or personal-data fixture ran in this implementation pass.
+Verification passed for `git diff --check`, `shellcheck
+scripts/ui_snapshots.sh`, `shfmt --diff scripts/ui_snapshots.sh`, the nine
+`TrainingCaptureTests`, and the sandbox-safe 74-test selection (all suites
+except the live paste-event test and two tests that trash fixture
+directories). The required synthetic UI run built the app but AppKit returned
+no bitmap representation in the restricted worker session, so it left no
+snapshot receipt; this is an unresolved live-UI environment boundary, not a
+passing render.
+
+Parent review repaired the staged-directory continuation ordering, moved expiry
+off the Swift cooperative executor, and added the settings round-trip regression.
+It then passed the full parent-session Swift suite (77 tests), `cargo fmt --all
+-- --check`, Clippy with warnings denied, the full Rust workspace tests, both
+shell checks, and a real synthetic UI run with all nine renders. The final UI
+receipt is `build/ui-snapshots/run-20261005T135144-52638/receipt.json`,
+SHA-256 `738139ee1de9db0bb682a30278da6cb1e4364727ecb0254fee32fdf07ac0b57d`.
+An external visual audit of the synthetic Settings render found that the
+Training capture section matches the existing graphite instrument-panel
+hierarchy; the native switch states are materially legible and artifact-free.
+The audit receipt is `zai-settings-native.json` beside that snapshot run.
 
 ## Contracts to preserve
 

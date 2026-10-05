@@ -519,6 +519,10 @@ pub struct SettingsFile {
     pub include_screen_images: bool,
     #[serde(default = "default_screenshot_retention_seconds")]
     pub screenshot_retention_seconds: u64,
+    /// Owned by the native bar. Preserve it on a CLI settings rewrite so an
+    /// already-given screenshot consent is not silently invalidated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub training_capture_consented_at_unix_ms: Option<u64>,
 }
 
 impl Default for SettingsFile {
@@ -536,6 +540,7 @@ impl Default for SettingsFile {
             training_capture_enabled: false,
             include_screen_images: false,
             screenshot_retention_seconds: DEFAULT_SCREENSHOT_RETENTION_SECONDS,
+            training_capture_consented_at_unix_ms: None,
         }
     }
 }
@@ -1944,6 +1949,19 @@ mod tests {
         assert!(!settings.training_capture_enabled);
         assert!(!settings.include_screen_images);
         assert_eq!(settings.screenshot_retention_seconds, 24 * 60 * 60);
+        assert_eq!(settings.training_capture_consented_at_unix_ms, None);
+    }
+
+    #[test]
+    fn settings_round_trip_preserves_native_screenshot_consent() {
+        let settings: SettingsFile = serde_json::from_str(
+            r#"{"schema_version":2,"training_capture_consented_at_unix_ms":123}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.training_capture_consented_at_unix_ms, Some(123));
+        let json = serde_json::to_string(&settings).unwrap();
+        let reparsed: SettingsFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(reparsed.training_capture_consented_at_unix_ms, Some(123));
     }
 
     #[test]

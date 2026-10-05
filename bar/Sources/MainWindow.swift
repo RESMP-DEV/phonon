@@ -572,6 +572,64 @@ struct SettingsView: View {
                             .tint(Color(red: 0.82, green: 0.20, blue: 0.17))
                     }
                 }
+
+                SettingsSection("Training capture") {
+                    ToggleRow(
+                        title: "Create local training candidates",
+                        detail:
+                            "Keep spoken audio and final text as a labeled-candidate source. "
+                                + "This is separate from ordinary history and starts off.",
+                        isOn: Binding(
+                            get: { store.settings.trainingCaptureEnabled },
+                            set: { value in
+                                store.setTrainingCapture(
+                                    enabled: value,
+                                    includesScreenImages: store.settings.includeScreenImages)
+                                onSettingsChanged()
+                            }
+                        )
+                    )
+                    Divider()
+                    ToggleRow(
+                        title: "Include screen images",
+                        detail:
+                            "Keep one main-display image captured at dictation start. "
+                                + "It can show private information, stays local, and starts off.",
+                        isOn: Binding(
+                            get: { store.settings.includeScreenImages },
+                            set: { value in
+                                store.setTrainingCapture(
+                                    enabled: store.settings.trainingCaptureEnabled,
+                                    includesScreenImages: value)
+                                onSettingsChanged()
+                            }
+                        )
+                    )
+                    Divider()
+                    Picker("Keep screen images for", selection: Binding(
+                        get: { store.settings.screenshotRetentionSeconds },
+                        set: { value in
+                            store.updateSettings { $0.screenshotRetentionSeconds = value }
+                            onSettingsChanged()
+                        }
+                    )) {
+                        Text("1 hour").tag(3_600)
+                        Text("24 hours").tag(86_400)
+                        Text("7 days").tag(604_800)
+                    }
+                    .pickerStyle(.menu)
+                    Text(
+                        store.settings.screenImageTrainingAllowed
+                            ? "Both consents are recorded. Capture happens only for a dictation "
+                                + "that detects speech and produces final text; a failed attach "
+                                + "keeps no new training candidate when local history is off."
+                            : "Screen-image training stays off until both switches are on and a "
+                                + "retention time is selected. Screen context OCR is unchanged."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(EmberTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
                 SettingsSection("Stored recordings") {
                     Picker("Keep recordings for", selection: Binding(
                         get: { store.settings.historyRetentionDays },
@@ -1092,10 +1150,6 @@ struct ToggleRow: View {
                 .tint(EmberTheme.accent)
                 .controlSize(.regular)
                 .frame(minWidth: 44, minHeight: 30)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(EmberTheme.border.opacity(0.85), lineWidth: 1)
-                )
         }
         .padding(.vertical, 2)
     }

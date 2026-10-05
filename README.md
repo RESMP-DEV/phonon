@@ -100,11 +100,12 @@ phonon stats             # local words, sessions, speaking time, dictionary fixe
 
 Aqua import reads the local Aqua Voice settings cache only, reports collisions
 and invalid values, and backs up Phonon's dictionary before a real run. It never
-contacts Aqua. Screen-image corpus capture is deliberately CLI-only for now:
-enable both `training_capture_enabled` and `include_screen_images`, attach a
-previously captured PNG with `phonon corpus attach-screenshot`, and export with
-explicit image/text consent flags. The automatic macOS capture path is not
-wired until its no-blocking and deletion lifecycle pass live testing.
+contacts Aqua. Screen-image corpus capture is default-off and requires both
+`training_capture_enabled` and `include_screen_images`. When both are enabled in
+native Settings, one main-display capture from dictation start can be attached
+after speech and final text exist; `phonon corpus attach-screenshot` remains the
+auditable registration boundary, and export still requires explicit image/text
+consent flags. Live ScreenCaptureKit and TCC acceptance has not yet been run.
 
 ## Surviving an uninstall
 
@@ -174,9 +175,16 @@ phonon dictionary learn <id> --from 'black well' --to Blackwell
 
 When `screen_context` is enabled in `settings.json`, the floating bar captures
 each visible display once at recording start and runs local macOS Vision OCR.
-Screenshots are discarded immediately. The engine uses OCR only to rank
+Those screenshots are discarded immediately. The engine uses OCR only to rank
 dictionary candidates already relevant to the spoken transcript; it sends
 confirmed terms, not the full screen text, into the correction prompt.
+
+Separately and only when both training-capture switches are on, the same
+main-display acquisition can be retained in memory until a speech-bearing
+dictation produces final text. It is then staged as a unique temporary PNG,
+registered by the corpus CLI with provenance and finite retention, and the
+temporary file is removed whether registration succeeds or fails. If local
+history is off, a failed registration leaves no new corpus candidate.
 
 ### Floating bar
 

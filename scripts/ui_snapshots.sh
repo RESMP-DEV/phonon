@@ -37,6 +37,9 @@ support = pathlib.Path(sys.argv[2])
     "shortcut_mode": "fn",
     "privacy_choice_made": True,
     "history_retention_days": 0,
+    "training_capture_enabled": False,
+    "include_screen_images": False,
+    "screenshot_retention_seconds": 86_400,
 }, indent=2))
 
 (support / "dictionary.json").write_text(json.dumps({
@@ -88,7 +91,9 @@ for index, (name, age_ms, raw, final, words, duration_ms) in enumerate(history):
     }, indent=2))
 PY
 
-(cd "$repo_root/bar" && swift build --disable-sandbox --product PhononBar >/dev/null)
+(cd "$repo_root/bar" && swift build --disable-sandbox --product PhononBar \
+	--cache-path "${SWIFTPM_CACHE_PATH:-$repo_root/bar/.build/spm-cache}" \
+	--scratch-path "${SWIFT_SCRATCH_PATH:-$repo_root/bar/.build}" >/dev/null)
 binary="$repo_root/bar/.build/debug/PhononBar"
 [[ -x "$binary" ]]
 

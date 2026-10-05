@@ -9,6 +9,7 @@
 .DS_Store
 .env
 .env.*
+.worktrees/
 .vercel
 /AGENTS.md
 /CLAUDE.md

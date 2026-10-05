@@ -1,4 +1,6 @@
 /target/
+/build/
+/wandb/
 /bar/.build/
 /bar/dist/
 /ref/
@@ -9,6 +11,8 @@
 .DS_Store
 .env
 .env.*
+.worktrees/
+.sindexer/
 .vercel
 /AGENTS.md
 /CLAUDE.md

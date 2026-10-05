@@ -3,20 +3,20 @@ import AVFoundation
 import SwiftUI
 
 enum EmberTheme {
-    static let background = Color(red: 0.067, green: 0.047, blue: 0.039)
-    static let sidebar = Color(red: 0.094, green: 0.063, blue: 0.049)
-    static let surface = Color(red: 0.129, green: 0.086, blue: 0.067)
-    static let surfaceRaised = Color(red: 0.165, green: 0.106, blue: 0.075)
-    static let border = Color(red: 0.31, green: 0.176, blue: 0.11)
-    static let text = Color(red: 1.0, green: 0.957, blue: 0.925)
-    static let muted = Color(red: 0.72, green: 0.61, blue: 0.55)
+    static let background = Color(red: 0.058, green: 0.058, blue: 0.061)
+    static let sidebar = Color(red: 0.082, green: 0.081, blue: 0.084)
+    static let surface = Color(red: 0.112, green: 0.109, blue: 0.113)
+    static let surfaceRaised = Color(red: 0.151, green: 0.145, blue: 0.149)
+    static let border = Color(red: 0.30, green: 0.29, blue: 0.30)
+    static let text = Color(red: 0.97, green: 0.965, blue: 0.955)
+    static let muted = Color(red: 0.75, green: 0.73, blue: 0.71)
     static let accent = Color(red: 1.0, green: 0.35, blue: 0.12)
-    static let accentSoft = Color(red: 0.235, green: 0.102, blue: 0.045)
+    static let accentSoft = Color(red: 0.42, green: 0.20, blue: 0.09)
     static let warm = Color(red: 0.965, green: 0.65, blue: 0.30)
     static let healthy = Color(red: 0.45, green: 0.78, blue: 0.60)
 
     static let nsBackground = NSColor(
-        calibratedRed: 0.067, green: 0.047, blue: 0.039, alpha: 1)
+        calibratedRed: 0.058, green: 0.058, blue: 0.061, alpha: 1)
 }
 
 enum NativeAppPage: String, CaseIterable, Identifiable {
@@ -256,7 +256,7 @@ struct HistoryView: View {
                                 if item.metadata.speechDetected == false { Text("No speech") }
                             }
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(EmberTheme.muted)
                         }
                         .padding(.vertical, 4)
                         .tag(item.id)
@@ -276,7 +276,7 @@ struct HistoryView: View {
                                             .font(.headline)
                                         Text(item.metadata.microphone ?? item.metadata.source)
                                             .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(EmberTheme.muted)
                                     }
                                     Spacer()
                                     Button("Copy") {
@@ -303,7 +303,7 @@ struct HistoryView: View {
                                     HStack {
                                         Text("Saving this creates ground truth for future evaluation.")
                                             .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(EmberTheme.muted)
                                         Spacer()
                                         Button("Save intended") {
                                             store.saveIntendedTranscript(itemID: item.id, text: intendedText)
@@ -318,7 +318,7 @@ struct HistoryView: View {
                                         if let value = llm.tokensPerSecond { Label("\(value, specifier: "%.0f") tok/s", systemImage: "speedometer") }
                                     }
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(EmberTheme.muted)
                                 }
                             }
                             .padding(24)
@@ -391,20 +391,26 @@ struct DictionaryView: View {
                                 if let replacement = entry.replacement {
                                     Text("\(entry.phrase) → \(replacement)")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(EmberTheme.muted)
                                 } else if !entry.spokenForms.isEmpty {
                                     Text(entry.spokenForms.joined(separator: ", "))
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(EmberTheme.muted)
                                         .lineLimit(1)
                                 }
                             }
                             Spacer()
-                            Button { edit(entry) } label: { Image(systemName: "pencil") }
+                            Button { edit(entry) } label: {
+                                Image(systemName: "pencil")
+                                    .frame(width: 28, height: 24)
+                            }
                                 .buttonStyle(.plain)
-                            Button { pendingDelete = entry } label: { Image(systemName: "trash") }
+                            Button { pendingDelete = entry } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 28, height: 24)
+                            }
                                 .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         .padding(.vertical, 4)
                     }
@@ -418,7 +424,8 @@ struct DictionaryView: View {
                         Text(editingID == nil ? "Add a term" : "Edit term")
                             .font(.title2.weight(.semibold))
                         LabeledContent("Written term") {
-                            TextField("Blackwell", text: $phrase).frame(width: 280)
+                            TextField("Required technical term", text: $phrase)
+                                .frame(width: 280)
                         }
                         LabeledContent("Replace spoken phrase") {
                             TextField("Optional exact output", text: $replacement).frame(width: 280)
@@ -428,7 +435,7 @@ struct DictionaryView: View {
                         }
                         Text("Leave replacement empty for a spelling term. Add a replacement when a spoken form should deterministically become different written text.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(EmberTheme.muted)
                         HStack {
                             if editingID != nil {
                                 Button("Cancel") { clearEditor() }
@@ -525,13 +532,17 @@ struct SettingsView: View {
                 SettingsSection("Backup") {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(backupStatus)
+                            .font(.callout)
+                            .foregroundStyle(EmberTheme.muted)
                         Text(
                             "Uninstalling removes everything under ~/Library, so a copy "
-                            + "of the dictionary, settings and history is kept in "
-                            + "~/.phonon. Phonon offers it back if it ever starts empty."
+                                + "of the dictionary, settings and history is kept in "
+                                + "~/.phonon. Phonon offers it back if it ever starts empty."
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 560, alignment: .leading)
                     }
                     Divider()
                     HStack {
@@ -539,7 +550,7 @@ struct SettingsView: View {
                             Text("Export everything")
                             Text("Copy the dictionary, settings, history and every recording.")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         Spacer()
                         Button("Export…", action: exportEverything)
@@ -550,13 +561,15 @@ struct SettingsView: View {
                             Text("Forget the backup")
                             Text("Delete the copy in ~/.phonon. Your live data is untouched.")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         Spacer()
                         Button("Show in Finder") { store.revealBackupInFinder() }
                             .disabled(store.mirrorManifest == nil)
                         Button("Delete") { store.deleteBackup() }
                             .disabled(store.mirrorManifest == nil)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color(red: 0.82, green: 0.20, blue: 0.17))
                     }
                 }
                 SettingsSection("Stored recordings") {
@@ -580,7 +593,7 @@ struct SettingsView: View {
                             Text("Clear all history")
                             Text("Move every stored recording and transcript to the Trash.")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         Spacer()
                         Button("Clear") { confirmClearHistory = true }
@@ -610,14 +623,14 @@ struct SettingsView: View {
                                 + "recording, then tap once to stop."
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                         Text(
                             "macOS also acts on the Globe key. Set System Settings › "
                                 + "Keyboard › \"Press 🌐 key to\" to \"Do Nothing\" so it only "
                                 + "records."
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                     }
                 }
 
@@ -636,7 +649,7 @@ struct SettingsView: View {
                             Text("Model status")
                             Text("Inspect weights, smoke tests, and decode throughput.")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         Spacer()
                         Button("Open", action: onShowModelStatus)
@@ -739,7 +752,7 @@ struct PrivacyChoiceView: View {
             Text(
                 "Dictation runs entirely on this Mac either way. These two features store or read more than the transcript, so they start off."
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(EmberTheme.muted)
 
             VStack(spacing: 0) {
                 ToggleRow(
@@ -761,7 +774,7 @@ struct PrivacyChoiceView: View {
 
             Text("Both can be changed any time in Settings, and History has a Clear all button.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmberTheme.muted)
 
             HStack {
                 Spacer()
@@ -790,7 +803,7 @@ struct PermissionGuideView: View {
             Text(guide.title)
                 .font(.title2.bold())
             Text(guide.detail)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmberTheme.muted)
 
             HStack(spacing: 14) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path))
@@ -800,7 +813,7 @@ struct PermissionGuideView: View {
                     Text("Phonon.app").font(.headline)
                     Text("Installed in Applications and ready to add in System Settings.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                 }
             }
             .padding(14)
@@ -875,7 +888,7 @@ struct StatTile: View {
                         .lineLimit(1)
                     Text(label)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                 }
             }
         }
@@ -893,7 +906,7 @@ struct MetricColumn: View {
                 .lineLimit(1)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmberTheme.muted)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -930,12 +943,12 @@ struct MicrophonePriorityCard: View {
                     "Phonon follows the microphone selected in System Settings, except a Bluetooth headset mic, which would drop the headset to call quality. Rank microphones here to override that."
                 )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(EmberTheme.muted)
 
                 if ranked.isEmpty {
                     Text("Nothing ranked, so Phonon follows the system input.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                 }
 
                 ForEach(Array(ranked.enumerated()), id: \.offset) { index, microphone in
@@ -945,7 +958,7 @@ struct MicrophonePriorityCard: View {
                     HStack(spacing: 8) {
                         Text("\(index + 1)")
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(EmberTheme.muted)
                             .frame(width: 16)
                         Image(systemName: connected ? "mic.fill" : "mic.slash")
                             .foregroundStyle(
@@ -962,7 +975,7 @@ struct MicrophonePriorityCard: View {
                         } else if !connected {
                             Text("not connected")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                         }
                         Spacer()
                         Button {
@@ -1008,7 +1021,7 @@ struct MicrophonePriorityCard: View {
                 } else {
                     Text("Remove one to rank a different microphone.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                 }
             }
         }
@@ -1053,7 +1066,7 @@ struct SettingsSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmberTheme.muted)
             Card { VStack(spacing: 12) { content } }
         }
     }
@@ -1064,14 +1077,27 @@ struct ToggleRow: View {
     let detail: String
     @Binding var isOn: Bool
     var body: some View {
-        HStack {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(EmberTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Toggle("", isOn: $isOn).labelsHidden()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(EmberTheme.accent)
+                .controlSize(.regular)
+                .frame(minWidth: 44, minHeight: 30)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(EmberTheme.border.opacity(0.85), lineWidth: 1)
+                )
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -1089,7 +1115,7 @@ struct PermissionRow: View {
             Spacer()
             Text(statusText ?? (granted ? "Granted" : "Needs access"))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmberTheme.muted)
             Button(actionTitle ?? "Settings", action: action)
                 .buttonStyle(.borderless)
         }
@@ -1101,7 +1127,7 @@ struct MetricRow: View {
     let value: String
     var body: some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(label).foregroundStyle(EmberTheme.muted)
             Spacer()
             Text(value).font(.body.monospacedDigit())
         }

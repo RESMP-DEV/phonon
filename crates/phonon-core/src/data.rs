@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 pub use phonon_llm::PolishConfig;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -8,6 +9,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DATA_SCHEMA_VERSION: u32 = 1;
+pub const TRAINING_CAPTURE_CONSENT_VERSION: u32 = 1;
+pub const SCREENSHOT_FILE_NAME: &str = "screenshot.png";
+pub const SCREENSHOT_MANIFEST_FILE_NAME: &str = "screenshot.json";
+const DEFAULT_SCREENSHOT_RETENTION_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DictionaryEntry {
@@ -390,6 +395,39 @@ pub struct LlmMetadata {
     pub tokens_per_second: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PixelDimensions {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A retained screen image is never a default by-product. Every field is part
+/// of the consent contract: what was captured, from which display, how long it
+/// may live, and which consent statement authorized it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScreenImageCapture {
+    pub file: String,
+    pub sha256: String,
+    pub display_id: String,
+    pub pixel_dimensions: PixelDimensions,
+    pub scale_factor: f64,
+    pub captured_at_unix_ms: u128,
+    pub capture_origin: String,
+    pub deletion_deadline_unix_ms: u128,
+    pub consent_version: u32,
+    pub consented_at_unix_ms: u128,
+    /// Deliberately local-only: this records what the image may be used for,
+    /// not a destination. Export remains a separate explicit user action.
+    pub capability: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct ScreenImageManifest {
+    schema_version: u32,
+    recording_id: String,
+    capture: ScreenImageCapture,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RecordingMetadata {
     pub schema_version: u32,
@@ -417,6 +455,8 @@ pub struct RecordingMetadata {
     pub screen_context_terms: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llm: Option<LlmMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_image: Option<ScreenImageCapture>,
 }
 
 impl RecordingMetadata {
@@ -437,6 +477,7 @@ impl RecordingMetadata {
             dictionary_corrections: Vec::new(),
             screen_context_terms: Vec::new(),
             llm: None,
+            screen_image: None,
         }
     }
 }
@@ -472,6 +513,12 @@ pub struct SettingsFile {
     /// Put `profile/user.md` and `profile/vocab.md` in the correction prompt.
     #[serde(default = "default_profile_prefix")]
     pub profile_prefix: bool,
+    #[serde(default)]
+    pub training_capture_enabled: bool,
+    #[serde(default)]
+    pub include_screen_images: bool,
+    #[serde(default = "default_screenshot_retention_seconds")]
+    pub screenshot_retention_seconds: u64,
 }
 
 impl Default for SettingsFile {
@@ -486,6 +533,9 @@ impl Default for SettingsFile {
             shortcut_mode: default_shortcut_mode(),
             competitor_quit_muted: Vec::new(),
             profile_prefix: default_profile_prefix(),
+            training_capture_enabled: false,
+            include_screen_images: false,
+            screenshot_retention_seconds: DEFAULT_SCREENSHOT_RETENTION_SECONDS,
         }
     }
 }
@@ -499,6 +549,10 @@ pub const DEFAULT_PROFILE_PREFIX: bool = false;
 
 fn default_profile_prefix() -> bool {
     DEFAULT_PROFILE_PREFIX
+}
+
+fn default_screenshot_retention_seconds() -> u64 {
+    DEFAULT_SCREENSHOT_RETENTION_SECONDS
 }
 
 fn default_true() -> bool {
@@ -521,8 +575,7 @@ impl SettingsFile {
         if !path.is_file() {
             return Ok(Self::default());
         }
-        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))
+        Self::load_at(path)
     }
 
     pub fn load_or_create() -> Result<Self> {
@@ -538,6 +591,14 @@ impl SettingsFile {
         let settings = Self::default();
         write_json_atomic(&path, &settings)?;
         Ok(settings)
+    }
+
+    pub fn load_at(path: PathBuf) -> Result<Self> {
+        if !path.is_file() {
+            return Ok(Self::default());
+        }
+        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))
     }
 }
 
@@ -557,10 +618,99 @@ pub fn settings_path() -> Result<PathBuf> {
     Ok(app_support_dir()?.join("settings.json"))
 }
 
+fn settings_path_at(app_support: &Path) -> PathBuf {
+    app_support.join("settings.json")
+}
+
 pub fn corpus_dir() -> Result<PathBuf> {
     Ok(app_support_dir()?.join("Corpus"))
 }
 
+fn corpus_dir_at(app_support: &Path) -> PathBuf {
+    app_support.join("Corpus")
+}
+
+fn recording_dir_at(app_support: &Path, id: &str) -> Result<PathBuf> {
+    validate_recording_id(id)?;
+    Ok(corpus_dir_at(app_support).join(id))
+}
+
+fn validate_recording_id(id: &str) -> Result<()> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id == "." || id == ".." {
+        bail!("invalid recording id: {id:?}");
+    }
+    Ok(())
+}
+
+fn save_recording_at(app_support: &Path, metadata: &RecordingMetadata) -> Result<()> {
+    let directory = recording_dir_at(app_support, &metadata.id)?;
+    write_json_atomic(&directory.join("metadata.json"), metadata)
+}
+
+fn load_recording_at(path: &Path) -> Result<RecordingMetadata> {
+    let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))
+}
+
+fn screenshot_manifest_path(recording_directory: &Path) -> PathBuf {
+    recording_directory.join(SCREENSHOT_MANIFEST_FILE_NAME)
+}
+
+fn save_screenshot_manifest(
+    app_support: &Path,
+    metadata: &RecordingMetadata,
+    capture: &ScreenImageCapture,
+) -> Result<()> {
+    let manifest = ScreenImageManifest {
+        schema_version: DATA_SCHEMA_VERSION,
+        recording_id: metadata.id.clone(),
+        capture: capture.clone(),
+    };
+    let directory = recording_dir_at(app_support, &metadata.id)?;
+    write_json_atomic(&screenshot_manifest_path(&directory), &manifest)
+}
+
+fn load_screenshot_manifest(recording_directory: &Path) -> Result<ScreenImageManifest> {
+    let bytes = fs::read(screenshot_manifest_path(recording_directory)).with_context(|| {
+        format!(
+            "read {}",
+            screenshot_manifest_path(recording_directory).display()
+        )
+    })?;
+    serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "parse {}",
+            screenshot_manifest_path(recording_directory).display()
+        )
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn atomic_copy(source: &Path, target: &Path) -> Result<()> {
+    let parent = target
+        .parent()
+        .with_context(|| format!("target has no parent: {}", target.display()))?;
+    fs::create_dir_all(parent)?;
+    let temporary = target.with_extension(format!(
+        "{}.tmp-{}-{}",
+        target
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("part"),
+        std::process::id(),
+        now_unix_ms()
+    ));
+    let result = fs::copy(source, &temporary).and_then(|_| fs::rename(&temporary, target));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.with_context(|| format!("copy {} to {}", source.display(), target.display()))
+}
 /// `profile/user.md` and `profile/vocab.md` live here (SPEC, onboarding).
 pub fn profile_dir() -> Result<PathBuf> {
     Ok(app_support_dir()?.join("profile"))
@@ -708,6 +858,287 @@ pub fn set_intended_transcript(id: &str, intended: &str) -> Result<RecordingMeta
     Ok(metadata)
 }
 
+pub fn update_recording(
+    id: &str,
+    update: impl FnOnce(&mut RecordingMetadata) -> Result<()>,
+) -> Result<RecordingMetadata> {
+    update_recording_at(&app_support_dir()?, id, update)
+}
+
+pub fn update_recording_at(
+    app_support: &Path,
+    id: &str,
+    update: impl FnOnce(&mut RecordingMetadata) -> Result<()>,
+) -> Result<RecordingMetadata> {
+    let directory = recording_dir_at(app_support, id)?;
+    let mut metadata = load_recording_at(&directory.join("metadata.json"))?;
+    update(&mut metadata)?;
+    save_recording_at(app_support, &metadata)?;
+    Ok(metadata)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScreenImageCaptureRequest {
+    pub display_id: String,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub scale_factor: f64,
+    pub capture_origin: String,
+    pub captured_at_unix_ms: Option<u128>,
+    pub consented_at_unix_ms: Option<u128>,
+    pub screen_capture_permission_granted: bool,
+}
+
+fn register_or_load_recording_at(
+    app_support: &Path,
+    audio_path: &Path,
+    source: &str,
+) -> Result<RecordingMetadata> {
+    let parent = audio_path
+        .parent()
+        .with_context(|| format!("audio path has no parent: {}", audio_path.display()))?;
+    fs::create_dir_all(parent)?;
+    let id = parent
+        .file_name()
+        .and_then(|value| value.to_str())
+        .context("recording directory has no UTF-8 id")?;
+    validate_recording_id(id)?;
+    let expected_parent = corpus_dir_at(app_support).join(id);
+    if parent != expected_parent {
+        bail!(
+            "audio path is outside the corpus recording directory: {}",
+            audio_path.display()
+        );
+    }
+    let path = parent.join("metadata.json");
+    if path.is_file() {
+        return load_recording_at(&path);
+    }
+    let audio_file = audio_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("audio.wav")
+        .to_string();
+    let mut metadata = RecordingMetadata::new(id.to_string(), source, audio_file);
+    metadata.audio_duration_ms = wav_duration_ms(audio_path).ok();
+    save_recording_at(app_support, &metadata)?;
+    Ok(metadata)
+}
+
+pub fn register_screen_image(
+    audio_path: &Path,
+    image_path: &Path,
+    request: ScreenImageCaptureRequest,
+    source: &str,
+) -> Result<RecordingMetadata> {
+    register_screen_image_at(&app_support_dir()?, audio_path, image_path, request, source)
+}
+
+pub fn register_screen_image_at(
+    app_support: &Path,
+    audio_path: &Path,
+    image_path: &Path,
+    request: ScreenImageCaptureRequest,
+    source: &str,
+) -> Result<RecordingMetadata> {
+    let settings = SettingsFile::load_at(settings_path_at(app_support))?;
+    require_screen_capture_scope(&settings)?;
+    if !request.screen_capture_permission_granted {
+        bail!("screen capture permission is not granted");
+    }
+    if request.display_id.trim().is_empty() || request.capture_origin.trim().is_empty() {
+        bail!("screen-image provenance is incomplete");
+    }
+    if request.pixel_width == 0
+        || request.pixel_height == 0
+        || !request.scale_factor.is_finite()
+        || request.scale_factor <= 0.0
+    {
+        bail!("screen-image dimensions are invalid");
+    }
+    if !audio_path.is_file() {
+        bail!("audio file not found: {}", audio_path.display());
+    }
+    if !image_path.is_file() {
+        bail!("screen image not found: {}", image_path.display());
+    }
+    let image = fs::read(image_path)
+        .with_context(|| format!("read screen image {}", image_path.display()))?;
+    if image.len() < 8 || image[..8] != [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a] {
+        bail!("screen image is not a PNG");
+    }
+    let sha256 = sha256_hex(&image);
+    let now = now_unix_ms();
+    let captured_at = request.captured_at_unix_ms.unwrap_or(now);
+    if captured_at > now {
+        bail!("screen-image capture time is in the future");
+    }
+    let consented_at = request
+        .consented_at_unix_ms
+        .context("screen-image consent time is required")?;
+    if consented_at > captured_at {
+        bail!("screen image was captured before consent was given");
+    }
+    let retention_ms = u128::from(settings.screenshot_retention_seconds) * 1_000;
+    let deletion_deadline = captured_at
+        .checked_add(retention_ms)
+        .context("screenshot deletion deadline overflow")?;
+    let mut metadata = register_or_load_recording_at(app_support, audio_path, source)?;
+    let directory = corpus_dir_at(app_support).join(&metadata.id);
+    let target = directory.join(SCREENSHOT_FILE_NAME);
+    let manifest_path = screenshot_manifest_path(&directory);
+    if metadata.screen_image.is_some() || target.exists() || manifest_path.exists() {
+        bail!("recording {} already has a screen image", metadata.id);
+    }
+    let attach_result = atomic_copy(image_path, &target).and_then(|()| {
+        let capture = ScreenImageCapture {
+            file: SCREENSHOT_FILE_NAME.to_string(),
+            sha256,
+            display_id: request.display_id.trim().to_string(),
+            pixel_dimensions: PixelDimensions {
+                width: request.pixel_width,
+                height: request.pixel_height,
+            },
+            scale_factor: request.scale_factor,
+            captured_at_unix_ms: captured_at,
+            capture_origin: request.capture_origin.trim().to_string(),
+            deletion_deadline_unix_ms: deletion_deadline,
+            consent_version: TRAINING_CAPTURE_CONSENT_VERSION,
+            consented_at_unix_ms: consented_at,
+            capability: "local_training_corpus_image".to_string(),
+        };
+        metadata.screen_image = Some(capture.clone());
+        save_screenshot_manifest(app_support, &metadata, &capture)?;
+        save_recording_at(app_support, &metadata)
+    });
+    if let Err(error) = attach_result {
+        let _ = fs::remove_file(&target);
+        let _ = fs::remove_file(&manifest_path);
+        return Err(error);
+    }
+    Ok(metadata)
+}
+
+fn require_screen_capture_scope(settings: &SettingsFile) -> Result<()> {
+    if !settings.training_capture_enabled {
+        bail!("training capture is not enabled");
+    }
+    if !settings.include_screen_images {
+        bail!("screen-image capture is not enabled");
+    }
+    if settings.screenshot_retention_seconds == 0 {
+        bail!("screenshot retention is missing or zero");
+    }
+    Ok(())
+}
+
+fn verify_screen_image_at(
+    directory: &Path,
+    metadata: &RecordingMetadata,
+) -> Result<ScreenImageCapture> {
+    let capture = metadata
+        .screen_image
+        .clone()
+        .context(format!("recording {} has no screen image", metadata.id))?;
+    if capture.file != SCREENSHOT_FILE_NAME {
+        bail!(
+            "invalid screen-image file name for recording {}",
+            metadata.id
+        );
+    }
+    let image_path = directory.join(&capture.file);
+    let image = fs::read(&image_path)
+        .with_context(|| format!("read screen image {}", image_path.display()))?;
+    if image.len() < 8 || image[..8] != [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a] {
+        bail!("screen image is not a PNG for recording {}", metadata.id);
+    }
+    let actual_hash = sha256_hex(&image);
+    if actual_hash != capture.sha256 {
+        bail!("screenshot hash mismatch for recording {}", metadata.id);
+    }
+    let manifest = load_screenshot_manifest(directory)
+        .with_context(|| format!("verify screen-image manifest for {}", metadata.id))?;
+    if manifest.schema_version != DATA_SCHEMA_VERSION
+        || manifest.recording_id != metadata.id
+        || manifest.capture != capture
+    {
+        bail!("screenshot manifest mismatch for recording {}", metadata.id);
+    }
+    Ok(capture)
+}
+
+pub fn delete_expired_screenshots(now_unix_ms: u128) -> Result<Vec<String>> {
+    delete_expired_screenshots_at(&app_support_dir()?, now_unix_ms)
+}
+
+pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> Result<Vec<String>> {
+    let corpus = corpus_dir_at(app_support);
+    if !corpus.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut deleted = Vec::new();
+    let mut errors = Vec::new();
+    for entry in fs::read_dir(&corpus).with_context(|| format!("read {}", corpus.display()))? {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push(format!("read corpus entry: {error:#}"));
+                continue;
+            }
+        };
+        let metadata_path = entry.path().join("metadata.json");
+        if !metadata_path.is_file() {
+            continue;
+        }
+        let mut metadata = match load_recording_at(&metadata_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                errors.push(format!("{}: {error:#}", metadata_path.display()));
+                continue;
+            }
+        };
+        let Some(capture) = metadata.screen_image.clone() else {
+            continue;
+        };
+        if capture.deletion_deadline_unix_ms > now_unix_ms {
+            continue;
+        }
+        // Expiry is a privacy deadline, not an integrity gate. A tampered or
+        // partially deleted candidate is still removed, and a corrupt record
+        // must not prevent removal of other expired candidates.
+        let image_path = entry.path().join(SCREENSHOT_FILE_NAME);
+        let manifest_path = screenshot_manifest_path(&entry.path());
+        let mut removal_failed = false;
+        for path in [&image_path, &manifest_path] {
+            if let Err(error) = fs::remove_file(path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    errors.push(format!("delete {}: {error:#}", path.display()));
+                    removal_failed = true;
+                }
+            }
+        }
+        if removal_failed {
+            continue;
+        }
+        metadata.screen_image = None;
+        if let Err(error) = save_recording_at(app_support, &metadata) {
+            errors.push(format!(
+                "screenshot deleted, but metadata update failed for {}: {error:#}",
+                metadata.id
+            ));
+            continue;
+        }
+        deleted.push(metadata.id);
+    }
+    if !errors.is_empty() {
+        bail!(
+            "screenshot expiry completed with errors: {}",
+            errors.join("; ")
+        );
+    }
+    Ok(deleted)
+}
+
 pub fn extract_transcript_payload(output: &str) -> &str {
     let Some(start) = output.find("<transcript>") else {
         let trimmed = output.trim();
@@ -786,15 +1217,234 @@ fn deletes_meaningful_words_only(source: &[String], candidate: &[String]) -> boo
 }
 
 pub fn delete_recording(id: &str) -> Result<()> {
-    if id.is_empty() || id.contains('/') || id.contains('\\') || id == "." || id == ".." {
-        bail!("invalid recording id: {id:?}");
-    }
-    let directory = corpus_dir()?.join(id);
+    delete_recording_at(&app_support_dir()?, id)
+}
+
+pub fn delete_recording_at(app_support: &Path, id: &str) -> Result<()> {
+    validate_recording_id(id)?;
+    let directory = corpus_dir_at(app_support).join(id);
     let metadata = directory.join("metadata.json");
     if !metadata.is_file() {
         bail!("recording not found: {id}");
     }
-    fs::remove_dir_all(&directory).with_context(|| format!("delete {}", directory.display()))
+    let quarantine = corpus_dir_at(app_support).join(format!(
+        ".deleting-{id}-{}-{}",
+        std::process::id(),
+        now_unix_ms()
+    ));
+    fs::rename(&directory, &quarantine)
+        .with_context(|| format!("quarantine {}", directory.display()))?;
+    if let Err(error) = fs::remove_dir_all(&quarantine) {
+        let restore = fs::rename(&quarantine, &directory);
+        if let Err(restore_error) = restore {
+            return Err(anyhow::anyhow!(
+                "delete failed: {error:#}; restore failed: {restore_error:#}"
+            ))
+            .context(format!("delete {}", directory.display()));
+        }
+        return Err(error).with_context(|| format!("delete {}", directory.display()));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CorpusExportOptions {
+    pub include_screen_images: bool,
+    pub only_consented: bool,
+    pub include_text: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CorpusExportItem {
+    session_id: String,
+    audio_sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    screenshot_sha256: Option<String>,
+    source: String,
+    created_at_unix_ms: u128,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recorded_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    consent_version: Option<u32>,
+    provenance: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intended_transcript: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CorpusExportManifest {
+    schema_version: u32,
+    exported_at_unix_ms: u128,
+    consent_version: u32,
+    items: Vec<CorpusExportItem>,
+    expired_screenshot_ids: Vec<String>,
+}
+
+pub fn export_corpus(out_dir: &Path, options: CorpusExportOptions) -> Result<PathBuf> {
+    export_corpus_at(&app_support_dir()?, out_dir, options)
+}
+
+fn export_corpus_to_output(
+    app_support: &Path,
+    out_dir: &Path,
+    options: CorpusExportOptions,
+) -> Result<PathBuf> {
+    let output = output_outside_app_support(app_support, out_dir)?;
+    let mut items = Vec::new();
+    let mut expired_screenshot_ids = Vec::new();
+    for recording in list_recordings_at(app_support)? {
+        if options.only_consented && recording.screen_image.is_none() {
+            continue;
+        }
+        if recording
+            .screen_image
+            .as_ref()
+            .is_some_and(|capture| capture.deletion_deadline_unix_ms <= now_unix_ms())
+        {
+            expired_screenshot_ids.push(recording.id);
+            continue;
+        }
+        if recording.audio_file.is_empty()
+            || recording.audio_file.contains('/')
+            || recording.audio_file.contains('\\')
+            || recording.audio_file == "."
+            || recording.audio_file == ".."
+        {
+            bail!("invalid audio file name for recording {}", recording.id);
+        }
+        let audio_path = corpus_dir_at(app_support)
+            .join(&recording.id)
+            .join(&recording.audio_file);
+        let audio = fs::read(&audio_path)
+            .with_context(|| format!("read corpus audio {}", audio_path.display()))?;
+        let audio_sha256 = sha256_hex(&audio);
+        let recording_directory = corpus_dir_at(app_support).join(&recording.id);
+        let screenshot = match recording.screen_image.clone() {
+            Some(_) => Some(verify_screen_image_at(&recording_directory, &recording)?),
+            None => None,
+        };
+        if let Some(capture) = &screenshot {
+            if capture.deletion_deadline_unix_ms <= now_unix_ms() {
+                bail!("screenshot is expired for recording {}", recording.id);
+            }
+            if options.include_screen_images {
+                let image_path = recording_directory.join(&capture.file);
+                atomic_copy(
+                    &image_path,
+                    &output
+                        .join("screenshots")
+                        .join(format!("{}.png", recording.id)),
+                )?;
+            }
+        } else if options.include_screen_images {
+            bail!(
+                "screen images were requested, but recording {} has no consented screenshot",
+                recording.id
+            );
+        }
+        items.push(CorpusExportItem {
+            session_id: recording.id.clone(),
+            audio_sha256,
+            screenshot_sha256: screenshot.as_ref().map(|capture| capture.sha256.clone()),
+            source: recording.source.clone(),
+            created_at_unix_ms: recording.created_at_unix_ms,
+            recorded_at: recording.recorded_at.clone(),
+            audio_duration_ms: recording.audio_duration_ms,
+            consent_version: screenshot.as_ref().map(|capture| capture.consent_version),
+            provenance: serde_json::json!({
+                "screen_capture_origin": screenshot.as_ref().map(|capture| {
+                    capture.capture_origin.clone()
+                }),
+                "display_id": screenshot.as_ref().map(|capture| capture.display_id.clone()),
+                "pixel_dimensions": screenshot.as_ref().map(|capture| {
+                    capture.pixel_dimensions.clone()
+                }),
+                "scale_factor": screenshot.as_ref().map(|capture| capture.scale_factor),
+                "captured_at_unix_ms": screenshot.as_ref().map(|capture| {
+                    capture.captured_at_unix_ms
+                }),
+                "deletion_deadline_unix_ms": screenshot.as_ref().map(|capture| {
+                    capture.deletion_deadline_unix_ms
+                }),
+                "consented_at_unix_ms": screenshot.as_ref().map(|capture| {
+                    capture.consented_at_unix_ms
+                }),
+                "capability": screenshot.as_ref().map(|capture| capture.capability.clone()),
+                "screen_image_exported": options.include_screen_images && screenshot.is_some(),
+            }),
+            intended_transcript: options
+                .include_text
+                .then(|| recording.intended_transcript.clone())
+                .flatten(),
+        });
+    }
+    let manifest = CorpusExportManifest {
+        schema_version: DATA_SCHEMA_VERSION,
+        exported_at_unix_ms: now_unix_ms(),
+        consent_version: TRAINING_CAPTURE_CONSENT_VERSION,
+        items,
+        expired_screenshot_ids,
+    };
+    write_json_atomic(&output.join("manifest.json"), &manifest)?;
+    Ok(output)
+}
+
+pub fn export_corpus_at(
+    app_support: &Path,
+    out_dir: &Path,
+    options: CorpusExportOptions,
+) -> Result<PathBuf> {
+    let output = output_outside_app_support(app_support, out_dir)?;
+    if let Err(error) = export_corpus_to_output(app_support, &output, options) {
+        let _ = fs::remove_dir_all(&output);
+        return Err(error);
+    }
+    Ok(output)
+}
+
+fn list_recordings_at(app_support: &Path) -> Result<Vec<RecordingMetadata>> {
+    let directory = corpus_dir_at(app_support);
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut recordings = Vec::new();
+    for entry in fs::read_dir(&directory)? {
+        let path = entry?.path().join("metadata.json");
+        if path.is_file() {
+            recordings.push(load_recording_at(&path)?);
+        }
+    }
+    recordings.sort_by_key(|recording| Reverse(recording.created_at_unix_ms));
+    Ok(recordings)
+}
+
+fn output_outside_app_support(app_support: &Path, requested: &Path) -> Result<PathBuf> {
+    let support = app_support
+        .canonicalize()
+        .with_context(|| format!("resolve {}", app_support.display()))?;
+    if requested.exists() {
+        bail!(
+            "export destination must not already exist: {}",
+            requested.display()
+        );
+    }
+    let parent = requested
+        .parent()
+        .with_context(|| format!("export path has no parent: {}", requested.display()))?;
+    let parent = parent
+        .canonicalize()
+        .with_context(|| format!("resolve {}", parent.display()))?;
+    let name = requested
+        .file_name()
+        .and_then(|value| value.to_str())
+        .context("export directory has no UTF-8 name")?;
+    let output = parent.join(name);
+    if output.starts_with(&support) {
+        bail!("export destination is inside Phonon's personal data directory");
+    }
+    Ok(output)
 }
 
 fn dictionary_key(entry: &DictionaryEntry) -> (String, Option<String>) {
@@ -1111,9 +1761,12 @@ fn now_unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_transcript_payload, safe_polish_output, DictionaryEntry, DictionaryFile,
-        SettingsFile,
+        extract_transcript_payload, register_screen_image_at, safe_polish_output,
+        update_recording_at, CorpusExportOptions, DictionaryEntry, DictionaryFile,
+        RecordingMetadata, ScreenImageCaptureRequest, SettingsFile, SCREENSHOT_FILE_NAME,
     };
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
     fn entry(phrase: &str, replacement: Option<&str>) -> DictionaryEntry {
         DictionaryEntry {
@@ -1124,6 +1777,394 @@ mod tests {
             starred: false,
             usage_count: 0,
         }
+    }
+
+    fn test_wav() -> Vec<u8> {
+        let mut wav = vec![0_u8; 44];
+        wav[0..4].copy_from_slice(b"RIFF");
+        wav[4..8].copy_from_slice(&36_u32.to_le_bytes());
+        wav[8..12].copy_from_slice(b"WAVE");
+        wav[12..16].copy_from_slice(b"fmt ");
+        wav[16..20].copy_from_slice(&16_u32.to_le_bytes());
+        wav[20..22].copy_from_slice(&1_u16.to_le_bytes());
+        wav[22..24].copy_from_slice(&1_u16.to_le_bytes());
+        wav[24..28].copy_from_slice(&16_000_u32.to_le_bytes());
+        wav[28..32].copy_from_slice(&32_000_u32.to_le_bytes());
+        wav[32..34].copy_from_slice(&2_u16.to_le_bytes());
+        wav[34..36].copy_from_slice(&16_u16.to_le_bytes());
+        wav[36..40].copy_from_slice(b"data");
+        wav[40..44].copy_from_slice(&0_u32.to_le_bytes());
+        wav
+    }
+
+    fn enable_capture(app_support: &Path) {
+        fs::create_dir_all(app_support).unwrap();
+        fs::write(
+            app_support.join("settings.json"),
+            r#"{"schema_version":1,"training_capture_enabled":true,"include_screen_images":true,"screenshot_retention_seconds":60}"#,
+        )
+        .unwrap();
+    }
+
+    fn capture_request() -> ScreenImageCaptureRequest {
+        ScreenImageCaptureRequest {
+            display_id: "display-1".into(),
+            pixel_width: 2_560,
+            pixel_height: 1_440,
+            scale_factor: 2.0,
+            capture_origin: "swift-bar-stop".into(),
+            captured_at_unix_ms: None,
+            consented_at_unix_ms: Some(900),
+            screen_capture_permission_granted: true,
+        }
+    }
+
+    fn attach_fixture(
+        app_support: &std::path::Path,
+    ) -> (tempfile::TempDir, PathBuf, PathBuf, Vec<u8>) {
+        enable_capture(app_support);
+        let recording = app_support.join("Corpus").join("session-1");
+        fs::create_dir_all(&recording).unwrap();
+        fs::write(recording.join("audio.wav"), test_wav()).unwrap();
+        let image_dir = tempfile::tempdir().unwrap();
+        let image = vec![0x89_u8, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 1];
+        let image_path = image_dir.path().join("capture.png");
+        fs::write(&image_path, &image).unwrap();
+        (image_dir, recording.join("audio.wav"), image_path, image)
+    }
+
+    fn unconsented_recording(app_support: &std::path::Path, id: &str, intended: &str) {
+        let recording = app_support.join("Corpus").join(id);
+        fs::create_dir_all(&recording).unwrap();
+        fs::write(recording.join("audio.wav"), test_wav()).unwrap();
+        let mut metadata = RecordingMetadata::new(id.to_string(), "test", "audio.wav".into());
+        metadata.raw_transcript = "private generated ASR text".into();
+        metadata.final_transcript = "private final text".into();
+        metadata.intended_transcript = Some(intended.into());
+        super::save_recording_at(app_support, &metadata).unwrap();
+    }
+
+    #[test]
+    fn screen_capture_registers_hashed_provenance_atomically() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, image) = attach_fixture(&app_support);
+        let recording =
+            register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+                .unwrap();
+        let capture = recording.screen_image.as_ref().unwrap();
+        assert_eq!(capture.file, SCREENSHOT_FILE_NAME);
+        assert_eq!(capture.display_id, "display-1");
+        assert_eq!(capture.pixel_dimensions.width, 2_560);
+        assert_eq!(capture.pixel_dimensions.height, 1_440);
+        assert_eq!(capture.scale_factor.to_string(), "2");
+        assert_eq!(capture.capture_origin, "swift-bar-stop");
+        assert!(capture.captured_at_unix_ms > 0);
+        assert!(capture.deletion_deadline_unix_ms > capture.captured_at_unix_ms);
+        assert_eq!(
+            capture.consent_version,
+            super::TRAINING_CAPTURE_CONSENT_VERSION
+        );
+        assert_eq!(capture.consented_at_unix_ms, 900);
+        assert_eq!(capture.capability, "local_training_corpus_image");
+        let retained = fs::read(
+            app_support
+                .join("Corpus")
+                .join("session-1")
+                .join(SCREENSHOT_FILE_NAME),
+        )
+        .unwrap();
+        assert_eq!(retained, image);
+        let saved: RecordingMetadata = serde_json::from_slice(
+            &fs::read(
+                app_support
+                    .join("Corpus")
+                    .join("session-1")
+                    .join("metadata.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved.screen_image.unwrap().sha256, capture.sha256);
+        let sidecar: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                app_support
+                    .join("Corpus")
+                    .join("session-1")
+                    .join(super::SCREENSHOT_MANIFEST_FILE_NAME),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sidecar["recording_id"], "session-1");
+        assert_eq!(sidecar["capture"]["sha256"], capture.sha256);
+    }
+
+    #[test]
+    fn screen_capture_fails_closed_without_explicit_scope() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        fs::write(app_support.join("settings.json"), r#"{"schema_version":1}"#).unwrap();
+        let result =
+            register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar");
+        assert!(result.is_err());
+        assert!(!app_support
+            .join("Corpus")
+            .join("session-1")
+            .join(SCREENSHOT_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn screen_capture_rejects_replacement_without_orphan_sidecar() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let second =
+            register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar");
+        assert!(second.is_err());
+        let recording = app_support.join("Corpus").join("session-1");
+        assert_eq!(
+            fs::read(recording.join(SCREENSHOT_FILE_NAME))
+                .unwrap()
+                .len(),
+            9
+        );
+        assert!(recording
+            .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+            .is_file());
+    }
+
+    #[test]
+    fn older_settings_gain_safe_capture_defaults() {
+        let settings: SettingsFile = serde_json::from_str(r#"{"schema_version":1}"#).unwrap();
+        assert!(!settings.training_capture_enabled);
+        assert!(!settings.include_screen_images);
+        assert_eq!(settings.screenshot_retention_seconds, 24 * 60 * 60);
+    }
+
+    #[test]
+    fn expired_screenshot_is_deleted_without_audio_or_metadata() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let deleted = super::delete_expired_screenshots_at(&app_support, u128::MAX).unwrap();
+        assert_eq!(deleted, ["session-1"]);
+        let recording = app_support.join("Corpus").join("session-1");
+        assert!(recording.join("audio.wav").is_file());
+        assert!(recording.join("metadata.json").is_file());
+        assert!(!recording.join(SCREENSHOT_FILE_NAME).exists());
+        assert!(!recording
+            .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn expired_screenshot_is_deleted_even_when_hash_or_manifest_is_corrupt() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let recording = app_support.join("Corpus").join("session-1");
+        fs::write(recording.join(SCREENSHOT_FILE_NAME), b"tampered").unwrap();
+        fs::remove_file(recording.join(super::SCREENSHOT_MANIFEST_FILE_NAME)).unwrap();
+
+        let deleted = super::delete_expired_screenshots_at(&app_support, u128::MAX).unwrap();
+        assert_eq!(deleted, ["session-1"]);
+        assert!(!recording.join(SCREENSHOT_FILE_NAME).exists());
+        assert!(!recording
+            .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn screen_capture_rejects_future_capture_missing_consent_or_nonfinite_scale() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        let mut request = capture_request();
+        request.captured_at_unix_ms = Some(u128::MAX);
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+
+        request = capture_request();
+        request.consented_at_unix_ms = None;
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+
+        request = capture_request();
+        request.scale_factor = f64::NAN;
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+        assert!(!app_support
+            .join("Corpus")
+            .join("session-1")
+            .join(SCREENSHOT_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn export_only_consented_can_omit_text_and_copy_verified_images() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let mut metadata =
+            super::load_recording_at(&audio.with_file_name("metadata.json")).unwrap();
+        metadata.raw_transcript = "private raw".into();
+        metadata.final_transcript = "private final".into();
+        metadata.intended_transcript = Some("Intended label".into());
+        super::save_recording_at(&app_support, &metadata).unwrap();
+        unconsented_recording(&app_support, "session-2", "Unconsented intended");
+        let out = tempfile::tempdir().unwrap();
+        let output = super::export_corpus_at(
+            &app_support,
+            &out.path().join("export"),
+            CorpusExportOptions {
+                include_screen_images: true,
+                only_consented: true,
+                include_text: true,
+            },
+        )
+        .unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap();
+        let items = manifest["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["session_id"], "session-1");
+        assert_eq!(items[0]["consent_version"], 1);
+        assert_eq!(items[0]["intended_transcript"], "Intended label");
+        assert!(items[0].get("raw_transcript").is_none());
+        assert!(items[0].get("final_transcript").is_none());
+        assert_eq!(
+            fs::read(output.join("screenshots").join("session-1.png")).unwrap(),
+            image
+        );
+    }
+
+    #[test]
+    fn export_rejects_hash_mismatch_and_leaves_no_partial_directory() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let image = app_support
+            .join("Corpus")
+            .join("session-1")
+            .join(SCREENSHOT_FILE_NAME);
+        fs::write(&image, [0_u8; 9]).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let output = out.path().join("export");
+        let result = super::export_corpus_at(
+            &app_support,
+            &output,
+            CorpusExportOptions {
+                include_screen_images: false,
+                only_consented: true,
+                include_text: false,
+            },
+        );
+        assert!(result.is_err());
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn export_skips_expired_candidates_without_blocking_the_corpus() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let mut metadata =
+            super::load_recording_at(&audio.with_file_name("metadata.json")).unwrap();
+        metadata
+            .screen_image
+            .as_mut()
+            .unwrap()
+            .deletion_deadline_unix_ms = 1;
+        super::save_recording_at(&app_support, &metadata).unwrap();
+        let out = tempfile::tempdir().unwrap();
+
+        let output = super::export_corpus_at(
+            &app_support,
+            &out.path().join("export"),
+            CorpusExportOptions {
+                include_screen_images: true,
+                only_consented: true,
+                include_text: false,
+            },
+        )
+        .unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["items"].as_array().unwrap().len(), 0);
+        assert_eq!(manifest["expired_screenshot_ids"][0], "session-1");
+        assert!(!output.join("screenshots").exists());
+    }
+
+    #[test]
+    fn export_screen_images_fail_closed_for_unconsented_recordings() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let _ = attach_fixture(&app_support);
+        unconsented_recording(&app_support, "session-2", "Unconsented intended");
+        let out = tempfile::tempdir().unwrap();
+        let result = super::export_corpus_at(
+            &app_support,
+            &out.path().join("export"),
+            CorpusExportOptions {
+                include_screen_images: true,
+                only_consented: false,
+                include_text: false,
+            },
+        );
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("has no consented screenshot"), "{error}");
+        assert!(!out.path().join("export").exists());
+    }
+
+    #[test]
+    fn update_errors_preserve_the_prior_metadata_and_screenshot() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        let before =
+            register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+                .unwrap();
+        let update = update_recording_at(&app_support, "session-1", |_| {
+            Err(anyhow::anyhow!("test failure"))
+        });
+        assert!(update.is_err());
+        let after = super::load_recording_at(
+            &app_support
+                .join("Corpus")
+                .join("session-1")
+                .join("metadata.json"),
+        )
+        .unwrap();
+        assert_eq!(after.screen_image, before.screen_image);
+    }
+
+    #[test]
+    fn recording_delete_removes_audio_metadata_and_screenshot() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        super::delete_recording_at(&app_support, "session-1").unwrap();
+        assert!(!app_support.join("Corpus").join("session-1").exists());
     }
 
     #[test]

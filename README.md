@@ -75,6 +75,7 @@ setting, and there is no way to point it at a remote model.
 ```bash
 cargo install --path crates/phonon-cli --force --root ~/.local
 phonon bar --rebuild   # once, builds Swift floating pill
+scripts/ui_snapshots.sh # synthetic, non-personal native UI renders
 ```
 
 ## Commands
@@ -91,9 +92,19 @@ phonon profile model    # warm-only LLM prefill / decode sweep
 phonon profile e2e      # summarize real keyboard-to-insertion traces
 phonon dictionary --help # terms, replacements, Wispr import, correction evaluation
 phonon dictionary import-txt # activate dictionary_new_terms.txt
+phonon dictionary import-aqua --dry-run
 phonon corpus --help     # paired WAV/metadata corpus + intended transcripts
+phonon corpus export --out /path/to/new-directory --only-consented
 phonon stats             # local words, sessions, speaking time, dictionary fixes
 ```
+
+Aqua import reads the local Aqua Voice settings cache only, reports collisions
+and invalid values, and backs up Phonon's dictionary before a real run. It never
+contacts Aqua. Screen-image corpus capture is deliberately CLI-only for now:
+enable both `training_capture_enabled` and `include_screen_images`, attach a
+previously captured PNG with `phonon corpus attach-screenshot`, and export with
+explicit image/text consent flags. The automatic macOS capture path is not
+wired until its no-blocking and deletion lifecycle pass live testing.
 
 ## Surviving an uninstall
 
@@ -152,6 +163,7 @@ the clip's measured noise floor. Clips without speech remain in the corpus with
 ```bash
 phonon dictionary import-wispr
 phonon dictionary import-txt
+phonon dictionary import-aqua --dry-run
 phonon dictionary test 'run v llm on black well'
 phonon dictionary evaluate
 phonon corpus list --search Blackwell

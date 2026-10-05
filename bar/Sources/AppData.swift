@@ -260,6 +260,14 @@ struct NativeUsageStats: Equatable {
 
 enum PhononDataPaths {
     static func supportDirectory(fileManager: FileManager = .default) -> URL {
+        // Snapshot generation is deliberately explicit and demo-only. Normal app
+        // launches continue to use the owner's real Application Support store.
+        if ProcessInfo.processInfo.environment["PHONON_UI_DEMO"] != nil,
+           let override = ProcessInfo.processInfo.environment["PHONON_UI_SUPPORT_DIR"],
+           !override.isEmpty
+        {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Phonon", isDirectory: true)

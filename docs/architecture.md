@@ -33,7 +33,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Training kernel stack | Reference execution remains the training-quality winner; active FlashAttention/causal kernels degraded the full repeat, Liger and warm Triton are slower | A kernel mode must match the full-slice quality of its reference-trained adapter before product or final-training promotion |
-| Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
+| Reverse graft versus native audio student | The promoted reverse graft improved to 0.109302 fair WER on the frozen slice but remains behind the native Audio student | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency, then passes an untouched future-set gate |
 | Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
@@ -1538,6 +1538,87 @@ spawn test. Non-claims: no real Aqua settings were imported, no real screenshot
 or personal text entered Git, no live Aqua UI walk ran, no macOS app capture
 path is enabled, and no full-slice quality gate or five-day dogfood claim is
 made.
+
+### 2026-10-05: reverse-SALM training-option sweep
+
+The first controlled option addressed an underuse defect in the promoted
+recipe: only 1,000 of 12,855 eligible Aqua rows were consumed during
+adaptation. All arms below resume the same trial-0100 public checkpoint, use
+prompt SHA-256
+`3ccd2adee6411c68fa0126b7af9cfaf838d95cf89d87643c8f00cfd87cea11a5`, rank 32,
+context 512, and the reference FlashAttention/causal-convolution execution
+mode that produced trial 0100. The optimized wheels were preserved as local
+SM86/reference-compatible wheel files, removed only while training or scoring
+reference arms, and restored afterward.
+
+| Additional Aqua steps | Fair WER | Strict WER | Exact |
+| ---: | ---: | ---: | ---: |
+| 1,000 baseline | 0.1243720769097523 | 0.15959963603275706 | 0.296 |
+| 2,000 | 0.12272648536289624 | 0.15787079162875342 | 0.290 |
+| 4,000 | 0.11761649055950113 | 0.154049135577798 | 0.316 |
+| 8,000 | 0.11311276632600034 | 0.14585987261146496 | 0.332 |
+| 10,000 | 0.14593798718170795 | 0.18152866242038215 | 0.342 |
+| 12,855 one epoch | 0.11077429412783649 | 0.14285714285714285 | 0.352 |
+
+The 10,000-step dip followed by the one-epoch recovery means this is not a
+monotonic overfitting curve; learning-rate schedule, row order, and checkpoint
+position remain entangled. A full epoch is the best single checkpoint, but the
+non-monotonicity is a non-claim against predicting a second epoch.
+
+A 30,000-row public-diversity arm scanned 42,826 pinned YODAS source rows and
+trained 10,000 public steps plus 4,000 Aqua steps. It scored 0.119954962757665
+fair WER, 0.1564149226569609 strict WER, and 0.304 exact, worse than the
+original 10,000-row public pack at the same 4,000-step Aqua adaptation. This
+does not prove larger public packs are useless; it only rejects the specific
+30k-row/10k-step combination.
+
+Three model soups were tested. Equal averaging of the 1k/2k/4k adapters scored
+0.11605750909405854 fair WER and 0.15159235668789808 strict WER; averaging the
+2k/4k adapters scored 0.11683699982677984 and 0.15177434030937215. The
+decisive soup equally averaged the 8,000-step and one-epoch adapters. Under the
+current optimized product runtime it scored 0.10930192274380737 fair WER,
+0.14067333939945406 strict WER, and 0.350 exact on the frozen 500-row slice.
+Its adapter SHA-256 is
+`9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c`.
+
+The repeated selection slice is no longer sufficient by itself, so the stable
+750-row future split was converted into an evaluation slice with
+`corrected -> ref`; its SHA-256 is
+`5f71c33816151f363be727622e48ac75c3ebef982a14c71aa0951d722554e728`. An initial
+future score of 23.165 fair WER was invalid because the raw manifest's
+`corrected` field was read as an empty `ref`; that failed artifact and its
+cause remain recorded rather than being treated as model evidence.
+
+| Adapter | Future fair WER | Future strict WER | Future exact |
+| --- | ---: | ---: | ---: |
+| Trial 0100 | 0.17531860166023616 | 0.22834742885363293 | 0.164 |
+| 8,000-step | 0.16082076464398457 | 0.21001296376319525 | 0.18933333333333333 |
+| One epoch, optimized runtime | 0.14521220624342335 | 0.19340700043212544 | 0.18666666666666668 |
+| 8k/full soup | 0.1439261077984333 | 0.19130810543860732 | 0.18666666666666668 |
+| Aqua raw | 0.07260610312171167 | 0.13507006605346009 | 0.364 |
+
+The soup improves fair and strict WER over the one-epoch checkpoint on both
+selection and future slices. It is the promoted explicit reverse-SALM adapter,
+but it still does not beat Aqua raw or the native Audio student and must not be
+described as overall dictation superiority.
+
+The 8,000-step adapter matched its reference aggregate scores under optimized
+inference on both 500 and 750 rows. The one-epoch adapter matched its reference
+score on the 500-row slice and its optimized-runtime future result is recorded
+above. The soup was evaluated directly in the product runtime.
+
+The soup adapter was installed at
+`/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`; the
+prior trial-0100 adapter remains beside it as
+`lora_adapter.trial0100.safetensors`. A resident sidecar warmup took 1.9924
+seconds, two warm requests took 0.7815 and 0.7574 seconds (0.7694 seconds
+mean), and the opt-in Rust `AsrSidecar::spawn_engine` test passed in 24.32
+seconds. The engine remains non-default and the shipped Parakeet path is
+unchanged. W&B runs include
+`https://wandb.ai/retis_labs/phonon/runs/aqua-length-8000-reference-v1`,
+`https://wandb.ai/retis_labs/phonon/runs/aqua-full-epoch-reference-v1`,
+`https://wandb.ai/retis_labs/phonon/runs/full-epoch-active-runtime-v1`, and
+`https://wandb.ai/retis_labs/phonon/runs/soup-8000-full-active-v1`.
 
 ## Contracts to preserve
 

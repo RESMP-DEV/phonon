@@ -69,6 +69,10 @@
 - Resumed four-trial log: `/home/kearm/salm-lora/build/optuna/final-resume.log`
 - Resumed markers: `OPTUNA-RESUME-DONE` and `OPTUNA-RESUME-FAILED`
 - Frozen evaluation slice: `/home/kearm/salm-lora/slice-eval-500.jsonl`
+- Untouched future evaluation slice:
+  `/home/kearm/salm-lora/hq-future-eval-v1.jsonl`, SHA-256
+  `5f71c33816151f363be727622e48ac75c3ebef982a14c71aa0951d722554e728`.
+  It maps the manifest's `corrected` field to the evaluator's `ref` field.
 - Offline ASR teacher roots:
   `/home/kearm/salm-lora/build/asr-teachers/{qwen3-asr-1p7b,cohere-transcribe-03-2026}`
 - Phonon-owned Voxtral teacher:
@@ -93,9 +97,12 @@
 - Current kernel-stack profile root:
   `/home/kearm/salm-lora/build/nsys/reverse-training-kernels-v1`
 - B550 reverse SALM product adapter:
+- B550 reverse SALM product adapter:
   `/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`,
-  currently prose trial 0100 SHA-256
-  `74bd889172b886b07bc658426df1de047a4185dda2f8ec593e6a60c3888e6f7e`.
+  currently the equal 8k/full-epoch prose soup SHA-256
+  `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c`.
+  The preceding trial-0100 adapter remains at
+  `lora_adapter.trial0100.safetensors` in the same directory.
 - CUDA extension packages are not active just because a wheel resolved. Record
   the Torch/CUDA build, import result, real model load, and matched profile
   before reporting FlashAttention, causal-convolution, or fused-loss kernels.
@@ -112,6 +119,14 @@
   `/home/kearm/salm-lora/build/nsys/reverse-baseline-1000-v1`
 - Trial-0100 current-runtime parity receipt:
   `/home/kearm/salm-lora/build/product-runtime-eval/trial-0100-active-kernels-v1/receipt.json`
+- Aqua adaptation-length roots:
+  `/home/kearm/salm-lora/build/aqua-length-reference-v1`,
+  `/home/kearm/salm-lora/build/training-options-v2`, and
+  `/home/kearm/salm-lora/build/aqua-length-bracket-v3`.
+- Promoted soup and installation receipts:
+  `/home/kearm/salm-lora/build/aqua-length-bracket-v3/soup-8000-full-receipt.json`
+  and
+  `/home/kearm/.local/share/phonon/reverse-salm/installed-adapter-receipt.json`.
 
 ## Required local checks
 

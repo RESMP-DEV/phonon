@@ -185,7 +185,7 @@ enum CorpusCommands {
         #[arg(long)]
         captured_at_ms: Option<u64>,
         #[arg(long)]
-        consented_at_ms: Option<u64>,
+        consented_at_ms: u64,
         /// The Swift caller must preflight TCC; this flag records that check.
         #[arg(long)]
         permission_granted: bool,

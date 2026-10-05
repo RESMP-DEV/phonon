@@ -116,6 +116,10 @@ class BasicTextNormalizer:
         s = self.clean(s).lower()
 
         if self.split_letters:
+            raise ValueError(
+                "split_letters requires Unicode grapheme segmentation; "
+                "the dependency-free normalizer does not vendor regex"
+            )
             s = " ".join(regex.findall(r"\X", s, regex.U))
 
         s = re.sub(

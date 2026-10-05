@@ -143,12 +143,16 @@ scoped and reviewable; it does not transfer to a new purpose, model family,
 endpoint, or training run.
 
 Retention is finite from capture time. `screenshot_retention_seconds` must be
-set before image capture, and expiry removes only the expired screenshot. It
-does not silently delete audio, text, metadata, or the corpus item. Deletion
-failure is an error and marks the candidate unusable for export; it is never
-treated as successful deletion. Explicit corpus deletion removes the entire
-item, including screenshot, audio, metadata, sidecars, and export links, but
-not independent copies the user explicitly exported.
+set before image capture, and expiry removes only the expired screenshot and
+its provenance sidecar. Expiry is a privacy deadline, not an integrity check:
+a tampered image, missing manifest, or partial earlier deletion is still
+removed. One bad recording is reported after the sweep and must not prevent
+removal of other expired images. Expiry does not silently delete audio, text,
+metadata, or the corpus item. Deletion failure is an error and marks the
+candidate unusable for export; it is never treated as successful deletion.
+Explicit corpus deletion removes the entire item, including screenshot, audio,
+metadata, sidecars, and export links, but not independent copies the user
+explicitly exported.
 
 ### Candidate format and integrity
 
@@ -1618,6 +1622,44 @@ per-stream percentage beside each progress label. Final snapshot generation
 again produced all nine renders. Known UI non-claims remain: static snapshots
 do not show keyboard focus or VoiceOver state, and no live dictation, model
 startup, drag, or latency gate ran.
+
+### 2026-10-05: PR review repair for parity foundations
+
+CodeRabbit and OpenCodeReview reviewed PR #12 at `7472296`. Codex review was
+unavailable because its account had reached the review usage limit. The two
+available services found overlapping privacy and protocol defects; every inline
+finding was accepted and repaired.
+
+The Aqua importer now removes a partially written dated backup if its copy
+fails. Screenshot capture requires an explicit consent timestamp, rejects a
+future capture time, rejects consent after capture, and rejects NaN or infinite
+scale factors. The retention sweep now treats expiry as a privacy deadline
+rather than an integrity gate: it removes tampered or partial expired images
+and sidecars, continues recording-by-recording, and reports aggregate errors
+after attempting the rest of the corpus. Export skips expired candidates,
+records their IDs as `expired_screenshot_ids`, and no longer lets one expired
+or corrupt candidate block the complete corpus export.
+
+The baseline scorer now rejects non-string hypotheses, reports stable row IDs,
+prevents candidate or baseline fields from replacing the frozen reference,
+blocks a candidate ID mapping that aliases the reference field, removes the
+`archaeology` spelling-table artifact, handles unwritable Unicode receipts as a
+protocol error, and explicitly rejects unsupported grapheme splitting rather
+than referencing an absent regex dependency.
+
+Focused repair verification passed with full `cargo test --workspace` (the
+core corpus suite grew to 35 tests), Ruff, 18 baseline tests, and the nine
+root Python tests. Clippy also passed with warnings denied. This entry records
+review repair only; the repaired PR head still needs reviewer reinspection and
+the final UI/Swift and snapshot matrix before merge.
+The clean PR branch contains nine root Python tests; an earlier research-line
+receipt mentioned sixteen because it also carried reverse-SALM tests outside
+this PR.
+A synthetic CLI repair receipt additionally passed finite-scale and
+future-capture rejection, corrupt-expired deletion, expired-export skipping,
+and non-string-hypothesis rejection at
+`~/.cache/phonon-pr12-review-repair-20261005T130943/receipt.json`, SHA-256
+`10174e52452f82d57bdce651d03a69c47e9c843ae0e6f1f46f7df2961e28c892`.
 
 ## Contracts to preserve
 

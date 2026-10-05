@@ -390,8 +390,15 @@ fn create_dated_backup(path: &Path, now: SystemTime) -> Result<Option<PathBuf>> 
         {
             Ok(mut destination) => {
                 let mut source = source;
-                io::copy(&mut source, &mut destination)?;
-                return Ok(Some(backup));
+                match io::copy(&mut source, &mut destination) {
+                    Ok(_) => return Ok(Some(backup)),
+                    Err(error) => {
+                        drop(destination);
+                        let _ = fs::remove_file(&backup);
+                        return Err(error)
+                            .with_context(|| format!("copy backup {}", backup.display()));
+                    }
+                }
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 suffix += 1;
@@ -929,7 +936,7 @@ pub fn attach_screenshot(
     scale_factor: f64,
     capture_origin: String,
     captured_at_ms: Option<u64>,
-    consented_at_ms: Option<u64>,
+    consented_at_ms: u64,
     permission_granted: bool,
 ) -> Result<()> {
     let request = ScreenImageCaptureRequest {
@@ -939,7 +946,7 @@ pub fn attach_screenshot(
         scale_factor,
         capture_origin,
         captured_at_unix_ms: captured_at_ms.map(u128::from),
-        consented_at_unix_ms: consented_at_ms.map(u128::from),
+        consented_at_unix_ms: Some(u128::from(consented_at_ms)),
         screen_capture_permission_granted: permission_granted,
     };
     let recording = register_screen_image(audio_path, image_path, request, "bar")?;

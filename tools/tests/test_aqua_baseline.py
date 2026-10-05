@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import aqua_baseline
+import whisper_basic
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -148,6 +149,57 @@ def test_rejects_duplicate_and_missing_stable_ids(tmp_path: Path) -> None:
     code, _, output = score(tmp_path, rows, candidate)
     assert code == 2
     assert not output.exists()
+
+
+def test_nonstring_hypothesis_is_rejected(tmp_path: Path) -> None:
+    code, _, output = score(
+        tmp_path,
+        [{"id": "row-a", "ref": "alpha"}],
+        [{"id": "row-a", "hyp": 123}],
+    )
+    assert code == 2
+    assert not output.exists()
+
+
+def test_candidate_id_field_cannot_replace_frozen_reference(tmp_path: Path) -> None:
+    config = custom_config()
+    config["candidate"]["id"] = "target"
+    code, receipt, _ = score(
+        tmp_path,
+        [{"text_id": "row-a", "target": "alpha"}],
+        [{"text_id": "row-a", "target": "row-a", "prediction": "row-a"}],
+        config=config,
+    )
+    assert code == 2
+    assert receipt == {}
+    assert not (tmp_path / "receipt.json").exists()
+
+
+def test_fair_spelling_table_is_not_corrupted() -> None:
+    assert aqua_baseline.fair_norm("archaeology") == "archeology"
+
+
+def test_non_finite_or_unwritable_metadata_fails_cleanly(tmp_path: Path) -> None:
+    rows = [{"id": "row-a", "ref": "alpha"}]
+    candidate = [{"id": "row-a", "hyp": "alpha"}]
+    code, _, output = score(
+        tmp_path,
+        rows,
+        candidate,
+        metadata={"model": "\ud800"},
+    )
+    assert code == 2
+    assert not output.exists()
+
+
+def test_vendored_grapheme_mode_does_not_reference_missing_regex() -> None:
+    normalizer = whisper_basic.BasicTextNormalizer(split_letters=True)
+    try:
+        normalizer("alpha")
+    except ValueError as exc:
+        assert "split_letters" in str(exc)
+    else:
+        raise AssertionError("unsupported grapheme mode was accepted")
 
 
 def test_empty_reference_is_rejected(tmp_path: Path) -> None:

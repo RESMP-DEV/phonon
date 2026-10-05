@@ -949,7 +949,11 @@ pub fn register_screen_image_at(
     if request.display_id.trim().is_empty() || request.capture_origin.trim().is_empty() {
         bail!("screen-image provenance is incomplete");
     }
-    if request.pixel_width == 0 || request.pixel_height == 0 || request.scale_factor <= 0.0 {
+    if request.pixel_width == 0
+        || request.pixel_height == 0
+        || !request.scale_factor.is_finite()
+        || request.scale_factor <= 0.0
+    {
         bail!("screen-image dimensions are invalid");
     }
     if !audio_path.is_file() {
@@ -966,7 +970,15 @@ pub fn register_screen_image_at(
     let sha256 = sha256_hex(&image);
     let now = now_unix_ms();
     let captured_at = request.captured_at_unix_ms.unwrap_or(now);
-    let consented_at = request.consented_at_unix_ms.unwrap_or(now);
+    if captured_at > now {
+        bail!("screen-image capture time is in the future");
+    }
+    let consented_at = request
+        .consented_at_unix_ms
+        .context("screen-image consent time is required")?;
+    if consented_at > captured_at {
+        bail!("screen image was captured before consent was given");
+    }
     let retention_ms = u128::from(settings.screenshot_retention_seconds) * 1_000;
     let deletion_deadline = captured_at
         .checked_add(retention_ms)
@@ -1065,33 +1077,64 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
         return Ok(Vec::new());
     }
     let mut deleted = Vec::new();
+    let mut errors = Vec::new();
     for entry in fs::read_dir(&corpus).with_context(|| format!("read {}", corpus.display()))? {
-        let entry = entry?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push(format!("read corpus entry: {error:#}"));
+                continue;
+            }
+        };
         let metadata_path = entry.path().join("metadata.json");
         if !metadata_path.is_file() {
             continue;
         }
-        let mut metadata = load_recording_at(&metadata_path)?;
+        let mut metadata = match load_recording_at(&metadata_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                errors.push(format!("{}: {error:#}", metadata_path.display()));
+                continue;
+            }
+        };
         let Some(capture) = metadata.screen_image.clone() else {
             continue;
         };
         if capture.deletion_deadline_unix_ms > now_unix_ms {
             continue;
         }
-        verify_screen_image_at(&entry.path(), &metadata)?;
-        let image_path = entry.path().join(&capture.file);
+        // Expiry is a privacy deadline, not an integrity gate. A tampered or
+        // partially deleted candidate is still removed, and a corrupt record
+        // must not prevent removal of other expired candidates.
+        let image_path = entry.path().join(SCREENSHOT_FILE_NAME);
         let manifest_path = screenshot_manifest_path(&entry.path());
-        fs::remove_file(&image_path).with_context(|| format!("delete {}", image_path.display()))?;
-        fs::remove_file(&manifest_path)
-            .with_context(|| format!("delete {}", manifest_path.display()))?;
+        let mut removal_failed = false;
+        for path in [&image_path, &manifest_path] {
+            if let Err(error) = fs::remove_file(path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    errors.push(format!("delete {}: {error:#}", path.display()));
+                    removal_failed = true;
+                }
+            }
+        }
+        if removal_failed {
+            continue;
+        }
         metadata.screen_image = None;
         if let Err(error) = save_recording_at(app_support, &metadata) {
-            return Err(error.context(format!(
-                "screenshot deleted, but metadata update failed for {}",
+            errors.push(format!(
+                "screenshot deleted, but metadata update failed for {}: {error:#}",
                 metadata.id
-            )));
+            ));
+            continue;
         }
         deleted.push(metadata.id);
+    }
+    if !errors.is_empty() {
+        bail!(
+            "screenshot expiry completed with errors: {}",
+            errors.join("; ")
+        );
     }
     Ok(deleted)
 }
@@ -1236,6 +1279,7 @@ struct CorpusExportManifest {
     exported_at_unix_ms: u128,
     consent_version: u32,
     items: Vec<CorpusExportItem>,
+    expired_screenshot_ids: Vec<String>,
 }
 
 pub fn export_corpus(out_dir: &Path, options: CorpusExportOptions) -> Result<PathBuf> {
@@ -1249,8 +1293,17 @@ fn export_corpus_to_output(
 ) -> Result<PathBuf> {
     let output = output_outside_app_support(app_support, out_dir)?;
     let mut items = Vec::new();
+    let mut expired_screenshot_ids = Vec::new();
     for recording in list_recordings_at(app_support)? {
         if options.only_consented && recording.screen_image.is_none() {
+            continue;
+        }
+        if recording
+            .screen_image
+            .as_ref()
+            .is_some_and(|capture| capture.deletion_deadline_unix_ms <= now_unix_ms())
+        {
+            expired_screenshot_ids.push(recording.id);
             continue;
         }
         if recording.audio_file.is_empty()
@@ -1332,6 +1385,7 @@ fn export_corpus_to_output(
         exported_at_unix_ms: now_unix_ms(),
         consent_version: TRAINING_CAPTURE_CONSENT_VERSION,
         items,
+        expired_screenshot_ids,
     };
     write_json_atomic(&output.join("manifest.json"), &manifest)?;
     Ok(output)
@@ -1911,6 +1965,54 @@ mod tests {
     }
 
     #[test]
+    fn expired_screenshot_is_deleted_even_when_hash_or_manifest_is_corrupt() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let recording = app_support.join("Corpus").join("session-1");
+        fs::write(recording.join(SCREENSHOT_FILE_NAME), b"tampered").unwrap();
+        fs::remove_file(recording.join(super::SCREENSHOT_MANIFEST_FILE_NAME)).unwrap();
+
+        let deleted = super::delete_expired_screenshots_at(&app_support, u128::MAX).unwrap();
+        assert_eq!(deleted, ["session-1"]);
+        assert!(!recording.join(SCREENSHOT_FILE_NAME).exists());
+        assert!(!recording
+            .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn screen_capture_rejects_future_capture_missing_consent_or_nonfinite_scale() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        let mut request = capture_request();
+        request.captured_at_unix_ms = Some(u128::MAX);
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+
+        request = capture_request();
+        request.consented_at_unix_ms = None;
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+
+        request = capture_request();
+        request.scale_factor = f64::NAN;
+        assert!(
+            register_screen_image_at(&app_support, &audio, &image_path, request, "bar").is_err()
+        );
+        assert!(!app_support
+            .join("Corpus")
+            .join("session-1")
+            .join(SCREENSHOT_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
     fn export_only_consented_can_omit_text_and_copy_verified_images() {
         let support = tempfile::tempdir().unwrap();
         let app_support = support.path().to_path_buf();
@@ -1978,21 +2080,58 @@ mod tests {
     }
 
     #[test]
+    fn export_skips_expired_candidates_without_blocking_the_corpus() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let mut metadata =
+            super::load_recording_at(&audio.with_file_name("metadata.json")).unwrap();
+        metadata
+            .screen_image
+            .as_mut()
+            .unwrap()
+            .deletion_deadline_unix_ms = 1;
+        super::save_recording_at(&app_support, &metadata).unwrap();
+        let out = tempfile::tempdir().unwrap();
+
+        let output = super::export_corpus_at(
+            &app_support,
+            &out.path().join("export"),
+            CorpusExportOptions {
+                include_screen_images: true,
+                only_consented: true,
+                include_text: false,
+            },
+        )
+        .unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["items"].as_array().unwrap().len(), 0);
+        assert_eq!(manifest["expired_screenshot_ids"][0], "session-1");
+        assert!(!output.join("screenshots").exists());
+    }
+
+    #[test]
     fn export_screen_images_fail_closed_for_unconsented_recordings() {
         let support = tempfile::tempdir().unwrap();
         let app_support = support.path().to_path_buf();
         let _ = attach_fixture(&app_support);
         unconsented_recording(&app_support, "session-2", "Unconsented intended");
+        let out = tempfile::tempdir().unwrap();
         let result = super::export_corpus_at(
             &app_support,
-            &support.path().join("export"),
+            &out.path().join("export"),
             CorpusExportOptions {
                 include_screen_images: true,
                 only_consented: false,
                 include_text: false,
             },
         );
-        assert!(result.is_err());
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("has no consented screenshot"), "{error}");
+        assert!(!out.path().join("export").exists());
     }
 
     #[test]

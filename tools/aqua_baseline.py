@@ -135,10 +135,7 @@ def load_schema_config(path: Path | None) -> tuple[dict[str, Any], Path | None]:
         raise BaselineError("candidate field names must be unique")
     value["candidate"] = candidate
     row_reference_field = value["rows"]["reference"]
-    candidate_non_id_fields = {
-        field: mapped for field, mapped in candidate.items() if field != "id"
-    }
-    if row_reference_field in set(candidate_non_id_fields.values()):
+    if row_reference_field in set(candidate.values()):
         raise BaselineError("row reference and candidate field names must not overlap")
     if value["baseline"] is not None:
         value["baseline"] = _require_str_mapping(
@@ -184,7 +181,7 @@ def sha256_file(path: Path) -> str:
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise BaselineError(f"cannot read {path}: {exc}") from exc
     return digest.hexdigest()
 
@@ -240,11 +237,24 @@ def load_jsonl(path: Path, label: str, fields: dict[str, str]) -> LoadedRows:
 
 def validate_references(rows: LoadedRows) -> None:
     field = rows.fields["reference"]
-    for line_number, (row_id, record) in enumerate(rows.records.items(), start=1):
-        value = _field(record, field, rows.label, line_number)
+    for row_id, record in rows.records.items():
+        value = record.get(field)
         if not isinstance(value, str) or not value.strip():
             raise BaselineError(
                 f"{rows.label} row {row_id!r}: {field!r} must be non-empty text"
+            )
+
+
+def validate_hypotheses(rows: LoadedRows) -> None:
+    field = rows.fields["hypothesis"]
+    for row_id, record in rows.records.items():
+        if field not in record:
+            raise BaselineError(
+                f"{rows.label} row {row_id!r} is missing field {field!r}"
+            )
+        if not isinstance(record[field], str):
+            raise BaselineError(
+                f"{rows.label} row {row_id!r}: {field!r} must be a string"
             )
 
 
@@ -434,8 +444,18 @@ def score_hypothesis(
     hypotheses: list[str] = []
     row_wers: dict[str, float] = {}
     for row_id, record in records.items():
-        references.append(_field(record, reference_field, "scored rows", 0))
-        hypotheses.append(_field(record, hypothesis_field, "scored rows", 0))
+        reference = record.get(reference_field)
+        hypothesis = record.get(hypothesis_field)
+        if not isinstance(reference, str) or not reference.strip():
+            raise BaselineError(
+                f"scored row {row_id!r}: {reference_field!r} must be non-empty text"
+            )
+        if not isinstance(hypothesis, str):
+            raise BaselineError(
+                f"scored row {row_id!r}: {hypothesis_field!r} must be a string"
+            )
+        references.append(reference)
+        hypotheses.append(hypothesis)
     fair = score_texts(references, hypotheses, fair_norm)
     strict = score_texts(references, hypotheses, strict_norm)
     for row_id, reference, hypothesis in zip(
@@ -603,7 +623,7 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
             stream.write(payload)
             temporary = Path(stream.name)
         temporary.replace(path)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         try:
             temporary.unlink()
         except (OSError, UnboundLocalError):
@@ -627,6 +647,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     validate_references(rows)
     candidate = load_jsonl(Path(args.candidate), "candidate", schema["candidate"])
     require_same_ids(rows, candidate)
+    validate_hypotheses(candidate)
 
     baseline: LoadedRows | None = None
     if args.baseline is not None:
@@ -636,6 +657,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
         baseline = load_jsonl(Path(args.baseline), "baseline", schema["baseline"])
         require_same_ids(rows, baseline)
+        validate_hypotheses(baseline)
 
     expected_ids = set(rows.records)
     manifest_path, manifest_sha256, manifest_count = load_manifest(
@@ -653,7 +675,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     candidate_scored_records = {
-        row_id: {**record, **candidate.records[row_id]}
+        row_id: {**candidate.records[row_id], **record}
         for row_id, record in rows.records.items()
     }
     candidate_metrics, candidate_row_wers = score_hypothesis(
@@ -666,7 +688,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     baseline_row_wers: dict[str, float] | None = None
     if baseline is not None:
         baseline_scored_records = {
-            row_id: {**record, **baseline.records[row_id]}
+            row_id: {**baseline.records[row_id], **record}
             for row_id, record in rows.records.items()
         }
         baseline_metrics, baseline_row_wers = score_hypothesis(

@@ -1876,10 +1876,12 @@ Input Monitoring, Screen Recording, microphone state, bundle identity, and
 whether the process is an app bundle. It performs no permission request and
 reads no screen. Adding `--request-screen-recording` is the explicit
 user-invoked one-pixel enrollment attempt. `scripts/check_permissions.py`
-validates signing and bundle identity, executes the non-prompting diagnostic,
-writes `build/reports/permissions/receipt.json`, and invalidates any prior
-receipt before starting. Its tests enforce the no-prompt default, schema
-identity checks, command shape, and failure receipts.
+validates signing and bundle identity before executing anything, executes the
+non-prompting diagnostic only when both checks pass, writes
+`build/reports/permissions/receipt.json`, and invalidates any prior receipt
+without following a final-path symlink. Its tests enforce the no-prompt default,
+schema identity checks, command shape, rejected-bundle non-execution, symlink
+safety, and failure receipts.
 
 Open-source comparisons consulted at pinned revisions were
 `bearcove/screenshotter@db09fa25661e79e05aa41f90403ba1f2003a9a6b` (real app

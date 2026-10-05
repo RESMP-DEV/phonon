@@ -8,6 +8,7 @@ import json
 import platform
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -55,11 +56,16 @@ def parse_arguments(argv: list[str]) -> Invocation:
     )
     parser.add_argument("--json", action="store_true", help="print the receipt as JSON")
     arguments = parser.parse_args(argv)
+    receipt = arguments.receipt
+    if not receipt.is_absolute():
+        receipt = Path.cwd() / receipt
     return Invocation(
         app=arguments.app.resolve(),
         request_screen_recording=arguments.request_screen_recording,
         require_granted=arguments.require_granted,
-        receipt=arguments.receipt.resolve(),
+        # Keep the literal final component. Resolving a preexisting receipt
+        # symlink would redirect unlink/write operations to its target.
+        receipt=receipt,
         json_output=arguments.json,
     )
 
@@ -206,12 +212,27 @@ def write_receipt(
             "A true Screen Recording value does not by itself prove a full-quality capture transaction.",
         ],
     }
+    payload = (json.dumps(receipt, indent=2) + "\n").encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    # Publish from the same directory so an interrupted receipt cannot appear at
+    # the public path while the complete JSON is still being written.
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temporary:
+        temporary_path = Path(temporary.name)
+        temporary.write(payload)
+    temporary_path.replace(path)
+    temporary_path.unlink(missing_ok=True)
     return receipt
 
 
 def run(invocation: Invocation) -> tuple[int, dict[str, Any]]:
+    # Path.unlink operates on the link itself, never its target. This safely
+    # invalidates a stale or hostile receipt symlink without following it.
     invocation.receipt.unlink(missing_ok=True)
     revision, status, dirty = source_state()
     checks: list[dict[str, Any]] = [revision, status, dirty]
@@ -265,11 +286,23 @@ def run(invocation: Invocation) -> tuple[int, dict[str, Any]]:
         ]
         if invocation.request_screen_recording:
             diagnostic_command.append("--request-screen-recording")
-        diagnostic = command_result(
-            "permission-diagnostic", diagnostic_command, timeout=60.0
-        )
-        checks.append(diagnostic)
-        checks.append(validate_diagnostic(diagnostic, invocation))
+        may_execute = signature["passed"] and bundle_id["passed"]
+        if may_execute:
+            diagnostic = command_result(
+                "permission-diagnostic", diagnostic_command, timeout=60.0
+            )
+            checks.append(diagnostic)
+            checks.append(validate_diagnostic(diagnostic, invocation))
+        else:
+            checks.append(
+                {
+                    "check": "permission-diagnostic",
+                    "command": diagnostic_command,
+                    "passed": False,
+                    "exit_code": None,
+                    "errors": ["not run because signing or bundle identity failed"],
+                }
+            )
     else:
         checks.append(
             {

@@ -116,6 +116,15 @@ enum DictionaryCommands {
         #[arg(long)]
         database: Option<PathBuf>,
     },
+    /// Import dictionary and replacements from Aqua's local settings cache.
+    ImportAqua {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Import one canonical term per line from a UTF-8 text file.
     ImportTxt { path: Option<PathBuf> },
     /// Show candidate retrieval and deterministic replacements for text.
@@ -247,6 +256,16 @@ fn run_dictionary(command: DictionaryCommands) -> Result<()> {
                 .map(Ok)
                 .unwrap_or_else(data_cmd::default_wispr_database)?;
             data_cmd::import_wispr(&database)
+        }
+        DictionaryCommands::ImportAqua {
+            settings,
+            dry_run,
+            json,
+        } => {
+            let settings = settings
+                .map(Ok)
+                .unwrap_or_else(data_cmd::default_aqua_settings)?;
+            data_cmd::import_aqua(&settings, dry_run, json)
         }
         DictionaryCommands::ImportTxt { path } => {
             let path = path

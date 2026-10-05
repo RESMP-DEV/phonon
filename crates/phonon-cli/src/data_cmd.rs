@@ -7,9 +7,11 @@ use phonon_core::data::{
 };
 use phonon_llm::{ServeJson, ServeJsonResp};
 use serde::{Deserialize, Serialize};
+use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 struct WisprEntry {
@@ -46,6 +48,60 @@ struct LegacyHistoryEntry {
     audio_path: Option<PathBuf>,
     timestamp: Option<String>,
     transcript: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AquaSettings {
+    #[serde(default)]
+    dictionary: Vec<AquaDictionaryValue>,
+    #[serde(default)]
+    replacements: Vec<AquaReplacementValue>,
+    #[serde(default)]
+    custom_instructions: String,
+    #[serde(default)]
+    version: Option<u64>,
+    #[serde(default)]
+    schema_version: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum AquaDictionaryValue {
+    Phrase(String),
+    Invalid(serde_json::Value),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum AquaReplacementValue {
+    Mapping {
+        #[serde(default)]
+        from: String,
+        #[serde(default)]
+        to: String,
+    },
+    Invalid(serde_json::Value),
+}
+
+#[derive(Debug, Serialize)]
+struct AquaImportReport {
+    dry_run: bool,
+    settings_version: Option<u64>,
+    settings_schema_version: Option<u64>,
+    inspected: usize,
+    imported: usize,
+    merged: usize,
+    unchanged: usize,
+    invalid: usize,
+    instruction_characters: usize,
+    dictionary: PathBuf,
+    backup: Option<PathBuf>,
+}
+
+pub fn default_aqua_settings() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join("Library/Application Support/Aqua Voice/settings.json"))
 }
 
 pub fn default_wispr_database() -> Result<PathBuf> {
@@ -125,6 +181,225 @@ pub fn import_wispr(path: &Path) -> Result<()> {
         dictionary_path()?.display()
     );
     Ok(())
+}
+
+fn aqua_entries(settings: &AquaSettings) -> (Vec<DictionaryEntry>, usize) {
+    let mut entries = Vec::new();
+    let mut invalid = 0;
+    for value in &settings.dictionary {
+        match value {
+            AquaDictionaryValue::Phrase(phrase) if !phrase.trim().is_empty() => {
+                entries.push(DictionaryEntry {
+                    phrase: phrase.trim().to_string(),
+                    replacement: None,
+                    spoken_forms: Vec::new(),
+                    source: "aqua-voice".into(),
+                    starred: false,
+                    usage_count: 0,
+                });
+            }
+            AquaDictionaryValue::Invalid(value) => {
+                let _ = value;
+                invalid += 1;
+            }
+            _ => invalid += 1,
+        }
+    }
+    for value in &settings.replacements {
+        match value {
+            AquaReplacementValue::Mapping { from, to }
+                if !from.trim().is_empty() && !to.trim().is_empty() =>
+            {
+                let from = from.trim();
+                let to = to.trim();
+                entries.push(DictionaryEntry {
+                    phrase: from.to_string(),
+                    replacement: if from.eq_ignore_ascii_case(to) {
+                        None
+                    } else {
+                        Some(to.to_string())
+                    },
+                    spoken_forms: Vec::new(),
+                    source: "aqua-voice".into(),
+                    starred: false,
+                    usage_count: 0,
+                });
+            }
+            AquaReplacementValue::Invalid(value) => {
+                let _ = value;
+                invalid += 1;
+            }
+            _ => invalid += 1,
+        }
+    }
+    (entries, invalid)
+}
+
+fn entry_key(entry: &DictionaryEntry) -> (String, Option<String>) {
+    (
+        entry.phrase.trim().to_lowercase(),
+        entry
+            .replacement
+            .as_ref()
+            .map(|replacement| replacement.trim().to_lowercase()),
+    )
+}
+
+fn aqua_report(
+    mut dictionary: DictionaryFile,
+    settings: &AquaSettings,
+    dry_run: bool,
+    dictionary_path: PathBuf,
+) -> AquaImportReport {
+    let (incoming, invalid) = aqua_entries(settings);
+    let before = dictionary
+        .entries
+        .iter()
+        .cloned()
+        .map(|entry| (entry_key(&entry), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let imported = dictionary.merge(incoming.iter().cloned());
+    let after = dictionary
+        .entries
+        .iter()
+        .cloned()
+        .map(|entry| (entry_key(&entry), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut merged = 0;
+    let mut unchanged = 0;
+    for entry in incoming {
+        let key = entry_key(&entry);
+        if let (Some(previous), Some(current)) = (before.get(&key), after.get(&key)) {
+            if previous == current {
+                unchanged += 1;
+            } else {
+                merged += 1;
+            }
+        }
+    }
+    AquaImportReport {
+        dry_run,
+        settings_version: settings.version,
+        settings_schema_version: settings.schema_version,
+        inspected: settings.dictionary.len() + settings.replacements.len(),
+        imported,
+        merged,
+        unchanged,
+        invalid,
+        instruction_characters: settings.custom_instructions.chars().count(),
+        dictionary: dictionary_path,
+        backup: None,
+    }
+}
+
+fn print_aqua_report(report: &AquaImportReport, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(report)?);
+        return Ok(());
+    }
+    if report.dry_run {
+        println!("dry run; no changes written");
+    }
+    println!(
+        "inspected {}; imported {}; merged {}; unchanged {}; invalid {}; instructions {} characters",
+        report.inspected,
+        report.imported,
+        report.merged,
+        report.unchanged,
+        report.invalid,
+        report.instruction_characters
+    );
+    println!("dictionary: {}", report.dictionary.display());
+    if let Some(backup) = &report.backup {
+        println!("backup: {}", backup.display());
+    }
+    Ok(())
+}
+
+pub fn import_aqua(settings_path: &Path, dry_run: bool, json: bool) -> Result<()> {
+    if !settings_path.is_file() {
+        bail!("Aqua Voice settings not found: {}", settings_path.display());
+    }
+    let bytes =
+        fs::read(settings_path).with_context(|| format!("read {}", settings_path.display()))?;
+    let settings: AquaSettings = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parse {}", settings_path.display()))?;
+    let target = dictionary_path()?;
+    let dictionary = DictionaryFile::load()?;
+    let mut report = aqua_report(dictionary, &settings, dry_run, target.clone());
+    if dry_run {
+        return print_aqua_report(&report, json);
+    }
+    report.backup = create_dated_backup(&target, SystemTime::now())?;
+    let mut dictionary = DictionaryFile::load()?;
+    dictionary.merge(aqua_entries(&settings).0);
+    dictionary.save()?;
+    print_aqua_report(&report, json)
+}
+
+fn utc_timestamp(now: SystemTime) -> String {
+    let duration = now.duration_since(UNIX_EPOCH).unwrap_or_default();
+    let days = duration.as_secs().div_euclid(86_400) as i64;
+    let seconds = duration.as_secs().rem_euclid(86_400);
+    // Howard Hinnant's civil-from-days algorithm; std has no UTC formatter.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = if month <= 2 { year + 1 } else { year };
+    format!(
+        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z",
+        seconds / 3_600,
+        seconds.rem_euclid(3_600) / 60,
+        seconds.rem_euclid(60)
+    )
+}
+
+fn create_dated_backup(path: &Path, now: SystemTime) -> Result<Option<PathBuf>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let file_name = path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .context("dictionary path has no UTF-8 file name")?;
+    let timestamp = utc_timestamp(now);
+    let mut suffix = 0;
+    loop {
+        let backup_name = if suffix == 0 {
+            format!("{file_name}.{timestamp}.bak")
+        } else {
+            format!("{file_name}.{timestamp}-{suffix}.bak")
+        };
+        let backup = path.with_file_name(backup_name);
+        let source = File::open(path)?;
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&backup)
+        {
+            Ok(mut destination) => {
+                let mut source = source;
+                io::copy(&mut source, &mut destination)?;
+                return Ok(Some(backup));
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                suffix += 1;
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 pub fn list_dictionary(json: bool) -> Result<()> {
@@ -673,11 +948,146 @@ fn comparable(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::comparable;
+    use super::{aqua_report, comparable, create_dated_backup, utc_timestamp, AquaSettings};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "phonon-aqua-{}-{}-{}",
+                label,
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn aqua_settings() -> AquaSettings {
+        serde_json::from_str(
+            r#"{
+                "unrelated": "ignored",
+                "version": 89,
+                "dictionary": ["Kernel", "  Term "],
+                "replacements": [{"from": " black well ", "to": "Blackwell"}]
+            }"#,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn comparison_ignores_punctuation_but_not_words() {
         assert_eq!(comparable("Use CUDA, now."), "use cuda now");
         assert_ne!(comparable("Use CUDA"), comparable("Use CUDA now"));
+    }
+
+    #[test]
+    fn aqua_mappings_normalize_and_count_invalid_values() {
+        let settings: AquaSettings = serde_json::from_str(
+            r#"{
+                "version": 89,
+                "dictionary": ["Alpha", "   ", true],
+                "replacements": [{"from": " Beta ", "to": "Gamma"}, {"from": "", "to": "x"}, {}],
+                "customInstructions": "abc"
+            }"#,
+        )
+        .unwrap();
+        let report = aqua_report(
+            Default::default(),
+            &settings,
+            true,
+            PathBuf::from("dictionary.json"),
+        );
+        assert_eq!(report.inspected, 6);
+        assert_eq!(report.imported, 2);
+        assert_eq!(report.merged, 0);
+        assert_eq!(report.unchanged, 0);
+        assert_eq!(report.invalid, 4);
+        assert_eq!(report.instruction_characters, 3);
+        assert_eq!(report.settings_version, Some(89));
+    }
+
+    #[test]
+    fn aqua_mappings_are_case_insensitive_and_idempotent() {
+        let settings = aqua_settings();
+        let first = aqua_report(
+            Default::default(),
+            &settings,
+            true,
+            PathBuf::from("dictionary.json"),
+        );
+        assert_eq!(first.inspected, 3);
+        assert_eq!(first.imported, 3);
+        assert_eq!(first.merged, 0);
+        assert_eq!(first.unchanged, 0);
+
+        let dictionary = phonon_core::data::DictionaryFile {
+            entries: vec![
+                phonon_core::data::DictionaryEntry {
+                    phrase: "KERNEL".into(),
+                    replacement: None,
+                    spoken_forms: Vec::new(),
+                    source: "manual".into(),
+                    starred: true,
+                    usage_count: 2,
+                },
+                phonon_core::data::DictionaryEntry {
+                    phrase: "Term".into(),
+                    replacement: None,
+                    spoken_forms: Vec::new(),
+                    source: "manual".into(),
+                    starred: false,
+                    usage_count: 0,
+                },
+                phonon_core::data::DictionaryEntry {
+                    phrase: "BLACK WELL".into(),
+                    replacement: Some("Blackwell".into()),
+                    spoken_forms: Vec::new(),
+                    source: "manual".into(),
+                    starred: true,
+                    usage_count: 3,
+                },
+            ],
+            ..Default::default()
+        };
+        let second = aqua_report(
+            dictionary,
+            &settings,
+            true,
+            PathBuf::from("dictionary.json"),
+        );
+        assert_eq!(second.imported, 0);
+        assert_eq!(second.merged, 0);
+        assert_eq!(second.unchanged, 3);
+    }
+
+    #[test]
+    fn aqua_backup_copies_dictionary_to_a_dated_sibling() {
+        let directory = TempDir::new("backup");
+        let dictionary = directory.0.join("dictionary.json");
+        std::fs::write(&dictionary, br#"{"entries":[]}"#).unwrap();
+        let now = UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        assert_eq!(utc_timestamp(now), "20260101T000000Z");
+
+        let backup = create_dated_backup(&dictionary, now).unwrap().unwrap();
+        assert_eq!(
+            backup,
+            directory.0.join("dictionary.json.20260101T000000Z.bak")
+        );
+        assert!(backup.is_file());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"{\"entries\":[]}");
+        assert_eq!(std::fs::read(&dictionary).unwrap(), b"{\"entries\":[]}");
     }
 }

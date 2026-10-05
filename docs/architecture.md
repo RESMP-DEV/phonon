@@ -115,6 +115,95 @@ regression gate to pass at the same pinned adapter and runtime. Until then,
 Phonon can be a usable local alternative or experimental engine, but not a
 claimed Aqua replacement.
 
+## Training-corpus capture
+
+### Consent and capture modes
+
+The existing paired corpus is audio-first and text-supervised: a recording may
+be retained locally, but no screenshot is retained, and an intended transcript
+is optional. Training collection is a separate product mode, never a side effect
+of ordinary dictation or screen context. It therefore has two independent
+default-off settings:
+
+1. `training_capture_enabled`, which authorizes creation of a training candidate
+   for one explicit purpose and consent version.
+2. `include_screen_images`, which additionally authorizes retention of the
+   already-captured screen image. When it is false, the OCR text and confirmed
+   dictionary terms may still be used according to ordinary screen-context
+   policy, but the image is deleted at the existing capture boundary.
+
+Both must be true before `screenshot.png` can exist in a corpus item. The
+capture record identifies the session, purpose, consent version, consent time,
+capture origin, display ID, pixel dimensions, backing scale, capture timestamp,
+retention deadline, SHA-256, and model capability declaration. Consent is
+scoped and reviewable; it does not transfer to a new purpose, model family,
+endpoint, or training run.
+
+Retention is finite from capture time. `screenshot_retention_seconds` must be
+set before image capture, and expiry removes only the expired screenshot. It
+does not silently delete audio, text, metadata, or the corpus item. Deletion
+failure is an error and marks the candidate unusable for export; it is never
+treated as successful deletion. Explicit corpus deletion removes the entire
+item, including screenshot, audio, metadata, sidecars, and export links, but
+not independent copies the user explicitly exported.
+
+### Candidate format and integrity
+
+A training candidate remains local under the existing corpus root:
+
+```text
+Corpus/<id>/
+├── audio.wav
+├── metadata.json
+├── screenshot.png
+└── screenshot.json
+```
+
+`screenshot.json` is the provenance manifest, not a replacement for
+`metadata.json`. It records schema version, corpus ID, display/capture fields,
+consent version and time, retention deadline, file name, SHA-256, byte length,
+and deletion state. Every load hashes the image again; a mismatch invalidates
+the candidate. The audio receives the same SHA-256 discipline at export.
+Raw and final transcripts remain inference observations. An intended transcript
+or an explicit reviewed label is required before a row can enter a training
+manifest. Manual edits record who/what reviewed the label without storing the
+reviewer's personal identity when no review was human.
+
+Export is deliberately not training. `phonon corpus export` writes outside the
+personal corpus directory and creates a manifest of IDs, hashes, durations,
+sources, timestamps, consent versions/provenance, and requested modalities. It
+omits transcript text unless `--include-text` is explicit; even then it
+includes only reviewed intended text, not raw ASR. Screen images are copied
+only with `--include-screen-images` and `--only-consented`; a missing consent
+record, expired image, hash mismatch, or unresolved scope fails the export.
+No exporter contacts a model provider, cloud service, telemetry provider, or
+public artifact destination.
+
+### Work packages and gates
+
+1. Add the settings, schema-defaulted metadata, atomic capture registration,
+   expiry, deletion, and load-time hash validation, with no change to default
+   capture behavior.
+2. Extend the Swift stop path to retain the already-captured image only under
+   the two flags, write its provenance record, and enforce expiry without
+   blocking ordinary dictation on a storage error.
+3. Add auditable CLI inspection and consent review verbs, followed by the
+   redacted exporter above.
+4. Add a pack builder only after export integrity passes. It must preserve the
+   active prompt ID/hash, context length, LoRA rank, modality order, and pack
+   schema, and must never select rows by reading the frozen evaluation slice.
+5. Register an end-to-end privacy gate: consent provenance, expiry, deletion,
+   export redaction, hash mismatch, malformed manifest, and refusal to export
+   raw ASR or unlabeled text.
+
+The capture path is implemented only when default-off behavior, explicit
+consent, finite retention, provenance, integrity, and deletion are covered by
+tests. It is product-ready only after a real macOS capture, a retention expiry,
+an explicit export, a malformed-image rejection, and a full corpus deletion are
+recorded in local evidence without exposing personal contents. The existing
+vision-head image protocol remains a separate inference gate; a training
+candidate never authorizes model calls by itself.
+
 ## Dataset creation and teacher curation
 
 ### Current output flow
@@ -1380,6 +1469,25 @@ checkout. A bundle/settings inspection is structural evidence only; milestone 1
 still requires a live accessibility walk because server and account gating can
 hide packaged features. This entry is a plan, not a claim that any parity gate
 has run.
+
+### 2026-10-05: consented training-corpus capture and implementation fan-out
+
+Added a training-corpus capture plan to this document. It separates ordinary
+dictation and OCR-only screen context from a new default-off training purpose.
+Two independent consents control candidate creation and screenshot retention.
+Every retained screenshot must carry explicit scope, consent version/time,
+provenance, dimensions/scale, retention deadline, and SHA-256; a hash mismatch
+or expired image cannot enter export. Export writes outside the personal corpus
+root, omits raw ASR, includes reviewed intended text only on an explicit
+request, and never contacts a provider or telemetry destination. Image training
+is a later pack-builder gate, not automatic inference authorization.
+
+Three independent implementation slices were launched in isolated worktrees:
+reversible Aqua dictionary/replacement/instruction migration, consented
+screenshot/audio training-candidate capture and redacted export, and a
+no-model Aqua baseline/score harness. Their results are not accepted at launch;
+the parent must inspect each diff and rerun decisive checks. No gate, migration,
+capture, export, or quality measurement in this plan has run yet.
 
 ## Contracts to preserve
 

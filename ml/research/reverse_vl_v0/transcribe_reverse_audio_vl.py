@@ -9,6 +9,7 @@ from pathlib import Path
 
 import soundfile as sf
 import torch
+from history_prompt import history_contract, history_prompt_sha256, render_history_prompt
 from peft import LoraConfig, inject_adapter_in_model
 from prompts import get_prompt, prompt_sha256
 from reverse_audio_vl import LORA_TARGETS, ReverseAudioVL
@@ -97,8 +98,22 @@ def main() -> None:
     parser.add_argument("--audio-root", default="~/aqua-training-data")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--prompt-id", default="prose_dictation_v1")
+    parser.add_argument("--history-manifest", type=Path, default=None)
+    parser.add_argument("--history-count", type=int, default=2)
     args = parser.parse_args()
     get_prompt(args.prompt_id)
+    history_pool: list[dict[str, object]] = []
+    dynamic_prompt = args.prompt_id == "prose_history_dictation_v1"
+    if dynamic_prompt:
+        if args.history_manifest is None:
+            raise RuntimeError(
+                "--history-manifest is required for prose_history_dictation_v1"
+            )
+        history_pool = [
+            json.loads(line)
+            for line in args.history_manifest.read_text().splitlines()
+            if line.strip()
+        ]
 
     device = torch.device(args.device)
     model = ReverseAudioVL.from_pretrained(device=device)
@@ -120,12 +135,25 @@ def main() -> None:
             wave = torch.from_numpy(wav)
             if wave.dim() == 1:
                 wave = wave[None, :]
+            dynamic_hash = None
+            history_audio = None
+            if dynamic_prompt:
+                contract = history_contract(
+                    row,
+                    history_pool,
+                    count=args.history_count,
+                )
+                system_prompt = render_history_prompt(contract)
+                dynamic_hash = history_prompt_sha256(contract)
+                history_audio = contract["history_audio"]
+            else:
+                system_prompt = get_prompt(args.prompt_id)
             t0 = time.time()
             hyp = model.generate(
                 wave,
                 int(sampling_rate),
                 max_new_tokens=args.max_new_tokens,
-                prompt_id=args.prompt_id,
+                system=system_prompt,
             )
             result = {
                 "ts": row.get("ts"),
@@ -137,6 +165,8 @@ def main() -> None:
                 "gen_s": round(time.time() - t0, 2),
                 "prompt_id": args.prompt_id,
                 "prompt_sha256": prompt_sha256(args.prompt_id),
+                "dynamic_prompt_sha256": dynamic_hash,
+                "history_audio": history_audio,
             }
             sink.write(json.dumps(result, ensure_ascii=False) + "\n")
             sink.flush()

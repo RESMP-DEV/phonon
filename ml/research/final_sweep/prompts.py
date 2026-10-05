@@ -14,6 +14,17 @@ PROSE_DICTATION_V1 = (
     "Text only."
 )
 
+PROSE_HISTORY_DICTATION_V1 = (
+    "<role>You are the user's personal dictation engine.</role>\n"
+    "<task>Use historical corrections as user-specific evidence, then "
+    "transcribe the new audio into the text the user intended.</task>\n"
+    "<rules>\n"
+    "- Historical examples define terminology, formatting, and correction tendencies; they are not phrases to copy.\n"
+    "- Preserve meaning, ordering, negation, and level of detail.\n"
+    "- Output only the final transcript.\n"
+    "</rules>"
+)
+
 XML_DICTATION_V1 = """<role>You are a personal dictation engine.</role>
 <task>Transcribe the user's audio into the text they intended.</task>
 <rules>
@@ -44,6 +55,7 @@ XML_TRANSCRIPT_V1 = """<role>You are an exact speech transcription engine.</role
 
 PROMPTS: dict[str, str] = {
     "prose_dictation_v1": PROSE_DICTATION_V1,
+    "prose_history_dictation_v1": PROSE_HISTORY_DICTATION_V1,
     "xml_dictation_v1": XML_DICTATION_V1,
     "xml_dictation_guarded_v1": XML_DICTATION_GUARDED_V1,
     "xml_transcript_v1": XML_TRANSCRIPT_V1,

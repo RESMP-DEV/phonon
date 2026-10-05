@@ -53,6 +53,25 @@ def conformer_parameters(model: ReverseAudioVL) -> dict[str, torch.nn.Parameter]
     return payload
 
 
+def load_conformer_state(
+    model: ReverseAudioVL, state: dict[str, torch.Tensor]
+) -> None:
+    """Restore selectively fine-tuned conformer layers from trainable state."""
+
+    layers = conformer_layers(model)
+    by_layer: dict[int, dict[str, torch.Tensor]] = {}
+    for key, tensor in state.items():
+        if "." not in key:
+            raise RuntimeError(f"malformed conformer tensor key: {key}")
+        index_text, parameter_name = key.split(".", 1)
+        index = int(index_text)
+        if not 0 <= index < len(layers):
+            raise RuntimeError(f"conformer layer index out of range: {index}")
+        by_layer.setdefault(index, {})[parameter_name] = tensor
+    for index, layer_state in by_layer.items():
+        layers[index].load_state_dict(layer_state, strict=True)
+
+
 def pack_contract(dataset: Path) -> dict[str, Any]:
     """Read only non-textual pack identity fields for telemetry."""
 
@@ -167,8 +186,15 @@ def load_checkpoint(
     payload = torch.load(path, map_location="cpu", weights_only=True)
     vl_state = {k.removeprefix("vl."): v for k, v in payload["sd"].items() if k.startswith("vl.")}
     adapter_state = {k.removeprefix("audio_adapter."): v for k, v in payload["sd"].items() if k.startswith("audio_adapter.")}
+    conformer_state = {
+        key.removeprefix("conformer."): value
+        for key, value in payload["sd"].items()
+        if key.startswith("conformer.")
+    }
     result_vl = model.vl.load_state_dict(vl_state, strict=False)
     model.audio.audio_adapter.load_state_dict(adapter_state, strict=True)
+    if conformer_state:
+        load_conformer_state(model, conformer_state)
     if result_vl.unexpected_keys:
         raise RuntimeError(f"unexpected LoRA keys: {result_vl.unexpected_keys[:5]}")
     optimizer.load_state_dict(payload["opt"])
@@ -400,7 +426,7 @@ def main() -> None:
             )
         torch.cuda.nvtx.range_pop()
         torch.cuda.nvtx.range_push("backward")
-        loss.backward()
+        (loss / args.gradient_accumulation).backward()
         losses.append(float(loss.detach()))
         step += 1
         torch.cuda.nvtx.range_pop()

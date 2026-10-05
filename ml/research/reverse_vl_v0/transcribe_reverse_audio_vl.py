@@ -53,10 +53,30 @@ def load_adapter(
         for key, value in state.items()
         if key.startswith("audio_adapter.")
     }
+    conformer_state = {
+        key.removeprefix("conformer."): value
+        for key, value in state.items()
+        if key.startswith("conformer.")
+    }
     result = model.vl.load_state_dict(vl_state, strict=False)
     if result.unexpected_keys:
         raise RuntimeError(f"unexpected LoRA keys: {result.unexpected_keys[:5]}")
     model.audio.audio_adapter.load_state_dict(adapter_state, strict=True)
+    if conformer_state:
+        layers = getattr(model.audio.conformer, "layers", None)
+        if not isinstance(layers, torch.nn.ModuleList):
+            raise RuntimeError("conformer adapter has no nn.ModuleList layers")
+        by_layer: dict[int, dict[str, torch.Tensor]] = {}
+        for key, value in conformer_state.items():
+            if "." not in key:
+                raise RuntimeError(f"malformed conformer tensor key: {key}")
+            index_text, parameter_name = key.split(".", 1)
+            index = int(index_text)
+            if not 0 <= index < len(layers):
+                raise RuntimeError(f"conformer layer index out of range: {index}")
+            by_layer.setdefault(index, {})[parameter_name] = value
+        for index, layer_state in by_layer.items():
+            layers[index].load_state_dict(layer_state, strict=True)
     model.vl.to(model.device).eval()
     model.audio.to(model.device).eval()
 

@@ -102,6 +102,19 @@ def test_probe_live_output_is_schema_valid_and_redacted(binary: Path) -> None:
     assert str(Path.home()).encode() not in result.stdout
 
 
+def test_probe_rejects_unsupported_arguments_without_success_status(
+    binary: Path,
+) -> None:
+    result = subprocess.run(
+        [str(binary), "--not-supported"], check=False, capture_output=True
+    )
+
+    assert result.returncode == 2
+    report = json.loads(result.stdout)
+    assert report["mode"] == "error"
+    assert report["error"] == "unsupported argument"
+
+
 def test_probe_source_has_no_request_capture_network_or_mutation_calls() -> None:
     source = SOURCE.read_text()
     for forbidden_call in (
@@ -116,3 +129,9 @@ def test_probe_source_has_no_request_capture_network_or_mutation_calls() -> None
         "URLSession",
     ):
         assert forbidden_call not in source
+
+
+def test_probe_identity_prefix_emits_twelve_hex_digits() -> None:
+    source = SOURCE.read_text()
+
+    assert "digest.prefix(6)" in source

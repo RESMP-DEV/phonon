@@ -193,6 +193,26 @@ final class TrainingCaptureTests: XCTestCase {
         }
     }
 
+    func testLargeStandardErrorOutputCannotDeadlockExpiry() async throws {
+        let fakePhonon = try fakePhononWithLargeErrorOutput()
+        let attacher = TrainingScreenshotAttacher(
+            configuration: .init(
+                phononBinary: fakePhonon.path,
+                stagingRoot: directory.appendingPathComponent("unused"),
+                permissionPreflight: { true }))
+
+        let started = Date()
+        do {
+            try await attacher.expire(nowUnixMs: 123)
+            XCTFail("expected expiry failure")
+        } catch let error as NSError {
+            XCTAssertEqual(error.domain, "PhononTrainingCapture")
+            XCTAssertEqual(error.code, 4)
+            XCTAssertGreaterThan(error.localizedDescription.count, 64 * 1_024)
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+    }
+
     private func attachment() throws -> TrainingScreenshotAttacher.Attachment {
         TrainingScreenshotAttacher.Attachment(
             audioPath: directory.appendingPathComponent("audio.wav").path,
@@ -242,6 +262,20 @@ final class TrainingCaptureTests: XCTestCase {
         \(arguments)
         printf 'synthetic phonon response\\n'
         exit \(exitStatus)
+        """
+        try Data(script.utf8).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
+    private func fakePhononWithLargeErrorOutput() throws -> URL {
+        let url = directory.appendingPathComponent("fake-phonon-large-errors")
+        let script = """
+        #!/usr/bin/env bash
+        set -eu
+        /usr/bin/yes 'phonon synthetic diagnostic output' | /usr/bin/head -n 8000 >&2
+        exit 4
         """
         try Data(script.utf8).write(to: url, options: .atomic)
         try FileManager.default.setAttributes(

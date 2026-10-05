@@ -2494,8 +2494,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         screenImageAttachmentDeferred = false
         screenContextCapture = nil
+        let audioPath = activeWavPath
+        let localHistoryEnabled = appStore.settings.localHistory
+        self.activeWavPath = nil
         let attachment = TrainingScreenshotAttacher.Attachment(
-            audioPath: activeWavPath,
+            audioPath: audioPath,
             candidate: candidate,
             settings: TrainingCaptureSettings(settings: appStore.settings))
         Task { [weak self] in
@@ -2516,8 +2519,13 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.appStore.lastError =
                     "Screen-image retention expiry failed; see Phonon logs."
             }
-            self.finishRecordingRetention(
-                forceKeepCandidate: attachmentSucceeded)
+            if !TrainingRetentionPolicy.shouldKeepCandidate(
+                localHistoryEnabled: localHistoryEnabled,
+                attachmentSucceeded: attachmentSucceeded)
+            {
+                MicRecorder.discardWav(at: audioPath)
+            }
+            self.appStore.reloadAll()
         }
     }
 

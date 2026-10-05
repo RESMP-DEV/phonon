@@ -1715,6 +1715,18 @@ An external visual audit of the synthetic Settings render found that the
 Training capture section matches the existing graphite instrument-panel
 hierarchy; the native switch states are materially legible and artifact-free.
 The audit receipt is `zai-settings-native.json` beside that snapshot run.
+
+CodeRabbit then found four valid review defects at the initial PR head. The
+attachment task now owns its pass's WAV path and local-history decision instead
+of reading mutable `activeWavPath` after subprocess awaits; stderr is drained
+before waiting for child exit; the focused-application digest emits six digest
+bytes (12 hexadecimal characters); and unsupported probe arguments retain JSON
+errors but exit with status 2. The repaired combined head passed all 78 Swift
+tests, all 41 repository Python tests, the Rust fmt/Clippy/workspace matrix,
+both shell checks, and a fresh nine-render snapshot run at
+`build/ui-snapshots/run-20261005T141554-92792/receipt.json`, SHA-256
+`a2ab715265e566f377d099767de58b3fb20fd2108cd2b86c4e92f29cb683782b`.
+
 ### 2026-10-05: redacted macOS Accessibility and Screen Recording probe
 
 Research findings
@@ -1791,6 +1803,10 @@ Apple-standard allowlist and reran compilation, live and fixture probes, all 39
 repository Python tests, Ruff, `git diff --check`, and live HTTP checks for all 14
 Apple URLs. The final ignored receipt SHA-256 is
 `499690175938b209c969468beabb6d4777e435f1e57e9e7cf415f42c0df61b30`.
+Review repair subsequently increased the repository Python suite to 41 tests.
+The post-review machine receipt is
+`build/reports/macos-access-probe/receipt.json`, SHA-256
+`1c9cfde377fe6be4f2f59cb5e63ade43f6caabdcc9392225c955e85fbd9e832d`.
 
 Apple source URLs consulted:
 

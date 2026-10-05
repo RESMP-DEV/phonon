@@ -254,10 +254,11 @@ struct TrainingScreenshotAttacher {
         let stderr = Pipe()
         process.standardError = stderr
         try process.run()
+        // Drain before wait: a child emitting more than a pipe buffer would
+        // otherwise block on stderr while this helper blocks on its exit.
+        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let errors =
-            String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
-            ?? ""
+        let errors = String(data: errorData, encoding: .utf8) ?? ""
         return TrainingProcessOutcome(
             terminationStatus: process.terminationStatus, standardError: errors)
     }

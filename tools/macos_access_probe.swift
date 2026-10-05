@@ -138,7 +138,7 @@ func focusedApplicationIdentity(_ application: AXUIElement) -> FocusedApplicatio
     }
 
     let digest = SHA256.hash(data: Data(String(pid).utf8))
-    let identity = digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+    let identity = digest.prefix(6).map { String(format: "%02x", $0) }.joined()
     return FocusedApplicationReport(
         observed: true,
         pid_identity_present: true,
@@ -317,7 +317,7 @@ func fixtureReport() -> ProbeReport {
             network_used: false))
 }
 
-func emit<T: Encodable>(_ value: T) -> Never {
+func emit<T: Encodable>(_ value: T, exitStatus: Int32 = 0) -> Never {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) else {
@@ -325,7 +325,7 @@ func emit<T: Encodable>(_ value: T) -> Never {
         exit(1)
     }
     print(text)
-    exit(0)
+    exit(exitStatus)
 }
 
 let arguments = CommandLine.arguments.dropFirst()
@@ -345,5 +345,6 @@ default:
         schema_version: 1,
         mode: "error",
         error: "unsupported argument",
-        usage: "macos_access_probe [--fixture|--help]; no arguments runs a read-only live probe"))
+        usage: "macos_access_probe [--fixture|--help]; no arguments runs a read-only live probe"),
+        exitStatus: 2)
 }

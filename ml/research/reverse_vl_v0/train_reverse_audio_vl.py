@@ -20,13 +20,36 @@ from safetensors.torch import save_file
 from torch.utils.data import DataLoader
 
 
-def trainable_state(model: ReverseAudioVL) -> dict[str, torch.Tensor]:
+def trainable_state(
+    model: ReverseAudioVL, *, conformer_blocks: int = 0
+) -> dict[str, torch.Tensor]:
     payload = {}
     for name, parameter in model.vl.named_parameters():
         if "lora_" in name:
             payload["vl." + name] = parameter.detach().cpu().contiguous()
     for name, parameter in model.audio.audio_adapter.named_parameters():
         payload["audio_adapter." + name] = parameter.detach().cpu().contiguous()
+    if conformer_blocks:
+        for name, parameter in conformer_parameters(model).items():
+            payload["conformer." + name] = parameter.detach().cpu().contiguous()
+    return payload
+
+
+def conformer_layers(model: ReverseAudioVL) -> torch.nn.ModuleList:
+    layers = getattr(model.audio.conformer, "layers", None)
+    if not isinstance(layers, torch.nn.ModuleList):
+        raise TypeError("conformer has no nn.ModuleList attribute named 'layers'")
+    return layers
+
+
+def conformer_parameters(model: ReverseAudioVL) -> dict[str, torch.nn.Parameter]:
+    """Parameters of unfrozen conformer layers, keyed by layer index."""
+
+    payload: dict[str, torch.nn.Parameter] = {}
+    for index, layer in enumerate(conformer_layers(model)):
+        for name, parameter in layer.named_parameters():
+            if parameter.requires_grad:
+                payload[f"{index}.{name}"] = parameter
     return payload
 
 
@@ -162,11 +185,20 @@ def main() -> None:
     parser.add_argument("--context-length", type=int, default=768)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--adapter-lr", type=float, default=1e-4)
+    parser.add_argument("--conformer-lr", type=float, default=1e-5)
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--ckpt-every", type=int, default=200)
     parser.add_argument("--keep-ckpts", type=int, default=3)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--gradient-accumulation", type=int, default=1)
+    parser.add_argument(
+        "--conformer-blocks",
+        type=int,
+        default=0,
+        help="Unfreeze the last N conformer layers and include them in the checkpoint",
+    )
     parser.add_argument("--out", default="reverse-audio-vl-v1")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--device", default="cuda")
@@ -193,6 +225,12 @@ def main() -> None:
         choices=("public", "aqua", "profile"),
     )
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("--batch-size must be at least 1")
+    if args.gradient_accumulation < 1:
+        parser.error("--gradient-accumulation must be at least 1")
+    if args.conformer_blocks < 0:
+        parser.error("--conformer-blocks cannot be negative")
     if args.wandb_project and args.wandb_mode != "disabled" and not args.wandb_stage:
         parser.error("--wandb-stage is required when W&B telemetry is enabled")
 
@@ -210,6 +248,13 @@ def main() -> None:
         parameter.requires_grad_(False)
     for parameter in model.audio.audio_adapter.parameters():
         parameter.requires_grad_(True)
+    conformer_layers = getattr(model.audio.conformer, "layers", None)
+    if args.conformer_blocks:
+        if conformer_layers is None or not isinstance(conformer_layers, torch.nn.ModuleList):
+            parser.error("conformer has no nn.ModuleList attribute named 'layers'")
+        for layer in conformer_layers[-args.conformer_blocks :]:
+            for parameter in layer.parameters():
+                parameter.requires_grad_(True)
 
     inject_adapter_in_model(
         LoraConfig(
@@ -238,22 +283,36 @@ def main() -> None:
 
     lora_parameters = [p for n, p in model.vl.named_parameters() if p.requires_grad]
     adapter_parameters = list(model.audio.audio_adapter.parameters())
+    conformer_parameters = []
+    if args.conformer_blocks and conformer_layers is not None:
+        conformer_parameters = [
+            p
+            for layer in conformer_layers[-args.conformer_blocks :]
+            for p in layer.parameters()
+            if p.requires_grad
+        ]
     optimizer = torch.optim.AdamW(
         [
             {"params": lora_parameters, "lr": args.lr},
             {"params": adapter_parameters, "lr": args.adapter_lr},
+            {"params": conformer_parameters, "lr": args.conformer_lr},
         ],
         betas=(0.9, 0.95),
         weight_decay=0.0,
         fused=(device.type == "cuda"),
     )
-    print(
-        f"trainable: lora={len(lora_parameters)} ({sum(p.numel() for p in lora_parameters):,}), "
-        f"adapter={len(adapter_parameters)} ({sum(p.numel() for p in adapter_parameters):,})",
-        flush=True,
-    )
     if not lora_parameters:
         raise RuntimeError("LoRA target regex matched no VL tensors")
+    effective_batch = args.batch_size * args.gradient_accumulation
+    print(
+        f"trainable: lora={len(lora_parameters)} ({sum(p.numel() for p in lora_parameters):,}), "
+        f"adapter={len(adapter_parameters)} ({sum(p.numel() for p in adapter_parameters):,}), "
+        f"conformer={len(conformer_parameters)} ({sum(p.numel() for p in conformer_parameters):,}), "
+        f"conformer_lr={args.conformer_lr:.2e}, "
+        f"batch={args.batch_size}, grad_acc={args.gradient_accumulation} "
+        f"(effective_batch={effective_batch})",
+        flush=True,
+    )
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -275,7 +334,7 @@ def main() -> None:
     dataset = LFM2DataLoader(args.dataset, context_length=args.context_length)
     loader = DataLoader(
         dataset,
-        batch_size=1,
+        batch_size=args.batch_size,
         shuffle=True,
         collate_fn=lfm2_collator,
         num_workers=0,
@@ -293,7 +352,7 @@ def main() -> None:
     def save_checkpoint(current: int) -> None:
         payload = {
             "step": current,
-            "sd": trainable_state(model),
+        "sd": trainable_state(model, conformer_blocks=args.conformer_blocks),
             "opt": optimizer.state_dict(),
             "torch_rng": torch.get_rng_state(),
             "losses": losses[-50:],
@@ -342,20 +401,22 @@ def main() -> None:
         torch.cuda.nvtx.range_pop()
         torch.cuda.nvtx.range_push("backward")
         loss.backward()
-        torch.cuda.nvtx.range_pop()
-        torch.cuda.nvtx.range_push("optimizer")
-        optimizer.param_groups[0]["lr"] = lr_at(step)
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            [p for p in model.vl.parameters() if p.requires_grad]
-            + list(model.audio.audio_adapter.parameters()),
-            1.0,
-        )
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        torch.cuda.nvtx.range_pop()
         losses.append(float(loss.detach()))
         step += 1
         torch.cuda.nvtx.range_pop()
+        if step % args.gradient_accumulation == 0 or step == args.steps:
+            torch.cuda.nvtx.range_push("optimizer")
+            optimizer.param_groups[0]["lr"] = lr_at(step - 1)
+            scale = lr_at(step - 1) / max(args.lr, 1e-12)
+            optimizer.param_groups[1]["lr"] = args.adapter_lr * scale
+            optimizer.param_groups[2]["lr"] = args.conformer_lr * scale
+            all_trainable = (
+                lora_parameters + adapter_parameters + conformer_parameters
+            )
+            grad_norm = torch.nn.utils.clip_grad_norm_(all_trainable, 1.0)
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            torch.cuda.nvtx.range_pop()
         if step == 1 or step % 10 == 0:
             mean = sum(losses[-10:]) / min(10, len(losses))
             print(f"step {step}/{args.steps} loss {mean:.4f} ({time.time()-started:.0f}s)", flush=True)
@@ -376,7 +437,10 @@ def main() -> None:
             save_checkpoint(step)
 
     adapter_path = out_dir / "reverse_audio_vl_adapter.safetensors"
-    save_file(trainable_state(model), str(adapter_path))
+    save_file(
+        trainable_state(model, conformer_blocks=args.conformer_blocks),
+        str(adapter_path),
+    )
     adapter_sha256 = hashlib.sha256(adapter_path.read_bytes()).hexdigest()
     final_loss = sum(losses[-10:]) / min(10, len(losses))
     (out_dir / "train_meta.json").write_text(
@@ -390,6 +454,9 @@ def main() -> None:
                 "rank": args.rank,
                 "torch_compile": args.torch_compile,
                 "liger_cross_entropy": args.liger_cross_entropy,
+                "batch_size": args.batch_size,
+                "gradient_accumulation": args.gradient_accumulation,
+                "conformer_blocks": args.conformer_blocks,
                 "mean_last10": final_loss,
                 "wall_s": round(time.time() - started, 1),
                 "adapter_sha256": adapter_sha256,

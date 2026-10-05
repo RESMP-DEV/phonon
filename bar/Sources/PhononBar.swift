@@ -604,9 +604,20 @@ enum CoreAudioInputDevices {
 }
 
 enum ScreenContextCapture {
-    static func recognizeAllDisplays() async -> String {
+    /// One SCScreenshotManager acquisition for the main display serves both
+    /// OCR and training retention. At most that main image is retained; other
+    /// displays are converted to OCR text and immediately released.
+    struct Result {
+        var text = ""
+        var retainedMainDisplay: ScreenImageCandidate?
+    }
+
+    static func capture(
+        performOCR: Bool, retainMainDisplay: Bool
+    ) async -> Result {
+        var result = Result()
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-            return ""
+            return result
         }
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(
@@ -614,9 +625,13 @@ enum ScreenContextCapture {
             let ownApplication = content.applications.first {
                 $0.processID == ProcessInfo.processInfo.processIdentifier
             }
+            let mainDisplayID = CGMainDisplayID()
             var recognized = [String]()
             for display in content.displays {
-                guard !Task.isCancelled else { return "" }
+                guard !Task.isCancelled else { return Result() }
+                let isMainDisplay = display.displayID == mainDisplayID
+                let shouldCapture = performOCR || (retainMainDisplay && isMainDisplay)
+                guard shouldCapture else { continue }
                 let filter = SCContentFilter(
                     display: display,
                     excludingApplications: ownApplication.map { [$0] } ?? [],
@@ -627,14 +642,27 @@ enum ScreenContextCapture {
                 configuration.showsCursor = false
                 let image = try await SCScreenshotManager.captureImage(
                     contentFilter: filter, configuration: configuration)
-                guard !Task.isCancelled else { return "" }
-                let text = recognize(image)
-                recognized.append(text)
+                guard !Task.isCancelled else { return Result() }
+                if retainMainDisplay && isMainDisplay {
+                    let logicalWidth = max(1, display.width)
+                    result.retainedMainDisplay = ScreenImageCandidate(
+                        cgImage: image,
+                        displayID: String(display.displayID),
+                        pixelWidth: image.width,
+                        pixelHeight: image.height,
+                        scaleFactor: Double(image.width) / Double(logicalWidth),
+                        capturedAtUnixMs: UInt64(Date().timeIntervalSince1970 * 1_000))
+                }
+                if performOCR {
+                    let text = recognize(image)
+                    recognized.append(text)
+                }
             }
-            return recognized.filter { !$0.isEmpty }.joined(separator: "\n")
+            result.text = recognized.filter { !$0.isEmpty }.joined(separator: "\n")
+            return result
         } catch {
             NSLog("phonon screen context: \(error.localizedDescription)")
-            return ""
+            return Result()
         }
     }
 
@@ -1621,6 +1649,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var screenContextReady = true
     private var pendingFinalPolish: (text: String, id: String)?
     private var screenContextTask: Task<Void, Never>?
+    private var screenContextCapture: ScreenImageCandidate?
+    private var screenImageAttachmentDeferred = false
+    private let trainingScreenshotAttacher = TrainingScreenshotAttacher()
     private var engineRestartWork: DispatchWorkItem?
     private var terminating = false
     private var activeWavPath: String?
@@ -1698,6 +1729,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         competitors.subscribeToLaunches()
         competitors.check(trigger: "launch")
+        expireScreenshotsAsynchronously()
     }
 
     /// The dictation-start scan defers its prompt; show it once the pipeline is
@@ -1969,11 +2001,13 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
                 rawText = text
                 submittedTranscribe = nil
+                screenImageAttachmentDeferred = false
                 let pid = activeId ?? "p\(pass)"
                 if text.isEmpty {
                     // Empty ASR — don't hang the loader forever.
                     NSLog("phonon: empty ASR for \(pid)")
                     processing = false
+                    screenContextCapture = nil
                     finishRecordingRetention()
                     hideAfter(0.1)
                     return
@@ -2026,9 +2060,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                         E2EProfileStore.append(record)
                     }
                     e2eTrace = nil
-                    finishRecordingRetention()
+                    screenImageAttachmentDeferred = false
+                    finishAfterScreenImageAttachment()
                     hideAfter(state.streamingPreviewEnabled ? 0.55 : 0)
                 } else {
+                    screenContextCapture = nil
+                    finishRecordingRetention()
                     hidePill()
                 }
             }
@@ -2047,6 +2084,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Don't kill a queued first pass on boot-stream noise.
             if pendingTranscribe != nil { return }
             processing = false
+            screenContextCapture = nil
+            screenImageAttachmentDeferred = false
             finishRecordingRetention()
             hideAfter(0.12)
         default:
@@ -2235,6 +2274,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             pendingTranscribe = nil
             submittedTranscribe = nil
             pendingFinalPolish = nil
+            screenContextTask?.cancel()
+            screenContextCapture = nil
             processing = false
         }
         guard !isRecording else { return }
@@ -2268,15 +2309,25 @@ final class AppController: NSObject, NSApplicationDelegate {
         latestAcousticPreview = ""
         screenContextText = ""
         screenContextReady = !appStore.settings.screenContext
+        screenContextCapture = nil
         pendingFinalPolish = nil
         screenContextTask?.cancel()
-        if appStore.settings.screenContext {
+        let performOCR = appStore.settings.screenContext
+        let retainMainDisplay = appStore.settings.screenImageTrainingAllowed
+        if performOCR || retainMainDisplay {
             let contextPass = activeId
             screenContextTask = Task { [weak self] in
-                let text = await ScreenContextCapture.recognizeAllDisplays()
+                let capture = await ScreenContextCapture.capture(
+                    performOCR: performOCR,
+                    retainMainDisplay: retainMainDisplay)
                 guard !Task.isCancelled, let self, self.activeId == contextPass else { return }
-                self.screenContextText = text
+                self.screenContextCapture = capture.retainedMainDisplay
+                self.screenContextText = capture.text
                 self.screenContextReady = true
+                if self.screenImageAttachmentDeferred {
+                    self.screenImageAttachmentDeferred = false
+                    self.finishAfterScreenImageAttachment()
+                }
                 if let pending = self.pendingFinalPolish {
                     self.pendingFinalPolish = nil
                     self.submitFinalPolish(pending.text, id: pending.id)
@@ -2399,12 +2450,98 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func finishRecordingRetention() {
+        finishRecordingRetention(forceKeepCandidate: false)
+    }
+
+    private func finishRecordingRetention(forceKeepCandidate: Bool) {
         defer {
             activeWavPath = nil
             appStore.reloadAll()
         }
-        guard !appStore.settings.localHistory, let activeWavPath else { return }
+        guard
+            !TrainingRetentionPolicy.shouldKeepCandidate(
+                localHistoryEnabled: appStore.settings.localHistory,
+                attachmentSucceeded: forceKeepCandidate),
+            let activeWavPath
+        else { return }
         MicRecorder.discardWav(at: activeWavPath)
+    }
+
+    /// Called only after final text was already inserted. The attachment and
+    /// retention sweep run off the key-up/final-text path; this function never
+    /// blocks or retries on the main actor.
+    private func finishAfterScreenImageAttachment() {
+        guard
+            let activeWavPath,
+            appStore.settings.screenImageTrainingAllowed
+        else {
+            screenContextCapture = nil
+            screenImageAttachmentDeferred = false
+            finishRecordingRetention()
+            return
+        }
+        guard let candidate = screenContextCapture else {
+            // The already-running start capture is still in flight. Do not
+            // block inserted text; its completion calls back without a timer.
+            if !screenImageAttachmentDeferred, screenContextTask != nil {
+                screenImageAttachmentDeferred = true
+                return
+            }
+            screenContextCapture = nil
+            screenImageAttachmentDeferred = false
+            finishRecordingRetention()
+            return
+        }
+        screenImageAttachmentDeferred = false
+        screenContextCapture = nil
+        let audioPath = activeWavPath
+        let localHistoryEnabled = appStore.settings.localHistory
+        self.activeWavPath = nil
+        let attachment = TrainingScreenshotAttacher.Attachment(
+            audioPath: audioPath,
+            candidate: candidate,
+            settings: TrainingCaptureSettings(settings: appStore.settings))
+        Task { [weak self] in
+            guard let self else { return }
+            var attachmentSucceeded = false
+            do {
+                let outcome = try await self.trainingScreenshotAttacher.attach(attachment)
+                attachmentSucceeded = outcome == .attached
+            } catch {
+                self.appStore.lastError =
+                    "Screen-image training attachment failed; no corpus image was retained."
+            }
+            do {
+                try await self.trainingScreenshotAttacher.expire()
+            } catch {
+                NSLog(
+                    "phonon screenshot expiry failed: \(error.localizedDescription)")
+                self.appStore.lastError =
+                    "Screen-image retention expiry failed; see Phonon logs."
+            }
+            if !TrainingRetentionPolicy.shouldKeepCandidate(
+                localHistoryEnabled: localHistoryEnabled,
+                attachmentSucceeded: attachmentSucceeded)
+            {
+                MicRecorder.discardWav(at: audioPath)
+            }
+            self.appStore.reloadAll()
+        }
+    }
+
+    private func expireScreenshotsAsynchronously() {
+        guard appStore.settings.trainingCaptureEnabled
+            || appStore.settings.includeScreenImages
+        else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.trainingScreenshotAttacher.expire()
+            } catch {
+                NSLog("phonon screenshot expiry failed: \(error.localizedDescription)")
+                self.appStore.lastError = "Screen-image retention expiry failed; see Phonon logs."
+            }
+        }
     }
 
     private func shortcutAllows(source: String) -> Bool {
@@ -2717,6 +2854,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         terminating = true
         engineRestartWork?.cancel()
         screenContextTask?.cancel()
+        screenContextCapture = nil
         engine.shutdown()
         NSApp.terminate(nil)
     }
@@ -2725,9 +2863,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         terminating = true
         engineRestartWork?.cancel()
         screenContextTask?.cancel()
+        screenContextCapture = nil
         engine.shutdown()
         recorder.stop(writeFile: false)
         removeEventTap()
+        TrainingScreenshotAttacher.removeStagingRoot()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

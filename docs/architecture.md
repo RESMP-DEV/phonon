@@ -35,8 +35,8 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Training kernel stack | Reference execution remains the training-quality winner; active FlashAttention/causal kernels degraded the full repeat, Liger and warm Triton are slower | A kernel mode must match the full-slice quality of its reference-trained adapter before product or final-training promotion |
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
-| Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
-| Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
+| Screen context input | OCR-only by default; a separate two-switch training mode can retain only the main display | Real-capture TCC acceptance and a model capability declaration remain before image conditioning |
+| Screenshot scope | All displays are captured for OCR; training retention is limited to one in-memory main-display image | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
 | Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
@@ -203,7 +203,7 @@ public artifact destination.
    export redaction, hash mismatch, malformed manifest, and refusal to export
    raw ASR or unlabeled text.
 
-The capture path is implemented only when default-off behavior, explicit
+The Swift capture wiring is implemented only when default-off behavior, explicit
 consent, finite retention, provenance, integrity, and deletion are covered by
 tests. It is product-ready only after a real macOS capture, a retention expiry,
 an explicit export, a malformed-image rejection, and a full corpus deletion are
@@ -1666,6 +1666,178 @@ requires both paths not to exist and to be disjoint, and performs no recursive
 deletion. Refusal of an existing path and a fresh nine-render run passed; the
 new receipt is `build/ui-snapshots/run-20261005T131204-65111/receipt.json`,
 SHA-256 `b9359d4b12b2676e6a56d9adf5005665d30467790496bd701391c018b77acd84`.
+
+### 2026-10-05: safe native screen-image training capture
+
+The macOS bar now has a native two-switch training-capture mode, finite image
+retention choices, and a native consent timestamp. It remains off unless both
+`training_capture_enabled` and `include_screen_images` are on. Ordinary screen
+context still captures displays for OCR only. When training is consented, the
+same recording-start acquisition retains at most one main-display
+`CGImage` in memory; other displays are OCR-only. No PNG is staged before the
+engine reports speech and final text.
+
+At that final boundary, insertion proceeds first. The bar asynchronously stages
+a uniquely named PNG outside the corpus, invokes `phonon corpus
+attach-screenshot` with display, pixel, backing-scale, origin, capture time,
+consent time, and TCC-preflight fields, then removes the unique staging
+directory on success or failure. If local history is off, only successful
+attachment promotes the pass to a retained training candidate. Screenshot
+expiry and PNG encoding run on a utility queue and report failure without
+blocking inserted text; quit removes the per-process staging root. The Rust
+settings contract preserves the native consent timestamp across CLI rewrites so
+an existing consent is not silently invalidated.
+
+Focused Swift tests cover settings defaults and decoding, consent recording,
+CLI argument shape, successful/rejected/TCC-blocked staged cleanup, retention
+selection, and expiry failure. No real ScreenCaptureKit capture, live TCC
+grant, model load, or personal-data fixture ran in this implementation pass.
+Verification passed for `git diff --check`, `shellcheck
+scripts/ui_snapshots.sh`, `shfmt --diff scripts/ui_snapshots.sh`, the nine
+`TrainingCaptureTests`, and the sandbox-safe 74-test selection (all suites
+except the live paste-event test and two tests that trash fixture
+directories). The required synthetic UI run built the app but AppKit returned
+no bitmap representation in the restricted worker session, so it left no
+snapshot receipt; this is an unresolved live-UI environment boundary, not a
+passing render.
+
+Parent review repaired the staged-directory continuation ordering, moved expiry
+off the Swift cooperative executor, and added the settings round-trip regression.
+It then passed the full parent-session Swift suite (77 tests), `cargo fmt --all
+-- --check`, Clippy with warnings denied, the full Rust workspace tests, both
+shell checks, and a real synthetic UI run with all nine renders. The final UI
+receipt is `build/ui-snapshots/run-20261005T135144-52638/receipt.json`,
+SHA-256 `738139ee1de9db0bb682a30278da6cb1e4364727ecb0254fee32fdf07ac0b57d`;
+the combined-head rerun is
+`build/ui-snapshots/run-20261005T135452-58904/receipt.json`, SHA-256
+`bc648c33f0dd7553f7c2f0fcf4aced1db2cc4fec0a2528c2314f549fa7d94b44`.
+An external visual audit of the synthetic Settings render found that the
+Training capture section matches the existing graphite instrument-panel
+hierarchy; the native switch states are materially legible and artifact-free.
+The audit receipt is `zai-settings-native.json` beside that snapshot run.
+
+CodeRabbit then found four valid review defects at the initial PR head. The
+attachment task now owns its pass's WAV path and local-history decision instead
+of reading mutable `activeWavPath` after subprocess awaits; stderr is drained
+before waiting for child exit; the focused-application digest emits six digest
+bytes (12 hexadecimal characters); and unsupported probe arguments retain JSON
+errors but exit with status 2. The repaired combined head passed all 78 Swift
+tests, all 41 repository Python tests, the Rust fmt/Clippy/workspace matrix,
+both shell checks, and a fresh nine-render snapshot run at
+`build/ui-snapshots/run-20261005T141554-92792/receipt.json`, SHA-256
+`a2ab715265e566f377d099767de58b3fb20fd2108cd2b86c4e92f29cb683782b`.
+
+### 2026-10-05: redacted macOS Accessibility and Screen Recording probe
+
+Research findings
+
+macOS exposes two different consent surfaces, and neither is a substitute for
+the other. The Accessibility surface makes the current process a trusted AX
+client, represented by `AXIsProcessTrusted()` or the optional prompt variant
+`AXIsProcessTrustedWithOptions(_:)`. With that grant, `AXUIElement` reads the
+semantic interface tree: `AXUIElementGetPid(_:_:)` identifies the process,
+`AXUIElementCopyAttributeValue(_:_:_:)` reads the focused application, focused
+UI element, role, subrole, action names, and selected-text range, and
+`AXUIElementIsAttributeSettable(_:_:_:)` reports whether a selection or text
+attribute may be set without attempting a mutation. The same Accessibility
+grant is the insertion path for keyboard automation; passive keyboard listening
+can additionally involve the separate Input Monitoring surface, whose read-only
+preflight is `CGPreflightListenEventAccess()` and whose prompt is
+`CGRequestListenEventAccess()`. An AX grant does not authorize display pixels.
+
+The Screen Recording surface authorizes pixels. `CGPreflightScreenCaptureAccess()`
+is the non-prompting availability check, `CGRequestScreenCaptureAccess()` is the
+requesting path, and ScreenCaptureKit's shareable content, filters, streams, and
+`SCScreenshotManager.captureImage(contentFilter:configuration:completionHandler:)`
+operate under that consent. Screen pixels or OCR can reveal rendered characters
+but cannot provide reliable focused-element identity, action availability,
+subrole semantics, or a settable semantic selection. Conversely, an AX tree can
+supply edit-mode selection and actions but cannot reconstruct pixels for a
+vision model. Microphone consent is separate again: `AVCaptureDevice`
+`authorizationStatus(for:)` and `requestAccess(for:completionHandler:)` govern
+audio only.
+
+These boundaries mean edit mode and screen context must be gated independently.
+Selection capture/replacement may start only with Accessibility granted and a
+successful read-only AX copy/settable probe on the focused element; if the
+focused element does not expose a usable selection, Phonon must fail closed
+rather than guessing pixels. OCR or image conditioning may start only with
+Screen Recording granted and an explicit ScreenCaptureKit path; it must never be
+used as the authority for insertion or selection ownership. Microphone grant
+status never implies either visual lane.
+
+Redacted probe
+
+`tools/macos_access_probe.swift` is a dependency-free single-file CLI using
+system frameworks only. No arguments performs a live, non-prompting, read-only
+probe; `--fixture` emits the deterministic test fixture; every output, including
+usage and argument errors, is JSON. It reports the macOS version; Accessibility,
+Input Monitoring, microphone, and Screen Recording booleans or status; whether
+AX copy is available; whether setting was queried (never attempted); selected
+text-range presence and settability; focused-application existence and a
+12-hex-digit SHA-256 prefix of its AX process ID; focused role/subrole; action,
+child, and attribute counts. Role and subrole values pass an Apple-standard
+allowlist; every unknown or custom value becomes `AXUnreportedCustomName`, and
+action names are reduced to a count. The fixture schema is versioned at
+`schema_version = 1`.
+
+The probe does not emit selected text, text values, control contents, window
+titles, bundle identifiers, or bundle paths. It does not call
+`AXIsProcessTrustedWithOptions`, an AX setter, `AXUIElementPerformAction`,
+ScreenCaptureKit, `CGRequestScreenCaptureAccess`,
+`CGRequestListenEventAccess`, AVFoundation access requests, URL loading, or any
+other network interface. `privacy.*` records these non-actions explicitly.
+
+Local compiler evidence on this macOS 26.7.1/arm64 host confirms the SDK
+contract: `AXIsProcessTrustedWithOptions` is documented in
+`ApplicationServices/HIServices/AXUIElement.h`, `.apiDisabled` and
+`.cannotComplete` are AX failures, and the probe deliberately uses the non
+prompting trust call. The live run observed Accessibility false, Input
+Monitoring false, microphone denied, Screen Recording false, no focused
+application, and AX copy unavailable; it changed no permission state. The
+deterministic fixture emitted identical bytes twice. Probe output is at
+`build/reports/macos-access-probe/live.json`, with fixture copies at
+`fixture-a.json` and `fixture-b.json` and the machine receipt at
+`receipt.json`. Parent review tightened role/subrole publication to an
+Apple-standard allowlist and reran compilation, live and fixture probes, all 39
+repository Python tests, Ruff, `git diff --check`, and live HTTP checks for all 14
+Apple URLs. The final ignored receipt SHA-256 is
+`499690175938b209c969468beabb6d4777e435f1e57e9e7cf415f42c0df61b30`.
+Review repair subsequently increased the repository Python suite to 41 tests.
+The post-review machine receipt is
+`build/reports/macos-access-probe/receipt.json`, SHA-256
+`1c9cfde377fe6be4f2f59cb5e63ade43f6caabdcc9392225c955e85fbd9e832d`.
+
+Apple source URLs consulted:
+
+- `https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions`
+- `https://developer.apple.com/documentation/applicationservices/1460720-axisprocesstrusted`
+- `https://developer.apple.com/documentation/applicationservices/1462085-axuielementcopyattributevalue`
+- `https://developer.apple.com/documentation/applicationservices/1459972-axuielementisattributesettable`
+- `https://developer.apple.com/documentation/applicationservices/1460337-axuielementgetpid`
+- `https://developer.apple.com/documentation/applicationservices/axuielementref`
+- `https://developer.apple.com/documentation/coregraphics/cgpreflightscreencaptureaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgrequestscreencaptureaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()`
+- `https://developer.apple.com/documentation/coregraphics/cgrequestlisteneventaccess()`
+- `https://developer.apple.com/documentation/screencapturekit`
+- `https://developer.apple.com/documentation/screencapturekit/scscreenshotmanager/captureimage(contentfilter:configuration:completionhandler:)`
+- `https://developer.apple.com/documentation/avfoundation/avcapturedevice/authorizationstatus(for:)`
+- `https://developer.apple.com/documentation/avfoundation/avcapturedevice/requestaccess(for:completionhandler:)`
+
+Decision gates
+
+| Use | Required evidence | Forbidden substitution |
+| --- | --- | --- |
+| Edit-mode selection/insertion | Accessibility true, AX copy available, selection/range settability as applicable, target identity stable for the transaction | OCR, screenshot coordinates, window titles, or inferred text |
+| Screen context pixels/OCR | Screen Recording preflight true and an explicit ScreenCaptureKit transaction | AX text reads treated as pixels or used as a screen-image replacement |
+| Dictation audio | Microphone status `.authorized` through AVFoundation | Accessibility or Screen Recording grant inferred as audio consent |
+| Passive keyboard diagnostics | Input Monitoring preflight true when a listening event tap is required | Accessibility grant alone treated as keyboard-listening consent |
+
+Non-claims: this probe observes one focused element and does not recursively
+walk the application tree; a granted preflight is not a successful capture or
+insertion transaction; and the current denied live state proves redaction and
+non-prompting, not edit-mode product behavior.
 
 ## Contracts to preserve
 

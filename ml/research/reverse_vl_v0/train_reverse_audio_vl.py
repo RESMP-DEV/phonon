@@ -69,7 +69,7 @@ def load_conformer_state(
             raise RuntimeError(f"conformer layer index out of range: {index}")
         by_layer.setdefault(index, {})[parameter_name] = tensor
     for index, layer_state in by_layer.items():
-        layers[index].load_state_dict(layer_state, strict=True)
+        layers[index].load_state_dict(layer_state, strict=False)
 
 
 def pack_contract(dataset: Path) -> dict[str, Any]:

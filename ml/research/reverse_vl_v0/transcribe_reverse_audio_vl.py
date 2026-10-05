@@ -76,7 +76,7 @@ def load_adapter(
                 raise RuntimeError(f"conformer layer index out of range: {index}")
             by_layer.setdefault(index, {})[parameter_name] = value
         for index, layer_state in by_layer.items():
-            layers[index].load_state_dict(layer_state, strict=True)
+            layers[index].load_state_dict(layer_state, strict=False)
     model.vl.to(model.device).eval()
     model.audio.to(model.device).eval()
 

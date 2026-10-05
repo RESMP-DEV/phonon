@@ -11,6 +11,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Product specification | `SPEC.md` | Canonical product requirements and policy; needs status links after sections are audited |
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
 | macOS app surface | `bar/Sources/*.swift` | Native app, settings, retention, backup mirror, microphone and screen capture |
+| Native UI design and visual snapshots | `bar/Sources/MainWindow.swift`, `PhononBar.swift`, `scripts/ui_snapshots.sh` | Existing dark instrument language; synthetic page and pill renders |
 | Engine process | `crates/phonon-core`, `phonon-cli` | Warm JSONL engine, speech gate, dictionary retrieval, correction orchestration |
 | ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming; reverse SALM remains explicit non-default |
 | Correction sidecar | `sidecar/polish_server.py`, `phonon-llm` | Pinned Gemma MLX process, prefix cache and MTP |
@@ -888,6 +889,47 @@ identically.
 | Windows parity | Different runtimes on both streams: sherpa-onnx int8 Parakeet and GGUF q4 Gemma instead of MLX | A measured quality comparison between the macOS and Windows stacks on one registered protocol |
 | Streaming ownership | Parakeet-only today; the SALM sidecar refuses streaming | Either a streaming SALM path with partial-state contract, or a documented product decision that single-stage engines are whole-utterance only |
 
+## Native UI design language
+
+The native surface remains biased toward the existing warm-dark Phonon language.
+It is a dark Material instrument panel with Teenage Engineering restraint: one
+ember-orange action hue, near-black graphite surfaces, hairline borders, terse
+labels, monospaced technical numerals, and tactile controls without decorative
+glass or gratuitous motion. Material contributes hierarchy, state, density, and
+accessible contrast; Phonon contributes the warm accent and voice-instrument
+identity.
+
+The concrete rules are:
+
+1. Sidebar and content use distinct dark surfaces; cards are one elevation step
+   above the canvas with a 1-pixel border, not shadows.
+2. Orange is the live/action accent. It does not decorate every label or carry
+   an unrelated meaning.
+3. Secondary text uses the owned muted token, not an invisible system gray.
+   Captions and technical metadata remain small but legible.
+4. Numerals in stats, progress, latency, and counts use tabular or monospaced
+   figures.
+5. Boolean product settings use switch affordances, vertically centered on
+   their title/description row.
+6. The floating pill must have a resolvable silhouette: an opaque base fill,
+   symmetric warmth, and a hairline rim. It may glow while active, but the ends
+   may not dissolve into the display.
+7. Startup progress maps one labeled segment to each model stream and never
+   presents a noninteractive linear bar as a draggable slider.
+
+`scripts/ui_snapshots.sh` creates only synthetic, non-personal fixtures, renders
+Home, History, Dictionary, Settings, startup, idle, processing, compact, and
+listening states, and writes a hashed receipt under ignored `build/`. The
+fixture override is active only when `PHONON_UI_DEMO` is set. Snapshot hashes
+are diagnostic evidence, not stable cross-build golden hashes: text rendering,
+Retina backing, and macOS theme details can change. A visual change must be
+inspected and its relevant UI tests rerun; it cannot be accepted merely because
+the script exits.
+
+Snapshot generation proves rendering and layout only. It does not prove model
+loading, real dictation, keyboard accessibility, VoiceOver navigation, drag
+performance, or end-to-end latency. Those require their own live macOS gates.
+
 ## Work-log
 
 ### 2026-10-03: Phonon-owned Voxtral MXFP4 W4A16 harness
@@ -1538,6 +1580,44 @@ spawn test. Non-claims: no real Aqua settings were imported, no real screenshot
 or personal text entered Git, no live Aqua UI walk ran, no macOS app capture
 path is enabled, and no full-slice quality gate or five-day dogfood claim is
 made.
+
+### 2026-10-05: native UI snapshot audit and first optimization
+
+Added deterministic, synthetic UI snapshot generation. `PHONON_UI_SUPPORT_DIR`
+is honored only in `PHONON_UI_DEMO` mode, so normal launches continue reading
+the owner's real store. `scripts/ui_snapshots.sh` creates synthetic settings,
+dictionary, and corpus rows; renders four native app pages, model startup, and
+four pill states; verifies all nine PNGs exist; and writes SHA-256 values plus
+non-claims to `build/ui-snapshots/receipt.json`. No personal text, dictionary
+value, history item, or screenshot enters the fixture.
+
+The first external visual audit found the useful direction but concrete
+defects: low-contrast tertiary text, checkbox-like settings affordances, a
+dissolving floating-pill silhouette, and startup progress that resembled a
+slider. The first optimization keeps the existing warm-dark identity while
+shifting surfaces toward controlled graphite, raising the owned muted text and
+border tokens, converting settings rows to vertically centered switches,
+improving dictionary action hit targets and placeholder clarity, defining the
+pill with an opaque base and hairline rim, and replacing the startup slider with
+two per-model progress segments.
+
+Verification passed: `shellcheck scripts/ui_snapshots.sh`,
+`shfmt --diff scripts/ui_snapshots.sh`, and the bar Swift test suite (68
+tests). Snapshot generation passed after the changes and produced all nine
+renders. Building once and invoking the debug executable reduced the snapshot
+run from about 13.2 seconds to 8.1 seconds on this M4 Max.
+
+Follow-up review confirmed the pill as materially legible and startup as
+passive progress, while flagging weak off-state/focus affordances, a
+low-contrast sidebar selection, ambiguous destructive action, and startup
+percentages detached from their tracks. The repair retains native switches for
+keyboard focus behavior, strengthens their outline, brightens the selected
+navigation surface, makes backup deletion a prominent destructive control,
+bounds backup prose width, reports `ready/total` at startup, and places a
+per-stream percentage beside each progress label. Final snapshot generation
+again produced all nine renders. Known UI non-claims remain: static snapshots
+do not show keyboard focus or VoiceOver state, and no live dictation, model
+startup, drag, or latency gate ran.
 
 ## Contracts to preserve
 

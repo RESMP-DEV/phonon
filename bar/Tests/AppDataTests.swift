@@ -16,6 +16,18 @@ final class AppDataTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    func testDemoSupportOverrideNeverAppliesOutsideDemoMode() {
+        setenv("PHONON_UI_SUPPORT_DIR", directory.path, 1)
+        defer { unsetenv("PHONON_UI_SUPPORT_DIR") }
+
+        let normal = PhononDataPaths.supportDirectory()
+        XCTAssertNotEqual(normal.path, directory.path)
+
+        setenv("PHONON_UI_DEMO", "main", 1)
+        defer { unsetenv("PHONON_UI_DEMO") }
+        XCTAssertEqual(PhononDataPaths.supportDirectory().path, directory.path)
+    }
+
     func testSettingsMigrationAndSaveAddsNativeControls() throws {
         try Data(
             #"{"schema_version":1,"streaming":true,"local_history":true,"screen_context":false,"microphone_priority":["USB Microphone","MacBook"]}"#.utf8

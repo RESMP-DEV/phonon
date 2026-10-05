@@ -75,6 +75,7 @@ setting, and there is no way to point it at a remote model.
 ```bash
 cargo install --path crates/phonon-cli --force --root ~/.local
 phonon bar --rebuild   # once, builds Swift floating pill
+scripts/ui_snapshots.sh # synthetic, non-personal native UI renders
 ```
 
 ## Commands

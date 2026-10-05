@@ -136,6 +136,7 @@ struct ModelStartupView: View {
     @ObservedObject var state: ModelStartupState
 
     var body: some View {
+        let readyCount = state.streams.filter { $0.state.lowercased() == "ready" }.count
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -143,16 +144,46 @@ struct ModelStartupView: View {
                         .font(.title2.weight(.semibold))
                     Text("Models are warmed with real demo requests before dictation.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(EmberTheme.muted)
                 }
                 Spacer()
-                Text("\(Int((state.progress * 100).rounded()))%")
-                    .font(.system(.title3, design: .monospaced).weight(.medium))
+                Text("\(readyCount)/\(state.streams.count) ready")
+                    .font(.system(.callout, design: .monospaced).weight(.medium))
+                    .foregroundStyle(EmberTheme.muted)
             }
 
-            ProgressView(value: state.progress)
-                .progressViewStyle(.linear)
-                .tint(EmberTheme.accent)
+            HStack(spacing: 5) {
+                ForEach(state.streams) { stream in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(stream.title)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(EmberTheme.muted)
+                            Spacer()
+                            Text("\(Int((stream.progress * 100).rounded()))%")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(EmberTheme.muted)
+                        }
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(EmberTheme.surfaceRaised)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(EmberTheme.accent)
+                                    .frame(width: proxy.size.width * stream.progress)
+                            }
+                        }
+                        .frame(height: 8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(EmberTheme.border.opacity(0.7), lineWidth: 0.7)
+                        )
+                        .accessibilityLabel("\(stream.title) progress")
+                        .accessibilityValue("\(Int((stream.progress * 100).rounded())) percent")
+                    }
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: state.progress)
 
             VStack(spacing: 0) {
                 ForEach(state.streams) { stream in
@@ -171,12 +202,12 @@ struct ModelStartupView: View {
                                 if let milliseconds = stream.loadMilliseconds {
                                     Text("\(milliseconds, specifier: "%.0f") ms")
                                         .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(EmberTheme.muted)
                                 }
                             }
                             Text(stream.detail)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(EmberTheme.muted)
                                 .lineLimit(2)
                         }
                     }
@@ -630,28 +661,48 @@ struct PillView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
             let energy = visualEnergy(at: context.date)
             let size = shellSize(energy: energy)
-            Capsule(style: .continuous)
-                .fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(
-                                color: Color(red: 0.42, green: 0.12, blue: 0.035)
-                                    .opacity(warmth(energy)),
-                                location: 0.5),
-                            .init(color: .black, location: 1),
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(Color(red: 0.175, green: 0.168, blue: 0.172))
+                LinearGradient(
+                    stops: [
+                        .init(color: .white.opacity(0.10), location: 0),
+                        .init(color: .clear, location: 0.42),
+                        .init(color: .black.opacity(0.12), location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-                .shadow(
-                    color: Color(red: 0.55, green: 0.16, blue: 0.04)
-                        .opacity(state.mode == .idle ? 0 : 0.22 + energy * 0.12),
-                    radius: 4,
-                    y: 1
+                .mask(Capsule(style: .continuous))
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.14),
+                        .init(
+                            color: Color(red: 0.46, green: 0.18, blue: 0.045)
+                                .opacity(warmth(energy)),
+                            location: 0.38),
+                        .init(
+                            color: Color(red: 0.38, green: 0.13, blue: 0.035)
+                                .opacity(warmth(energy)),
+                            location: 0.62),
+                        .init(color: .clear, location: 0.86),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
                 )
-                .frame(width: size.width, height: size.height)
+                .mask(Capsule(style: .continuous))
+            }
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(0.28), lineWidth: 1)
+            )
+            .shadow(
+                color: Color(red: 0.55, green: 0.16, blue: 0.04)
+                    .opacity(state.mode == .idle ? 0 : 0.20 + energy * 0.10),
+                radius: 4,
+                y: 1
+            )
+            .frame(width: size.width, height: size.height)
                 .frame(width: 80, height: 16, alignment: .bottom)
                 .opacity(state.mode == .hidden ? 0 : 1)
                 .animation(

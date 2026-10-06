@@ -123,6 +123,7 @@ run_snapshot main Home
 run_snapshot main History
 run_snapshot main Dictionary
 run_snapshot main Settings
+run_snapshot permission-guide
 run_snapshot startup
 run_snapshot idle
 run_snapshot processing
@@ -143,7 +144,7 @@ for path in sorted(output.glob("*.png")):
 expected = {
     "main-Home.png", "main-History.png", "main-Dictionary.png",
     "main-Settings.png", "startup.png", "idle.png", "processing.png",
-    "compact.png", "listening.png",
+    "compact.png", "listening.png", "permission-guide.png",
 }
 if set(snapshots) != expected:
     raise SystemExit(f"snapshot set mismatch: {sorted(set(snapshots) ^ expected)}")

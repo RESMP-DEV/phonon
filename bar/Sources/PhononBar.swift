@@ -616,9 +616,9 @@ enum ScreenContextCapture {
         performOCR: Bool, retainMainDisplay: Bool
     ) async -> Result {
         var result = Result()
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-            return result
-        }
+        // A denied capture must fail closed. The settings action performs the
+        // one-pixel enrollment attempt and opens the exact privacy pane.
+        guard CGPreflightScreenCaptureAccess() else { return result }
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true)
@@ -1682,6 +1682,21 @@ final class AppController: NSObject, NSApplicationDelegate {
                 showMainWindow()
                 snapshotMainWindowIfRequested()
                 return
+            } else if demo == "permission-guide" {
+                showMainWindow()
+                let contentRect = NSRect(x: 0, y: 0, width: 540, height: 470)
+                let styleMask: NSWindow.StyleMask = [.titled, .closable]
+                let guideWindow = NSWindow(
+                    contentRect: NSWindow.contentRect(forFrameRect: contentRect, styleMask: styleMask),
+                    styleMask: styleMask,
+                    backing: .buffered,
+                    defer: false)
+                guideWindow.contentViewController = NSHostingController(
+                    rootView: PermissionGuideView(guide: .screenRecording, onDone: {}))
+                guideWindow.center()
+                guideWindow.makeKeyAndOrderFront(nil)
+                snapshotWindow(guideWindow)
+                return
             } else if demo == "startup" {
                 showModelStatus()
                 snapshotModelWindowIfRequested()
@@ -2175,6 +2190,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             guard let png = rep.representation(using: .png, properties: [:]) else { return }
             try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
             if ProcessInfo.processInfo.environment["PHONON_UI_EXIT_AFTER_SNAPSHOT"] == "1" {
+                // A presented sheet can extend NSApp termination beyond the deterministic
+                // snapshot boundary. Demo mode starts no engine or recorder, so exit here.
+                if ProcessInfo.processInfo.environment["PHONON_UI_DEMO"] == "permission-guide" {
+                    exit(0)
+                }
                 NSApp.terminate(nil)
             }
         }
@@ -2198,6 +2218,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             guard let png = rep.representation(using: .png, properties: [:]) else { return }
             try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
             if ProcessInfo.processInfo.environment["PHONON_UI_EXIT_AFTER_SNAPSHOT"] == "1" {
+                if ProcessInfo.processInfo.environment["PHONON_UI_DEMO"] == "permission-guide" {
+                    exit(0)
+                }
                 NSApp.terminate(nil)
             }
         }
@@ -2886,7 +2909,21 @@ final class AppController: NSObject, NSApplicationDelegate {
 enum PhononBarMain {
     private static var instanceLock: SingleInstanceLock?
 
-    static func main() {
+    static func main() async {
+        do {
+            let diagnostic = try PermissionDiagnostics.parseArguments(CommandLine.arguments)
+            if diagnostic.mode == .permissions {
+                print(
+                    await PermissionDiagnostics.run(
+                        requestScreenRecording: diagnostic.requestScreenRecording))
+                return
+            }
+        } catch {
+            if let message = "\(error)\n".data(using: .utf8) {
+                FileHandle.standardError.write(message)
+            }
+            exit(2)
+        }
         let lock = ProcessInfo.processInfo.environment["PHONON_INSTANCE_LOCK_PATH"]
             .flatMap { SingleInstanceLock.acquire(at: URL(fileURLWithPath: $0)) }
             ?? SingleInstanceLock.acquire()

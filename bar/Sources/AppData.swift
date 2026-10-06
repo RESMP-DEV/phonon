@@ -2,7 +2,6 @@ import AppKit
 import ApplicationServices
 import AVFoundation
 import Foundation
-import ScreenCaptureKit
 import ServiceManagement
 
 struct NativeSettings: Codable, Equatable {
@@ -330,40 +329,6 @@ enum PhononDataPaths {
     }
 }
 
-enum PermissionGuide: String, Identifiable {
-    case inputMonitoring
-    case screenRecording
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .inputMonitoring: return "Allow Input Monitoring"
-        case .screenRecording: return "Allow Screen Recording"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .inputMonitoring:
-            return "Turn on Phonon so the hold-to-talk shortcut works everywhere."
-        case .screenRecording:
-            return "Turn on Phonon so local screen context can improve technical terms."
-        }
-    }
-
-    var manualInstructions: String {
-        "Click + in System Settings, type Phonon, press Return, then turn Phonon on."
-    }
-
-    var pane: PrivacyPane {
-        switch self {
-        case .inputMonitoring: return .inputMonitoring
-        case .screenRecording: return .screenRecording
-        }
-    }
-}
-
 @MainActor
 final class NativeAppStore: ObservableObject {
     @Published private(set) var settings = NativeSettings()
@@ -626,9 +591,14 @@ final class NativeAppStore: ObservableObject {
             NSWorkspace.shared.open(PrivacyPane.screenRecording.settingsURL)
             return
         }
-        let granted = CGRequestScreenCaptureAccess()
-        refreshPermissions()
-        if !granted { permissionGuide = .screenRecording }
+        Task { @MainActor in
+            let granted = await ScreenRecordingPermission.requestEnrollment()
+            refreshPermissions()
+            if !granted {
+                self.permissionGuide = .screenRecording
+                PrivacyPane.screenRecording.open()
+            }
+        }
     }
 
     func refreshPermissions() {

@@ -11,6 +11,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Product specification | `SPEC.md` | Canonical product requirements and policy; needs status links after sections are audited |
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
 | macOS app surface | `bar/Sources/*.swift` | Native app, settings, retention, backup mirror, microphone and screen capture |
+| macOS permissions and diagnostics | `bar/Sources/Permissions.swift`, `PermissionDiagnostics.swift`, `PermissionViews.swift`, `scripts/check_permissions.py` | Permission policy, exact Settings panes, app-process JSON diagnostics, and the short onboarding sheet have one feature boundary |
 | Native UI design and visual snapshots | `bar/Sources/MainWindow.swift`, `PhononBar.swift`, `scripts/ui_snapshots.sh` | Existing dark instrument language; synthetic page and pill renders |
 | Engine process | `crates/phonon-core`, `phonon-cli` | Warm JSONL engine, speech gate, dictionary retrieval, correction orchestration |
 | ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming; reverse SALM remains explicit non-default |
@@ -37,6 +38,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Reverse graft versus native audio student | The reverse Audio-to-VL graft is behind the native Audio student on the full slice | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency |
 | Screen context input | OCR-only by default; a separate two-switch training mode can retain only the main display | Real-capture TCC acceptance and a model capability declaration remain before image conditioning |
 | Screenshot scope | All displays are captured for OCR; training retention is limited to one in-memory main-display image | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
+| Screen Recording enrollment | The Settings action performs an explicit one-pixel, cursor-free ScreenCaptureKit attempt, discards that image, then opens the exact Screen & System Audio Recording pane | A denied-to-listed transition on the installed signed app, observed through `scripts/check_permissions.py --request-screen-recording`, without resetting or directly mutating TCC |
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
 | Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
@@ -529,7 +531,7 @@ specification.
 
 | Property | Current behavior | Owner |
 | --- | --- | --- |
-| Permission | `CGPreflightScreenCaptureAccess`, then `CGRequestScreenCaptureAccess`; denial returns empty text silently | `ScreenContextCapture` |
+| Permission | `CGPreflightScreenCaptureAccess`; denial returns empty text without requesting access | `ScreenContextCapture` |
 | Scope | Every display returned by `SCShareableContent`, not the active display | `ScreenContextCapture` |
 | Self-exclusion | Phonon's own application is excluded from every filter | `ScreenContextCapture` |
 | Filter | One `SCContentFilter` per display over the whole display, no window selection | `ScreenContextCapture` |
@@ -1838,6 +1840,134 @@ Non-claims: this probe observes one focused element and does not recursively
 walk the application tree; a granted preflight is not a successful capture or
 insertion transaction; and the current denied live state proves redaction and
 non-prompting, not edit-mode product behavior.
+
+### 2026-10-05: app-process permission diagnostics and structured testing
+
+This checkpoint repairs a concrete macOS 26.7.1 defect: opening
+`Privacy & Security › Screen & System Audio Recording` with
+`x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`
+did not create a Phonon row, and `CGRequestScreenCaptureAccess()` alone also
+left no user-database enrollment. The pane URL is navigation, not TCC
+registration. Current macOS added the signed app only after Phonon itself
+attempted a ScreenCaptureKit capture. The Settings action therefore performs an
+explicit, cursor-free one-pixel capture to request enrollment, discards that
+image immediately, and then opens the exact pane. Ordinary OCR still starts
+only when `CGPreflightScreenCaptureAccess()` is true and otherwise fails closed.
+
+Permission ownership now follows the Lapis feature-by-feature shape:
+`bar/Sources/Permissions.swift` owns Settings anchors, user-facing permission
+copy, and the enrollment transaction; `PermissionDiagnostics.swift` owns the
+native JSON contract; `PermissionViews.swift` owns the summary and short guide
+sheet; `PermissionTests.swift` owns exact pane URLs and behavior contracts; and
+`scripts/ui_snapshots.sh` renders the actual guide window rather than driving a
+live UI. The sheet says only what the user must do: turn Phonon on, choose
+Screen Recording, and restart. It no longer exposes implementation vocabulary
+such as pixel authorization or image disposal.
+
+The native executable now has a debugging contract instead of requiring
+AppleScript UI automation:
+
+```bash
+PhononBar --phonon-diagnostic permissions
+```
+
+That default emits schema-v1 JSON from the actual process for Accessibility,
+Input Monitoring, Screen Recording, microphone state, bundle identity, and
+whether the process is an app bundle. It performs no permission request and
+reads no screen. Adding `--request-screen-recording` is the explicit
+user-invoked one-pixel enrollment attempt. `scripts/check_permissions.py`
+validates signing and bundle identity before executing anything, executes the
+non-prompting diagnostic only when both checks pass, writes
+`build/reports/permissions/receipt.json`, and invalidates any prior receipt
+without following a final-path symlink. Its tests enforce the no-prompt default,
+schema identity checks, command shape, rejected-bundle non-execution, symlink
+safety, and failure receipts.
+
+Open-source comparisons consulted at pinned revisions were
+`bearcove/screenshotter@db09fa25661e79e05aa41f90403ba1f2003a9a6b` (real app
+bundle and first capture), `Mnpn/Azayaka@9fb0ac90b311c40a48a6563aab3ee2a30a6f2222`
+(`SCShareableContent` denial and a direct pane link), `chigkim/VOCR@0d9169a260196608e6ed078201812a02ab389bc7`
+(central permission manager), and `dynobo/normcap@08bd57ed5124779a259876835ecd00f468add421`
+(concise direct Settings copy). These are source observations, not claims about
+Phonon runtime behavior.
+
+Local validation on macOS 26.7.1/arm64: all 82 Swift tests passed; the
+non-prompting diagnostic from the signed installed app reported
+`com.infatoshi.phonon`, `isAppBundle: true`, and Screen Recording true; the
+explicit request diagnostic also returned true; an unknown diagnostic mode
+exited 2; the permission runner passed codesigning, bundle identity, diagnostic
+execution, and schema checks; and the synthetic UI set produced ten renders
+including the actual permission-guide window. The non-requesting and explicit
+request runner receipts are `build/reports/permissions/receipt.json` and
+`build/reports/permissions/request-receipt.json`.
+
+Non-claims: the diagnostic does not exercise dictation, OCR extraction, corpus
+attachment, insertion, latency, or Accessibility edit semantics. This run did
+not reset or directly mutate TCC. The observed grant came through macOS consent;
+a future clean-machine acceptance should run the explicit request hook from an
+ungranted signed app and verify the denied-to-listed transition without UI
+automation.
+
+### 2026-10-05: full-codebase quality audit and restructuring order
+
+Six read-only audits covered the Swift app, privacy/TCC flow, Rust crates,
+Python sidecars and research tooling, packaging/check workflow, and product
+data/documentation. The reports and worker statuses are consolidated in
+`build/reports/code-quality-audit/parent-receipt.json`, SHA-256
+`3eca681d9ad40378cdffecb27f0ad0b2d027bf752b750319d14ec2a61ec2066c`. The verdict
+is to keep the repository and its useful product boundaries, but stop adding
+features to the current god objects. Restructure feature by feature with tests;
+do not attempt a rewrite.
+
+The audit changed this branch in one place: the first native diagnostic bridge
+used a semaphore and cross-task mutable result storage. The executable now uses
+an async entry point and direct serialization, with a regression test that
+rejects that bridge pattern.
+
+Preexisting source-evidence P0s must be handled before further capture or data
+features. Turning off screen-image training does not delete already retained
+images and, when both training switches are off, disables automatic expiry.
+Crash or interruption windows can leave a transient WAV or unindexed screenshot
+artifact. Malformed settings or dictionary data can be silently replaced rather
+than preserved for recovery. Windows writes every dictation WAV into an
+unbounded recordings directory without the macOS consent gate. Rust creates a
+missing settings file with local history and screen context enabled even though
+the native schema says both default off. Finally, UI copy says active window
+while OCR captures every display.
+
+The main structural findings are also clear. `AppController` mixes app
+lifecycle, UI, engine IPC, audio, capture, retention, and diagnostics in one
+2,933-line type. The sidecar/engine protocols have no typed contract, request
+correlation, cancellation, or executable protocol tests. Shared process
+infrastructure is inverted into `phonon-asr`; much of `phonon-audio` is no
+longer used by the product. Python product sidecars, historical research, and
+personal-data-producing tools lack isolated defaults and a reproducible central
+test command. The repository has good individual suites but no Lapis-style thin
+dispatcher, required-check matrix, or aggregate receipt standard.
+
+The restructuring order is:
+
+1. **Consent and retention P0s.** Make one owner for settings schema/default
+   values, revoke screen images immediately, run expiry unconditionally when
+   artifacts exist, reap interrupted audio/screenshot/staging artifacts, and
+   give Windows the same consent and deletion boundary.
+2. **Persistence recovery.** Preserve malformed settings/dictionary files,
+   surface recovery, and test save-after-corruption paths.
+3. **Lapis-style quality scaffold.** Add a thin `justfile`, receipt-writing
+   check dispatcher, tracked contributor contract, and required-check matrix
+   without changing product behavior.
+4. **Engine contracts.** Type sidecar events, add request IDs and cancellation,
+   document protocol versions, and pin executable protocol fixtures.
+5. **Swift feature split.** Extract policy and leaf types first, then engine
+   transport, audio, capture, the dictation state machine, and finally pages.
+6. **Research/tool isolation.** Keep product sidecars separate from historical
+   experiments, keep personal output out of repo-relative defaults, and pin
+   research base artifacts explicitly.
+
+Non-claims: these were read-only audits, so cited defects are source-supported
+rather than runtime reproductions unless separately receipted. Workers did not
+read Aqua audio/transcripts, capture owner screen content, mutate TCC, or run
+dictation. Their completed turns are evidence, not integration acceptance.
 
 ## Contracts to preserve
 

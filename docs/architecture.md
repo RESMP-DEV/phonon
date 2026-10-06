@@ -1662,6 +1662,125 @@ full-epoch checkpoint and promoted soup, so the static adapter LR remains the
 quality winner. W&B histories confirm the new adapter LR actually decayed from
 approximately `2.96e-5` or `1.48e-5` to near zero.
 
+### 2026-10-05: dynamic Aqua history prompts
+
+The prompt contract was extended so each target can carry user-specific
+historical Aqua evidence without exposing the current target's accepted label.
+The new prompt ID is `prose_history_dictation_v1`, with base SHA-256
+`4d7ea7b4687a8f82ddc910b76c2c529fbf17755dcfc6649d2c6be02007c3670f`.
+For each row, the current raw Aqua transcript queries an IDF-cosine index
+(`idf-cosine-v1`) over training-only raw-to-corrected pairs. Two distinct
+historical pairs are rendered in the system prompt; the current audio ID is
+excluded, the current corrected text is never consulted, and every target has a
+separate dynamic prompt hash. The evaluator reconstructs the same prompts from
+the receipted training manifest.
+
+The first full-pack attempt rebuilt IDF and candidate vectors independently for
+every row and was stopped before producing a usable pack. Commit
+`ac536758d01258926307acef9e87d9546743ebed` introduced one reusable sparse index
+for both pack construction and evaluation. Local and B550 checks both passed
+ruff, six focused tests, and `git diff --check`.
+
+The completed v2 pack is at
+`/home/kearm/salm-lora/build/history-prompt-full-v2/pack`, with its sanitized
+receipt at `receipt.json` and tracked local receipt at
+`evidence/2026-10-05-history-prompt-full-v2.md`. The manifest SHA-256 is
+`9378e4532e54c8816ea962a515ac833d60efbab0ec1e1d102b0296e81d490f08`; the
+history-contract SHA-256 is
+`21eccc7415d93548a347f816aa8b71ef18709ae2b45ef0f77da9c2441d623053`. It has
+12,855 target contracts, 12,855 unique dynamic hashes, all self-exclusions and
+two-history invariants passing, and 13 Arrow shards totaling 6,127,290,118
+bytes. Dataset preprocessing retained 12,854 examples because one 781-token
+target exceeded context 768. Context 768 remains intentional: the 32-row pilot's
+minimum, median, P95, and maximum packed lengths were 296, 478, 578, and 649.
+
+The first matched training pilot resumed the verified trial-0100 public
+checkpoint SHA-256
+`511c6f1ecae7281c039c63fda52a5cd83b692b1e09909506ad0fbfadf0d9bb20`, added
+4,000 Aqua steps at rank 32 and context 768, and retained the tuned initial
+LRs with static audio-adapter behavior from the winning recipe. It completed in
+609.4 seconds under reference kernels, produced adapter SHA-256
+`7f2d103385e699ab4c36c37c156f04058ed925c022c0d9cb5cbebcafd0897194`, and logged
+offline W&B run `history-aqua-4000-reference-v4`. Three wrapper-only preflight
+failures are preserved under sibling `aqua-4000-reference-v*-launch-failed` or
+failed roots; they never started a training process and the EXIT trap restored
+both optimized wheels each time.
+
+The 500-row selection result is negative:
+
+| Adapter | Fair WER | Strict WER | Exact |
+| --- | ---: | ---: | ---: |
+| Static-prompt 4,000-step arm | 0.11761649055950113 | 0.154049135577798 | 0.316 |
+| Dynamic-history 4,000-step arm | 0.17218084184999133 | 0.20937215650591448 | 0.278 |
+
+The hypothesis SHA-256 is
+`008036013fd5192a52057ac4f3589749e2c2c4ab37ad0906bd8742121f8579a9`, and the
+score SHA-256 is
+`2812b9cbf3c197ce749f170561f7f69474b72e57e1215dd54fdea1d040106d17`. Paired
+row analysis found 84 improved rows, 272 unchanged rows, and 144 worsened rows;
+median row delta was zero while the p95 regression was 0.36534391534391514.
+History outputs increased mean candidate unigram overlap only from 0.40194 to
+0.42038 and bigram overlap from 0.17925 to 0.20391; six of 500 outputs exactly
+copied a candidate. This rejects scaling this exact two-history prompt recipe
+to a full epoch and suggests long-system-prompt disruption is at least as
+plausible as history copying. The result does not reject all historical
+conditioning, and no future-750 claim is made.
+
+An unchanged trial-0100 control clarified the failure mode. With no additional
+history adaptation, XML-history v1 scored 0.8041746059241296 fair WER,
+0.8413102820746133 strict WER, and 0.128 exact. The prompt had replaced the
+short trained prose prompt with XML scaffolding, so the checkpoint was far
+outside its trained system-prompt distribution even though audio and labels were
+unchanged.
+
+Prompt `prose_history_dictation_v2` therefore preserves `prose_dictation_v1`
+byte-for-byte as its prefix, appends the same two selected examples compactly,
+and retains the anti-copy instruction. Its schema SHA-256 is
+`664fdeeca49d5c43187f435cf7de4c3b2b2951fee45b9059dae2fef4e9ecb2a6`. The
+compact pack at `/home/kearm/salm-lora/build/history-prompt-compact-v2/pack`
+uses the same manifest and retrieval hash as v1, but all 12,855 targets fit
+context 768; it has 12,855 Arrow examples, 13 shards, 6,113,806,478 bytes, and
+checksum-manifest SHA-256
+`82a82b0257aaa9e3f27cc407acd2d349f2e58d8906c68a88fcd902b602444673`.
+
+The unchanged trial-0100 control improved to 0.7024943703447081 fair WER,
+0.7403093721565059 strict WER, and 0.128 exact under compact v2, confirming
+that preserving the trained prefix helps but does not make history injection
+free. A matched 4,000-step compact adaptation completed in 613.3 seconds with
+adapter SHA-256
+`16ab70ac07c49749835a7613e888d58a9f1b45c04ece23f87a9799921e5d58d8`. It scored
+0.1627403429759224 fair WER, 0.2002729754322111 strict WER, and 0.280 exact;
+paired static comparison found 85 improved, 275 tied, and 140 worsened rows.
+This is better than XML v1 but still worse than static prose, so the full
+compact epoch is the next decisive quality gate rather than promotion.
+
+The full compact-history epoch ran all 12,855 examples over 22,855 total steps
+from the same public resume point. It completed in 1,829.2 seconds with adapter
+SHA-256
+`44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4` and offline
+W&B run `history-compact-full-epoch-v1`. On selection 500 it scored 0.11345920665165425
+fair WER, 0.14522292993630573 strict WER, and 0.350 exact. On future 750 it
+scored 0.14445223898047468 fair WER, 0.19297487499228347 strict WER, and
+0.20533333333333334 exact.
+
+Compared with static full epoch, history is slightly worse on selection but
+better on every future metric; exact rises from 0.18666666666666668 to
+0.20533333333333334. Row-level selection comparison finds 104 history wins, 85
+static wins, and 311 ties. The promoted static 8k/full soup remains slightly
+better on future fair/strict WER (`0.1439261077984333` and
+`0.19130810543860732`), while history full has the better future exact score.
+This validates compact user-history conditioning as a competitive research
+direction, not a product promotion. Aqua raw remains substantially stronger,
+and optimized-runtime parity/latency remain unmeasured for this adapter.
+
+Two adapter-soup controls rejected averaging as the next step. Equal static
+full plus history full scored 0.13554477741209076 fair WER,
+0.16560509554140126 strict WER, and 0.356 exact on selection. Equal static 8k,
+static full, and history full scored 0.208470465962238 fair WER,
+0.24340309372156507 strict WER, and 0.310 exact. The first improves exact but
+damages WER; the second damages all headline metrics. Neither was sent to the
+future split or promoted.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

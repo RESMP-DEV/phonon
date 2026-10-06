@@ -63,6 +63,9 @@
   LoRA rank.
 - Prompt formatting is part of the training contract. Public CPT, Aqua adaptation,
   and evaluation must all record and use the same prompt ID and SHA-256.
+- Dynamic history prompts additionally require the same selector, history count,
+  history-manifest hash, context length, and target-exclusion contract. Log only
+  audio IDs and hashes to telemetry; never log historical transcript text.
 
 ## Current B550 research locations
 
@@ -101,7 +104,6 @@
 - Current kernel-stack profile root:
   `/home/kearm/salm-lora/build/nsys/reverse-training-kernels-v1`
 - B550 reverse SALM product adapter:
-- B550 reverse SALM product adapter:
   `/home/kearm/.local/share/phonon/reverse-salm/lora_adapter.safetensors`,
   currently the equal 8k/full-epoch prose soup SHA-256
   `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c`.
@@ -127,6 +129,24 @@
   `/home/kearm/salm-lora/build/aqua-length-reference-v1`,
   `/home/kearm/salm-lora/build/training-options-v2`, and
   `/home/kearm/salm-lora/build/aqua-length-bracket-v3`.
+- Dynamic history pack and receipt:
+  `/home/kearm/salm-lora/build/history-prompt-full-v2/pack` and
+  `/home/kearm/salm-lora/build/history-prompt-full-v2/receipt.json`.
+  It contains 12,855 history contracts and 12,854 packed examples because one
+  781-token target exceeded context 768.
+- Compact static-prefix history pack and receipt:
+  `/home/kearm/salm-lora/build/history-prompt-compact-v2/pack` and
+  `/home/kearm/salm-lora/build/history-prompt-compact-v2/receipt.json`.
+  It retains all 12,855 examples under prompt
+  `prose_history_dictation_v2` and context 768.
+- Dynamic-history pilot and preserved preflight failures:
+  `/home/kearm/salm-lora/build/history-prompt-training-v1/aqua-4000-reference-v4`
+  plus sibling `aqua-4000-reference-v{1,2,3}-launch-failed` or failed roots.
+- Compact-history pilots:
+  `/home/kearm/salm-lora/build/history-compact-training-v1` and
+  `/home/kearm/salm-lora/build/history-compact-control-v1`.
+- Compact-history full-epoch receipt:
+  `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/aqua-full-epoch-v1/receipt.json`.
 - Promoted soup and installation receipts:
   `/home/kearm/salm-lora/build/aqua-length-bracket-v3/soup-8000-full-receipt.json`
   and

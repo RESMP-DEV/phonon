@@ -1858,6 +1858,30 @@ their SHA-256 values matched the source adapters byte-for-byte. This private
 adapter release does not authorize public redistribution and does not change the
 default product engine.
 
+### 2026-10-06: reverse-SALM adapter merge/agent contract
+
+Added a private root `AGENTS.md` to the Hugging Face adapter repository so
+collaborators cannot treat the 190-tensor graft as a normal single-base PEFT
+checkpoint. The file documents the required two-base load, namespace split,
+runtime injection parameters, fixed-history prompt contracts, adapter-hash and
+rank checks, privacy rules, and the in-place eager merge procedure.
+
+The eager path was verified on B550 rather than copied from generic PEFT
+documentation. The alpha adapter injected correctly, generated output, then all
+92 inserted PEFT target layers were merged in place with `.merge()`; a second
+generation produced an identical non-empty output. The generic
+`PeftModel.merge_and_unload()` path is invalid for this architecture because
+`inject_adapter_in_model` leaves the original VL class in place. The audio
+adapter is six full replacement tensors, not LoRA tensors, and must remain a
+separate graft component.
+
+- Hub commit:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/1f8530f8fd8d579413ade427f78a95253c518255`
+- Local tracked copy:
+  `evidence/huggingface/phonon-reverse-salm-AGENTS.md`
+- Remote re-download and leak scan: clean
+- Smoke receipt: 92 merged targets, identical output, no transcript printed
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

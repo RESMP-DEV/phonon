@@ -2018,6 +2018,18 @@ be evidence for spelling, formatting, and correction tendencies, never phrases
 to copy. Uncertain wording must remain unchanged. Personal transcript text
 stays in controlled training storage and never enters Git or public artifacts.
 
+### 2026-10-07: Phonon history-prompt SFT Optuna study
+
+The mistaken external prompt correction was removed and replaced with
+Phonon-owned history prompts. A full 12,855-row dynamic-history pack was built
+with prompt `prose_history_dictation_v2`, and because the pack contract changed,
+a new four-trial Optuna study selected the learning rate. Trial 2 won with LR
+`8.619877702306163e-05`, audio fair WER 0.08678330157630348, strict WER
+0.11683348498635122, exact 0.356, vision WER 0.022718667171525937, and exact
+0.780. Its adapter SHA-256 is
+`d3397f013161d8d38244b3d8ef4c77b2e0395d57681830d97c4ac733b44a664c`. Full results
+are in `evidence/2026-10-07-phonon-history-sft-optuna-lr.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

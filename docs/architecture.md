@@ -1958,6 +1958,32 @@ Non-claims: the fused weights were not scored as a standalone model, only the
 LoRA-injected path was; no future-split or product latency measurement exists for
 either arm; one operating point is not a swept optimum.
 
+### 2026-10-07: Optuna owns vision SFT learning rates
+
+The vision-on-audio SFT path now has a persistent Optuna harness rather than
+hand-picked learning-rate follow-ups. `optuna_vision_sft.py` fixes the graft,
+rank 16, 4:1:1 lane ratio, 768/768/1024 contexts, and initialization adapter,
+then samples learning rate over a persistent SQLite study. Each trial trains,
+scores the frozen 500-row audio slice, scores held-out screenshots, records
+source revision, environment manifest, kernel mode, commands, adapter hashes,
+hypothesis hashes, and score hashes. The objective is audio fair WER plus a
+penalty if vision WER exceeds its ceiling, preventing catastrophic forgetting.
+
+The pinned environment is recorded in `environment-b550.json`: Python 3.12,
+Torch `2.14.0+cu130`, liquid-audio `1.3.0`, PEFT `0.21.0`, Transformers
+`5.17.0`, datasets `5.0.1`, Optuna `5.0.0`, FlashAttention `2.8.3.post1`, and
+causal-conv1d `1.7.0`. Kernel mode is recorded from actual imports and package
+versions, not package resolution alone. Any new source revision, prompt, pack,
+context, initialization adapter, rank, or kernel mode requires a new named
+study and study root.
+
+A first one-trial smoke exposed and preserved a real evaluator defect: training
+completed, but the harness passed the wrong B550 audio root and the evaluator
+failed before scoring. The harness now pins `/home/kearm/aqua-training-data`,
+runs the vision evaluator from its owning directory, forces `CUDA_VISIBLE_DEVICES=0`,
+records kernel mode, and reports no-complete-trial states instead of raising
+from `best_trial`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

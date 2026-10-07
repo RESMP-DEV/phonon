@@ -1,20 +1,28 @@
 {
-  "python": "3.12",
-  "environment": "/home/kearm/envs/salm-lora",
-  "packages": {
-    "torch": "2.14.0+cu130",
-    "liquid-audio": "1.3.0",
-    "peft": "0.21.0",
-    "safetensors": "0.8.0",
-    "transformers": "5.17.0",
-    "datasets": "5.0.1",
-    "optuna": "5.0.0",
-    "soundfile": "0.14.0",
-    "pillow": "12.3.0"
-  },
   "cuda_visible_device": 0,
+  "environment": "/home/kearm/envs/salm-lora",
+  "kernel_policy": {
+    "default": "optimized inference and Optuna scoring use installed FlashAttention and causal-conv1d",
+    "reference_training": "if a matched reference-kernel arm is required, uninstall only through the training wrapper and restore the pinned local wheels afterward",
+    "restore_command": "uv pip install --python /home/kearm/envs/salm-lora/bin/python /home/kearm/salm-lora/build/aqua-length-reference-v1/wheels/causal_conv1d-1.7.0-cp312-cp312-linux_x86_64.whl /home/kearm/salm-lora/build/aqua-length-reference-v1/wheels/flash_attn-2.8.3.post1-cp312-cp312-linux_x86_64.whl",
+    "wheels": "/home/kearm/salm-lora/build/aqua-length-reference-v1/wheels/"
+  },
   "notes": [
     "The study owns learning-rate selection; do not hand-edit LR in follow-up runs.",
     "Every trial records package versions, adapter hashes, commands, and score hashes."
-  ]
+  ],
+  "packages": {
+    "causal-conv1d": "1.7.0",
+    "datasets": "5.0.1",
+    "flash-attn": "2.8.3.post1",
+    "liquid-audio": "1.3.0",
+    "optuna": "5.0.0",
+    "peft": "0.21.0",
+    "pillow": "12.3.0",
+    "safetensors": "0.8.0",
+    "soundfile": "0.14.0",
+    "torch": "2.14.0+cu130",
+    "transformers": "5.17.0"
+  },
+  "python": "3.12"
 }

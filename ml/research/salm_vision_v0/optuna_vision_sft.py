@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,7 @@ TRANSCRIBER = SALM / "transcribe_lfm25audio.py"
 SCORER = REPO / "ml/research/final_sweep/score_fair_wer.py"
 VISION_EVAL = SALM / "eval_vision_cpt.py"
 INIT_ADAPTER = SALM / "salm-vision-cpt-v1/cpt_adapter.safetensors"
+AUDIO_ROOT = Path("/home/kearm/aqua-training-data")
 ENV_MANIFEST = REPO / "ml/research/salm_vision_v0/environment-b550.json"
 
 
@@ -35,12 +37,15 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run(command: list[str], log: Path) -> None:
+def run(command: list[str], log: Path, *, cwd: Path | None = None) -> None:
     started = log.parent / f"{log.stem}.started"
     completed = log.parent / f"{log.stem}.completed"
     started.write_text(json.dumps({"command": command, "started_at_unix": __import__("time").time()}) + "\n")
     with log.open("w") as sink:
-        process = subprocess.run(command, stdout=sink, stderr=subprocess.STDOUT, check=False, text=True)
+        process = subprocess.run(
+            command, stdout=sink, stderr=subprocess.STDOUT, check=False, text=True, cwd=cwd,
+            env={**os.environ, "PYTHONPATH": str(REPO / "ml/research/salm_vision_v0"), "CUDA_VISIBLE_DEVICES": "0"},
+        )
     completed.write_text(json.dumps({"command": command, "returncode": process.returncode, "completed_at_unix": __import__("time").time()}) + "\n")
     if process.returncode:
         raise optuna.TrialPruned(f"command failed ({process.returncode}): {command}")
@@ -48,6 +53,25 @@ def run(command: list[str], log: Path) -> None:
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+def kernel_mode() -> dict[str, object]:
+    import importlib.util
+    from importlib import metadata
+
+    def version(name: str) -> str | None:
+        try:
+            return metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return None
+
+    return {
+        "torch": version("torch"),
+        "flash_attn": version("flash-attn"),
+        "causal_conv1d": version("causal-conv1d"),
+        "flash_attn_importable": importlib.util.find_spec("flash_attn") is not None,
+        "causal_conv1d_importable": importlib.util.find_spec("causal_conv1d") is not None,
+    }
 
 
 def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
@@ -73,6 +97,8 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     trial.set_user_attr("training_command", training_command)
     trial.set_user_attr("init_adapter_sha256", sha256(INIT_ADAPTER))
     trial.set_user_attr("environment_manifest", str(ENV_MANIFEST))
+    trial.set_user_attr("source_revision", subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip())
+    trial.set_user_attr("kernel_mode", kernel_mode())
     run(training_command, root / "train.log")
 
     hyps = root / "hyps.jsonl"
@@ -82,7 +108,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         "--out", str(hyps), "--mode", "seq",
         "--adapter", str(train / "cpt_adapter.safetensors"),
         "--lora-rank", "16", "--device", "cuda",
-        "--aqua-root", str(SALM / "aqua-training-data"),
+        "--aqua-root", str(AUDIO_ROOT),
     ]
     trial.set_user_attr("audio_command", audio_command)
     run(audio_command, root / "audio-eval.log")
@@ -98,7 +124,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         "--limit", str(args.vision_limit), "--out", str(root / "vision-eval.json"),
     ]
     trial.set_user_attr("vision_command", vision_command)
-    run(vision_command, root / "vision-eval.log")
+    run(vision_command, root / "vision-eval.log", cwd=SALM)
     vision = load_json(root / "vision-eval.json")["summary"]["real"]
     # Penalize catastrophic forgetting without making a small vision delta dominate ASR.
     vision_penalty = max(0.0, vision["wer"] - args.vision_wer_ceiling)
@@ -131,6 +157,10 @@ def main() -> None:
     study.set_user_attr("environment", load_json(ENV_MANIFEST))
     study.set_user_attr("fixed_contract", {"rank": 16, "ratio": "4:1:1", "steps": args.steps, "contexts": [768, 768, 1024]})
     study.optimize(lambda trial: objective(trial, args), n_trials=args.trials)
+    complete = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+    if not complete:
+        print(json.dumps({"status": "no_complete_trials", "states": [str(trial.state) for trial in study.trials]}, indent=2))
+        raise SystemExit(2)
     print(json.dumps({"best_trial": study.best_trial.number, "value": study.best_value, "params": study.best_params}, indent=2))
 
 if __name__ == "__main__":

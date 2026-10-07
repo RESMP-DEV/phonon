@@ -2000,7 +2000,7 @@ is `evidence/2026-10-07-vision-sft-optuna-lr.md`. This LR is contract-specific
 and must not be reused after a source, pack, prompt, context, rank, init, or
 kernel change.
 
-### 2026-10-07: Bacon correction prompt and retention tempering contract
+### 2026-10-07: prompt-baked SFT retention tempering contract
 
 The workable vision-on-audio SFT path now has an explicit capability-retention
 contract. All tensors outside the language LoRA are frozen. The transplanted
@@ -2009,16 +2009,14 @@ separate stage explicitly enables `--unfreeze-projector` with its low learning
 rate. This keeps the existing audio and vision capability anchored while the
 language LoRA learns task-specific correction behavior.
 
-A first product-owned prompt template for the external Bacon correction layer
-was added at `prompts/bacon_phonon_v1.txt`, SHA-256
-`593726da81277a485df4b3a0619a3a465a1b33c706e94b40840fe579d34e935c`. It defines
-the intended Phonon input contract: raw transcript, historical correction
-examples, dictionary terms, and optional screen context. The prompt instructs
-Bacon to use history only as evidence for spelling, formatting, and correction
-tendencies, not as phrases to copy. It prioritizes meaning, ordering, technical
-entities, identifiers, punctuation, and developer spelling, and fails closed by
-leaving uncertain wording unchanged. The template is generic and contains no
-personal transcript data.
+The mistaken external-correction prompt was removed after the owner clarified
+that the target is Phonon's own prompt-baked model, not a separate external
+layer. Prompt-baked training remains the active direction: future packs must
+carry the exact Phonon prompt, history examples, dictionary constraints, and
+optional screen-context fields as part of the training contract. History must
+be evidence for spelling, formatting, and correction tendencies, never phrases
+to copy. Uncertain wording must remain unchanged. Personal transcript text
+stays in controlled training storage and never enters Git or public artifacts.
 
 ## Contracts to preserve
 

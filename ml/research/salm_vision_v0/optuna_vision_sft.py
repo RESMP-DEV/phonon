@@ -81,7 +81,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     root.mkdir(parents=True, exist_ok=False)
     training_command = [
         str(PY), str(TRAINER),
-        "--audio-pack", str(SALM / "aqua-sft-dataset-v3"),
+        "--audio-pack", str(args.audio_pack),
         "--corrector-pack", str(SALM / "aqua-correction-v4"),
         "--vision-pack", str(SALM / "aqua-vision-dataset-v1"),
         "--ratio", "4:1:1",
@@ -150,6 +150,7 @@ def main() -> None:
     parser.add_argument("--vision-wer-ceiling", type=float, default=0.04)
     parser.add_argument("--vision-penalty-weight", type=float, default=2.0)
     parser.add_argument("--study-root", type=Path, default=SALM / "build/optuna/vision-on-audio-asr-sft-lr-v1")
+    parser.add_argument("--audio-pack", type=Path, default=SALM / "aqua-sft-dataset-v3")
     args = parser.parse_args()
     args.study_root.mkdir(parents=True, exist_ok=True)
     storage = f"sqlite:///{args.study_root / 'study.db'}"

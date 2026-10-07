@@ -384,6 +384,7 @@ final class NativeAppStore: ObservableObject {
         settings = updated
         do {
             try writeJSON(updated, to: settingsURL)
+            settingsDecodedSuccessfully = true
             lastError = nil
             captureMirror()
         } catch {
@@ -489,6 +490,10 @@ final class NativeAppStore: ObservableObject {
         ) else { return [] }
         var removed: [String] = []
         for directory in directories {
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else { continue }
             let metadataURL = directory.appendingPathComponent("metadata.json")
             guard fileManager.fileExists(atPath: metadataURL.path) else {
                 if (try? fileManager.removeItem(at: directory)) != nil {
@@ -647,12 +652,23 @@ final class NativeAppStore: ObservableObject {
 
     private func loadSettings() {
         let url = settingsURL
-        guard let data = try? Data(contentsOf: url),
-            let decoded = try? JSONDecoder().decode(NativeSettings.self, from: data)
-        else {
-            var fresh = NativeSettings()
-            fresh.microphonePriority = Self.defaultMicrophonePriority()
-            settings = fresh
+        let fresh = {
+            var value = NativeSettings()
+            value.microphonePriority = Self.defaultMicrophonePriority()
+            return value
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            // A missing file is a valid default-off install, not corrupt state,
+            // so launch cleanup may still enforce the privacy defaults.
+            settings = fresh()
+            settingsDecodedSuccessfully = true
+            try? writeJSON(settings, to: url)
+            return
+        }
+        guard let decoded = try? JSONDecoder().decode(NativeSettings.self, from: data) else {
+            // An unreadable file keeps default privacy in memory. Destructive
+            // cleanup stays blocked until a valid settings write succeeds.
+            settings = fresh()
             settingsDecodedSuccessfully = false
             try? writeJSON(settings, to: url)
             return

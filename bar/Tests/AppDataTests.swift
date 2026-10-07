@@ -161,6 +161,23 @@ final class AppDataTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: finalized.path))
     }
 
+    func testFreshMissingSettingsStillAuthorizePendingRecordingCleanup() throws {
+        let pending = directory.appendingPathComponent("Corpus/pending", isDirectory: true)
+        try FileManager.default.createDirectory(at: pending, withIntermediateDirectories: true)
+        try Data(
+            #"{"id":"pending","created_at_unix_ms":1,"raw_transcript":"synthetic","retention_pending":true}"#
+                .utf8
+        ).write(to: pending.appendingPathComponent("metadata.json"))
+
+        let store = NativeAppStore(supportDirectory: directory)
+        let removed = store.reapInterruptedRecordings()
+
+        XCTAssertEqual(removed, ["pending"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pending.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent("settings.json").path))
+    }
+
     func testMalformedSettingsDoNotAuthorizePendingRecordingDeletion() throws {
         try Data(#"{"schema_version":"broken"}"#.utf8)
             .write(to: directory.appendingPathComponent("settings.json"))
@@ -176,6 +193,19 @@ final class AppDataTests: XCTestCase {
 
         XCTAssertTrue(removed.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: pending.path))
+    }
+
+    func testReapingIgnoresRegularFilesAtTheCorpusRoot() throws {
+        let corpus = directory.appendingPathComponent("Corpus", isDirectory: true)
+        try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+        let regularFile = corpus.appendingPathComponent(".DS_Store")
+        try Data([0x01]).write(to: regularFile)
+
+        let store = NativeAppStore(supportDirectory: directory)
+        let removed = store.reapInterruptedRecordings()
+
+        XCTAssertTrue(removed.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: regularFile.path))
     }
 
     func testDictionaryAddEditAndRemoveRoundTrips() throws {

@@ -1918,6 +1918,46 @@ and explicit experimental engine, not a shipped Aqua replacement. It still needs
 the frozen-protocol release gate, keyboard-to-insertion latency, offline
 packaging, default-path regression, and five-day dogfood acceptance.
 
+### 2026-10-07: vision-on-audio post-CPT ASR SFT and LoRA fuse
+
+The vision-capable lane is audio-native SALM with a transplanted SigLIP2 tower
+and VL projector, not a reverse graft. Its research implementation, the CPT/SFT
+trainer, a fuse script, and a JSONL product-sidecar prototype were migrated from
+the uncontrolled B550 workspace into `ml/research/salm_vision_v0` and
+`sidecar/salm_vision_server.py`. The trainer gained `--init-adapter`, so task
+tuning can start from an existing LoRA instead of a fresh one. The fuse script
+folds the language LoRA into `lfm.*` weights by merging each inserted PEFT target
+layer, then writes the merged language state, optional projector, the vision
+rows, and a hashed receipt.
+
+Two post-CPT supervised fine-tuning arms were run from the same CPT adapter
+`a43fac977d6fa3bf8150257ac26db8a9cea39d8eb937db17d64ecc493260d6dc` at rank 16,
+with no GRPO.
+
+| Arm | Steps | LR | Lanes | Audio fair WER | Audio exact | Vision WER | Vision exact | Blank WER |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| CPT baseline | - | - | - | 0.0902 | 0.350 | 0.0250 | 0.795 | 0.9970 |
+| Mixed SFT | 2,000 | 2e-5 | 4:1:1 | 0.09024770483284254 | 0.350 | 0.0248 | 0.795 | 1.2973 |
+| Audio-only SFT | 2,000 | 1e-4 | audio | 0.08531093019227438 | 0.356 | 0.0252 | 0.770 | 1.0298 |
+| Audio-only GRPO, no vision | 300 | - | audio | 0.0839 | 0.360 | n/a | n/a | n/a |
+
+Strict WER was 0.11637852593266607 for the audio-only arm. The mixed-lane arm
+held vision but did not improve audio. The audio-only arm at the original ASR
+learning rate recovered 0.0049 fair WER while retaining screenshot reading and
+keeping the blank-image control at zero exact match, so the model still reads
+pixels rather than reciting. The audio-only SFT adapter is the best
+vision-capable audio model measured so far, still 0.0014 fair WER behind the
+audio-only GRPO adapter.
+
+A fuse smoke on the CPT adapter produced `merged_lfm.safetensors` with SHA-256
+`a0400d2db955a4bfa7d6a60d02bd2102345685d2e6947624eee329487c95ef15`, folding 184
+LoRA tensors across 92 target layers, and the audio-only SFT fuse produced
+`9fa33fc51c7c6ee40c1254fbe939ecc5366809da1e541b52ce93aa9c4e1c4659`.
+
+Non-claims: the fused weights were not scored as a standalone model, only the
+LoRA-injected path was; no future-split or product latency measurement exists for
+either arm; one operating point is not a swept optimum.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

@@ -1984,6 +1984,22 @@ runs the vision evaluator from its owning directory, forces `CUDA_VISIBLE_DEVICE
 records kernel mode, and reports no-complete-trial states instead of raising
 from `best_trial`.
 
+A corrected one-trial smoke completed end to end. The real four-trial, 600-step
+study then completed with the pinned optimized kernels active:
+
+| Trial | LR | Objective | Audio fair WER | Vision WER |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 1.3598e-4 | 0.153504 | 0.088862 | 0.072321 |
+| 1 | 6.2685e-5 | 0.087216 | 0.087216 | 0.027262 |
+| 2 | 1.3466e-5 | 0.087996 | 0.087996 | 0.021583 |
+| 3 | 3.8238e-5 | 0.087823 | 0.087823 | 0.021204 |
+
+Best trial 1 selected LR `6.268486284584557e-05`; adapter SHA-256 is
+`996feaacbdd41ed06a5fe14b463db8f2d6658ce89bd059554d0c04f76e7d23d3`. The receipt
+is `evidence/2026-10-07-vision-sft-optuna-lr.md`. This LR is contract-specific
+and must not be reused after a source, pack, prompt, context, rank, init, or
+kernel change.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

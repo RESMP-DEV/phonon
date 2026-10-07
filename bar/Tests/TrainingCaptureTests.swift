@@ -5,6 +5,24 @@ import XCTest
 final class TrainingCaptureTests: XCTestCase {
     private var directory: URL!
 
+    private actor Gate {
+        private var opened = false
+        private var continuations: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            if opened { return }
+            await withCheckedContinuation { continuation in
+                continuations.append(continuation)
+            }
+        }
+
+        func open() {
+            opened = true
+            continuations.forEach { $0.resume() }
+            continuations.removeAll()
+        }
+    }
+
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "phonon-training-capture-\(UUID().uuidString)", isDirectory: true)
@@ -89,6 +107,40 @@ final class TrainingCaptureTests: XCTestCase {
         XCTAssertTrue(
             TrainingRetentionPolicy.shouldKeepCandidate(
                 localHistoryEnabled: true, attachmentSucceeded: false))
+    }
+
+    @MainActor
+    func testCorpusMaintenanceRunsInOrderAndFailuresDoNotBreakTheChain() async throws {
+        let queue = CorpusMaintenanceQueue()
+        let gate = Gate()
+        var order: [String] = []
+        var failures: [String] = []
+
+        let first = queue.enqueue(
+            {
+                await gate.wait()
+                order.append("first")
+            },
+            onError: { failures.append("first: \($0)") })
+        let failing = queue.enqueue(
+            {
+                order.append("failing")
+                throw TrainingCaptureError.consentMissing
+            },
+            onError: { failures.append("failing: \($0.localizedDescription)") })
+        let last = queue.enqueue(
+            {
+                order.append("last")
+            },
+            onError: { failures.append("last: \($0.localizedDescription)") })
+
+        await gate.open()
+        await first.value
+        await failing.value
+        await last.value
+
+        XCTAssertEqual(order, ["first", "failing", "last"])
+        XCTAssertEqual(failures.count, 1)
     }
 
     func testCLIArgumentShapeIncludesProvenanceConsentAndTCCPreflight() throws {

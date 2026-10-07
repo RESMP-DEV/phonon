@@ -82,6 +82,29 @@ enum TrainingRetentionPolicy {
     }
 }
 
+@MainActor
+final class CorpusMaintenanceQueue {
+    private var previousTask: Task<Void, Never> = Task {}
+
+    @discardableResult
+    func enqueue(
+        _ operation: @escaping () async throws -> Void,
+        onError: @escaping (Error) -> Void
+    ) -> Task<Void, Never> {
+        let previous = previousTask
+        let task = Task {
+            await previous.value
+            do {
+                try await operation()
+            } catch {
+                onError(error)
+            }
+        }
+        previousTask = task
+        return task
+    }
+}
+
 struct TrainingScreenshotAttacher {
     struct Configuration {
         var phononBinary: String

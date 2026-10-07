@@ -101,12 +101,20 @@ fn work(inbox: Receiver<Event>) -> Result<()> {
     let engine = Engine::start()?;
 
     if let Err(error) = retention::enforce(&paths::data_root()) {
+        // `enforce` has already attempted every deletion and, for malformed
+        // settings, run its fail-closed sweep before returning. Quitting here
+        // would take dictation offline over a settings file the user can fix.
+        eprintln!("phonon: {error:#}");
         tray::notify(
             "Phonon could not verify audio retention",
-            &format!("{error:#}"),
+            &format!(
+                "{error:#}. Fix or delete {} to restore audio retention.",
+                paths::data_root()
+                    .join(retention::SETTINGS_FILE_NAME)
+                    .display()
+            ),
             true,
         );
-        return Err(error.context("enforce the audio-retention policy"));
     }
 
     // The same readiness gate macOS applies: prove the real audio path before

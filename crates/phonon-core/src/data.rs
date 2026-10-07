@@ -927,6 +927,13 @@ pub fn retain_recording_at(app_support: &Path, audio_path: &Path) -> Result<Reco
         .file_name()
         .and_then(|value| value.to_str())
         .context("recording directory has no UTF-8 id")?;
+    let expected_parent = corpus_dir_at(app_support).join(id);
+    if parent != expected_parent {
+        bail!(
+            "audio path is outside the corpus recording directory: {}",
+            audio_path.display()
+        );
+    }
     update_recording_at(app_support, id, |recording| {
         recording.retention_pending = false;
         Ok(())
@@ -2152,6 +2159,29 @@ mod tests {
         )
         .unwrap();
         assert!(!reloaded.retention_pending);
+    }
+
+    #[test]
+    fn retain_recording_rejects_an_outside_path_with_a_colliding_parent_name() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, _image_path, _image) = attach_fixture(&app_support);
+        super::register_or_load_recording_at(&app_support, &audio, "bar").unwrap();
+
+        let outside = tempfile::tempdir().unwrap();
+        let wrong_path = outside.path().join("session-1").join("audio.wav");
+        fs::create_dir_all(wrong_path.parent().unwrap()).unwrap();
+        fs::write(&wrong_path, test_wav()).unwrap();
+
+        let error = super::retain_recording_at(&app_support, &wrong_path).unwrap_err();
+        let metadata =
+            super::load_recording_at(&app_support.join("Corpus/session-1/metadata.json")).unwrap();
+
+        assert!(
+            error.to_string().contains("outside the corpus"),
+            "{error:#}"
+        );
+        assert!(metadata.retention_pending);
     }
 
     #[test]

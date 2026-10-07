@@ -2019,12 +2019,16 @@ It also removes abandoned `phonon-screen-training-*` staging roots
 before a new capture can stage an image. Ordinary screenshot expiry is
 unconditional. The onboarding and Settings copy now says every display rather
 than the frontmost window, matching the actual ScreenCaptureKit OCR scope.
+Corpus attach, retain, revoke, and expiry operations share one serialized
+maintenance queue; an attachment that began before consent withdrawal is
+followed by revocation before any keep decision is persisted.
 
 Windows now has the same default-off audio boundary. Its runner deletes each
 dictation WAV after the pass unless `%LOCALAPPDATA%\Phonon\settings.json`
 explicitly sets `retain_audio` and a finite `audio_retention_days`. The policy
 is enforced at startup and after every pass; malformed settings delete audio
-fail-closed and then surface the recovery error.
+fail-closed, surface the recovery error, and leave dictation available for
+repair.
 
 Non-claims: malformed settings and dictionary recovery remain the next
 persistence slice. This work does not qualify OCR text extraction, model

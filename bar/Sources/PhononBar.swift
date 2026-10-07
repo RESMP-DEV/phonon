@@ -1652,6 +1652,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var screenContextCapture: ScreenImageCandidate?
     private var screenImageAttachmentDeferred = false
     private let trainingScreenshotAttacher = TrainingScreenshotAttacher()
+    private let corpusMaintenanceQueue = CorpusMaintenanceQueue()
     private var engineRestartWork: DispatchWorkItem?
     private var terminating = false
     private var activeWavPath: String?
@@ -2502,16 +2503,15 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func retainRecordingAsynchronously(_ audioPath: String) {
-        Task { [weak self] in
+        corpusMaintenanceQueue.enqueue({ [weak self] in
             guard let self else { return }
-            do {
-                try await self.trainingScreenshotAttacher.retain(audioPath: audioPath)
-            } catch {
-                NSLog("phonon recording retention failed: \(error.localizedDescription)")
-                self.appStore.lastError =
-                    "Could not mark a recording as retained; it will be treated as interrupted."
-            }
+            try await self.trainingScreenshotAttacher.retain(audioPath: audioPath)
+        }, onError: { [weak self] error in
+            NSLog("phonon recording retention failed: \(error.localizedDescription)")
+            self?.appStore.lastError =
+                "Could not mark a recording as retained; it will be treated as interrupted."
         }
+        )
     }
 
     /// Called only after final text was already inserted. The attachment and
@@ -2542,13 +2542,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         screenImageAttachmentDeferred = false
         screenContextCapture = nil
         let audioPath = activeWavPath
-        let localHistoryEnabled = appStore.settings.localHistory
         self.activeWavPath = nil
         let attachment = TrainingScreenshotAttacher.Attachment(
             audioPath: audioPath,
             candidate: candidate,
             settings: TrainingCaptureSettings(settings: appStore.settings))
-        Task { [weak self] in
+        corpusMaintenanceQueue.enqueue({ [weak self] in
             guard let self else { return }
             var attachmentSucceeded = false
             do {
@@ -2558,17 +2557,27 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.appStore.lastError =
                     "Screen-image training attachment failed; no corpus image was retained."
             }
-            do {
-                try await self.trainingScreenshotAttacher.expire()
-            } catch {
-                NSLog(
-                    "phonon screenshot expiry failed: \(error.localizedDescription)")
-                self.appStore.lastError =
-                    "Screen-image retention expiry failed; see Phonon logs."
+            let consentStillAllowed = self.appStore.settings.screenImageTrainingAllowed
+            if consentStillAllowed {
+                do {
+                    try await self.trainingScreenshotAttacher.expire()
+                } catch {
+                    NSLog("phonon screenshot expiry failed: \(error.localizedDescription)")
+                    self.appStore.lastError =
+                        "Screen-image retention expiry failed; see Phonon logs."
+                }
+            } else {
+                do {
+                    try await self.trainingScreenshotAttacher.revoke()
+                } catch {
+                    NSLog("phonon screenshot revocation failed: \(error.localizedDescription)")
+                    self.appStore.lastError =
+                        "Screen-image revocation failed; see Phonon logs."
+                }
             }
             if !TrainingRetentionPolicy.shouldKeepCandidate(
-                localHistoryEnabled: localHistoryEnabled,
-                attachmentSucceeded: attachmentSucceeded)
+                localHistoryEnabled: self.appStore.settings.localHistory,
+                attachmentSucceeded: attachmentSucceeded && consentStillAllowed)
             {
                 MicRecorder.discardWav(at: audioPath)
             } else {
@@ -2581,11 +2590,15 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
             }
             self.appStore.reloadAll()
+        }, onError: { [weak self] error in
+            NSLog("phonon corpus maintenance failed: \(error.localizedDescription)")
+            self?.appStore.lastError = "Corpus maintenance failed; see Phonon logs."
         }
+        )
     }
 
     private func expireScreenshotsAsynchronously() {
-        Task { [weak self] in
+        corpusMaintenanceQueue.enqueue({ [weak self] in
             guard let self else { return }
             do {
                 try await self.trainingScreenshotAttacher.expire()
@@ -2593,11 +2606,15 @@ final class AppController: NSObject, NSApplicationDelegate {
                 NSLog("phonon screenshot expiry failed: \(error.localizedDescription)")
                 self.appStore.lastError = "Screen-image retention expiry failed; see Phonon logs."
             }
+        }, onError: { [weak self] error in
+            NSLog("phonon screenshot expiry failed: \(error.localizedDescription)")
+            self?.appStore.lastError = "Screen-image retention expiry failed; see Phonon logs."
         }
+        )
     }
 
     private func revokeScreenshotsAsynchronously() {
-        Task { [weak self] in
+        corpusMaintenanceQueue.enqueue({ [weak self] in
             guard let self else { return }
             do {
                 try await self.trainingScreenshotAttacher.revoke()
@@ -2607,7 +2624,11 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.appStore.lastError =
                     "Screen-image revocation failed; see Phonon logs."
             }
+        }, onError: { [weak self] error in
+            NSLog("phonon screenshot revocation failed: \(error.localizedDescription)")
+            self?.appStore.lastError = "Screen-image revocation failed; see Phonon logs."
         }
+        )
     }
 
     private func shortcutAllows(source: String) -> Bool {

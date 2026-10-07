@@ -59,15 +59,19 @@ def main() -> None:
     merged = load_file(str(args.merged))
     adapted = {}
     for key, tensor in merged.items():
-        candidate = key if key in target else f"lfm.{key}"
+        if "lora_" in key:
+            continue
+        candidate = f"lfm.{key}".replace(".base_layer.", ".")
         if candidate in target and target[candidate].shape == tensor.shape:
             adapted[candidate] = tensor
+    if not adapted:
+        raise RuntimeError("no merged language tensors matched the base model")
     missing, unexpected = model.load_state_dict(adapted, strict=False)
-    unexpected = [k for k in unexpected if "lora_" not in k]
     if unexpected:
         raise RuntimeError(f"unexpected merged keys: {unexpected[:5]}")
     print(
-        f"merged weights applied: {len(adapted)}/{len(merged)} keys; unmatched={len(missing)}",
+        f"merged language weights applied: {len(adapted)}/{len(merged)} keys; "
+        f"base-model keys left unchanged={len(missing)}",
         flush=True,
     )
     if args.vision_rows:

@@ -1812,6 +1812,37 @@ scores 0.11614411917547203/0.14895359417652412/0.336. The same K4 prompt collaps
 the installed static soup to 0.39052485709336565 fair WER, proving that the fixed-card
 prototype requires the history-trained adapter and is not a prompt-only upgrade.
 
+### 2026-10-06: reverse-SALM v0.1.0-alpha.1 model card
+
+The private Hugging Face placeholder
+`RESMP-DEV/phonon-reverse-salm` was promoted from a bare stub to a proper alpha
+model card. The card records the provisional fixed-history prototype, prompt and
+kernel contracts, aggregate selection/future results, exact optimized-runtime
+parity, runtime non-claims, release state, privacy boundaries, and honest
+limitations. It follows the house card convention used by the ASR and calibrated
+LFM releases: pinned upstream and public-data revisions, matched metrics, and
+explicit statements about what the artifact is not.
+
+- Card: `README.md`
+- Sanitized local receipt copy:
+  `evidence/huggingface/2026-10-06-phonon-reverse-salm-alpha.md`
+- Card commit:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/b9329d42078bccc493d2b58e3de9277bed9366e8`
+- Config commit:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/686c15dd7ee02a2c5e284568e1c909e0daae56a8`
+- Hub API verification: `private: true`
+- Repository files after upload: `.gitattributes`, `README.md`, and `config.json`
+- Weights published: no
+- Tokenizer published: no
+- Adapter published: no
+- Personal audio, accepted text, dictionary values, screenshots, history cards,
+  audio IDs, session IDs, and internal manifest hashes published: no
+
+The remote card was re-downloaded and scanned for prohibited optimization-method
+vocabulary, local absolute paths, Aqua audio IDs, and session IDs; all checks
+were negative. This is a metadata-only alpha release and does not change the
+default product engine.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

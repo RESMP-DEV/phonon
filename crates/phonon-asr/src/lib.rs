@@ -13,6 +13,14 @@ use std::time::Instant;
 pub const ASR_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v2";
 pub const ASR_MODEL_REVISION: &str = "8ae155301e23d820d82aa60d24817c900e69e487";
 pub const ASR_RUNTIME_REQUIREMENT: &str = "parakeet-mlx==0.5.2";
+pub const SALM_RUNTIME_REQUIREMENTS: [&str; 5] = [
+    "liquid-audio==1.3.0",
+    "peft",
+    "safetensors",
+    "soundfile",
+    "transformers>=5.4,<6",
+];
+
 pub const REVERSE_SALM_RUNTIME_REQUIREMENTS: [&str; 4] = [
     "liquid-audio==1.3.0",
     "peft",
@@ -302,6 +310,18 @@ impl AsrEngineSelection {
         }
     }
 
+    /// Best measured native single-model prototype. The adapter must be installed at
+    /// `~/.local/share/phonon/salm/lora_adapter.safetensors` with rank 16.
+    pub fn salm() -> Self {
+        Self {
+            script: "sidecar/salm_server.py".into(),
+            runtime_requirements: SALM_RUNTIME_REQUIREMENTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+        }
+    }
+
     pub fn reverse_salm() -> Self {
         Self {
             script: "sidecar/reverse_salm_server.py".into(),
@@ -324,11 +344,10 @@ impl AsrEngineSelection {
     }
 
     pub fn from_environment() -> Self {
-        if std::env::var("PHONON_ASR_ENGINE")
-            .ok()
-            .is_some_and(|value| value == "reverse_salm")
-        {
-            return Self::reverse_salm();
+        match std::env::var("PHONON_ASR_ENGINE").ok().as_deref() {
+            Some("salm") => return Self::salm(),
+            Some("reverse_salm") => return Self::reverse_salm(),
+            _ => {}
         }
         let script = std::env::var("PHONON_ASR_SCRIPT")
             .ok()

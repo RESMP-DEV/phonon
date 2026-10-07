@@ -1,4 +1,38 @@
-# AGENTS.md — loading and merging Phonon reverse SALM adapters
+# AGENTS.md — loading and merging Phonon SALM adapters
+
+## Recommended Phonon prototype first
+
+For actually using Phonon today, use the **native SALM** adapter, not the reverse
+graft:
+
+| Artifact | Path | SHA-256 | Prompt contract |
+| --- | --- | --- | --- |
+| Native SALM (recommended) | `adapters/native-salm-grpo-v1.safetensors` | `d157a38be7ebc801000a6bac13146b8f7333b4a89f8dcda1eb9e26ad5b54f830` | `prose_dictation_v1`, rank 16 |
+| Alpha reverse graft | `adapters/v0.1.0-alpha.1.safetensors` | `44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4` | `prose_history_dictation_v2`, rank 32 |
+| Static-soup control | `adapters/static-soup-v0.safetensors` | `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c` | `prose_dictation_v1`, rank 32 |
+
+Native SALM is a normal single-base LoRA on `LiquidAI/LFM2.5-Audio-1.5B`, ranks
+16, 184 tensors, and is the measured best lane (0.0839 fair WER local slice versus
+0.1093 for the reverse graft). It is also the only adapter measured running
+end-to-end through Phonon's real Rust `AsrSidecar` on macOS. Install it as:
+
+```bash
+hf download RESMP-DEV/phonon-reverse-salm \
+  adapters/native-salm-grpo-v1.safetensors --local-dir ./adapters
+install -m 600 ./adapters/native-salm-grpo-v1.safetensors \
+  "$HOME/.local/share/phonon/salm/lora_adapter.safetensors"
+```
+
+Then select it explicitly:
+
+```bash
+PHONON_ASR_ENGINE=salm phonon engine
+```
+
+The reverse graft below still applies to the two graft adapters and needs the
+two-base graft code; the native adapter does not.
+
+## Reverse graft artifacts
 
 This repository contains research adapters for a two-model graft, not a normal
 single-base LoRA checkpoint. Read this before loading, merging, evaluating, or
@@ -10,6 +44,9 @@ redistributing the files.
 | --- | --- | --- |
 | `adapters/v0.1.0-alpha.1.safetensors` | History-conditioned alpha prototype | `prose_history_dictation_v2`, context 768 |
 | `adapters/static-soup-v0.safetensors` | Static-prose control/comparison | `prose_dictation_v1`, context 512 |
+
+These two are the graft artifacts. The native SALM adapter at the top of this
+file is the recommended default for Phonon prototyping.
 
 Both adapters use LoRA rank 32 and contain 190 tensors:
 

@@ -1,6 +1,6 @@
 use phonon_asr::{
     AsrEngineSelection, ASR_MODEL_ID, ASR_MODEL_REVISION, ASR_RUNTIME_REQUIREMENT,
-    PYTHON_REQUIREMENT, REVERSE_SALM_RUNTIME_REQUIREMENTS,
+    PYTHON_REQUIREMENT, REVERSE_SALM_RUNTIME_REQUIREMENTS, SALM_RUNTIME_REQUIREMENTS,
 };
 use std::path::Path;
 
@@ -59,6 +59,32 @@ fn custom_salm_selection_replaces_runtime_and_skips_parakeet_pins() {
             "/repo/sidecar/salm_server.py",
         ]
     );
+}
+
+#[test]
+fn native_salm_is_an_explicit_non_default_engine() {
+    let root = Path::new("/repo");
+    let engine = AsrEngineSelection::salm();
+
+    assert!(engine.uses_custom_script());
+    assert!(engine.uses_custom_runtime());
+    assert_eq!(
+        engine.script(root),
+        Path::new("/repo/sidecar/salm_server.py")
+    );
+    let requirements: Vec<_> = SALM_RUNTIME_REQUIREMENTS
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
+    assert_eq!(engine.runtime_requirements(), requirements.as_slice());
+}
+
+#[test]
+fn native_salm_is_selectable_by_environment() {
+    unsafe { std::env::set_var("PHONON_ASR_ENGINE", "salm") };
+    let engine = AsrEngineSelection::from_environment();
+    assert_eq!(engine, AsrEngineSelection::salm());
+    unsafe { std::env::remove_var("PHONON_ASR_ENGINE") };
 }
 
 #[test]

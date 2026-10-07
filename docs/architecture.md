@@ -1882,6 +1882,42 @@ separate graft component.
 - Remote re-download and leak scan: clean
 - Smoke receipt: 92 merged targets, identical output, no transcript printed
 
+### 2026-10-06: native SALM prototype becomes the tolerable Phonon model
+
+The evidence audit redirected the prototype from the reverse graft to the
+best-measured native audio lane. `salm-grpo-v1` (GRPO 300 steps from
+`v4full@2000`) scores 0.0839 fair WER, 0.1132 strict WER, and 0.360 exact on the
+local 500-clip slice, substantially better than the promoted reverse graft at
+0.109302/0.140673/0.350. It is also a normal single-base LoRA on
+`LiquidAI/LFM2.5-Audio-1.5B`, rank 16, adapter SHA-256
+`d157a38be7ebc801000a6bac13146b8f7333b4a89f8dcda1eb9e26ad5b54f830`.
+
+The adapter was verified through the real Rust `AsrSidecar` on macOS, not just a
+research evaluator. On `RTX 3090 Ti` CUDA the sidecar reported 13.29 seconds to
+ready, 2.631 seconds warmup, and 0.358 seconds mean across five warm requests.
+On M4 Max MPS the real spawn test completed in 20.46 seconds with 5.6 seconds to
+ready, 0.465 seconds warmup, and 0.309 seconds for the second request. These are
+sidecar timings, not keyboard-to-insertion end-to-end latency.
+
+The adapter is installed as the explicit experimental native SALM model at
+`~/.local/share/phonon/salm/lora_adapter.safetensors`; the previous
+`salm-lora-v2-2000s` adapter at SHA-256
+`343a9e9ec19c11b0531e39ac54855e458c80059a4e937333cee9f9415956fd61` remains
+preserved as `lora_adapter.v2-2000s.safetensors`. Selecting it is explicit and
+non-default via `PHONON_ASR_ENGINE=salm`. `AsrEngineSelection::salm()` pins the
+runtime to liquid-audio 1.3.0, peft, safetensors, soundfile, and transformers
+5.x; the default Parakeet command is unchanged.
+
+The private Hugging Face repository now includes this adapter as
+`adapters/native-salm-grpo-v1.safetensors`, and its root `AGENTS.md` recommends
+it as the Phonon prototype. The reverse graft and static-soup controls remain
+published for comparison, not for daily use.
+
+The product promotion gate is unchanged. This is a tolerable research prototype
+and explicit experimental engine, not a shipped Aqua replacement. It still needs
+the frozen-protocol release gate, keyboard-to-insertion latency, offline
+packaging, default-path regression, and five-day dogfood acceptance.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

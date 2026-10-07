@@ -181,8 +181,13 @@ it is not distributed.
 
 | Artifact | Path | SHA-256 | Size |
 | --- | --- | --- | ---: |
-| Alpha history adapter | `adapters/v0.1.0-alpha.1.safetensors` | `44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4` | 54,956,320 bytes |
-| Static-soup control adapter | `adapters/static-soup-v0.safetensors` | `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c` | 54,956,320 bytes |
+| Native SALM (recommended Phonon prototype) | `adapters/native-salm-grpo-v1.safetensors` | `d157a38be7ebc801000a6bac13146b8f7333b4a89f8dcda1eb9e26ad5b54f830` | 22,239,192 bytes |
+| Alpha history reverse graft | `adapters/v0.1.0-alpha.1.safetensors` | `44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4` | 54,956,320 bytes |
+| Static-soup control reverse graft | `adapters/static-soup-v0.safetensors` | `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c` | 54,956,320 bytes |
+
+The native SALM adapter is a separate single-base LoRA for
+`LiquidAI/LFM2.5-Audio-1.5B` and is the artifact to install for Phonon. See the
+repository root `AGENTS.md` for its selection, load, and verification contract.
 
 - Research adapters published privately: **yes**
 - Base LFM weights published: **no**

@@ -22,12 +22,13 @@ private: true
 
 # Phonon reverse SALM — v0.1.0-alpha.1 (provisional prototype)
 
-**Status: alpha research prototype. Weights are not published in this repository.**
+**Status: alpha research prototype. The private adapters are published for internal collaborator testing.**
 
 This private repository carries the model identity, prompt contract, evaluation
 protocol, pinned revisions, and aggregate results for the Phonon reverse SALM
-lane. It intentionally contains no adapter, checkpoint, tokenizer payload, audio,
-or transcript content.
+lane. It intentionally contains no base-model checkpoint, tokenizer payload, audio,
+or transcript content. Two private research LoRA/audio adapters are included for
+internal testing.
 
 - Version: `v0.1.0-alpha.1`
 - Card date: 2026-10-06
@@ -164,7 +165,7 @@ PYTHONPATH=<repo>/ml/research/final_sweep:<repo>/ml/research/reverse_vl_v0 \
 python <repo>/ml/research/reverse_vl_v0/transcribe_reverse_audio_vl.py \
   --slice <slice.jsonl> \
   --out <hyps.jsonl> \
-  --adapter <adapter.safetensors> \
+  --adapter <downloaded-adapters/v0.1.0-alpha.1.safetensors> \
   --lora-rank 32 \
   --audio-root <audio-root> \
   --device cuda \
@@ -178,15 +179,21 @@ it is not distributed.
 
 ## Artifacts and release state
 
-- Weights published: **no**
+| Artifact | Path | SHA-256 | Size |
+| --- | --- | --- | ---: |
+| Alpha history adapter | `adapters/v0.1.0-alpha.1.safetensors` | `44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4` | 54,956,320 bytes |
+| Static-soup control adapter | `adapters/static-soup-v0.safetensors` | `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c` | 54,956,320 bytes |
+
+- Research adapters published privately: **yes**
+- Base LFM weights published: **no**
 - Tokenizer published: **no**
 - Training data published: **no**
 - Fixed history cards published: **no**
 
 The adapters were trained partly on personal dictation audio and accepted text.
-Publishing any adapter, even privately, is a separate explicit release decision
-and has not been taken. Candidate adapter hashes are recorded above so a future
-release can be matched to a verified artifact.
+This private internal release is for collaborator testing and does not authorize
+public redistribution. The history adapter must be paired with the same prompt,
+context, LoRA rank, and a locally controlled user-history card.
 
 ## Privacy
 

@@ -1812,11 +1812,12 @@ scores 0.11614411917547203/0.14895359417652412/0.336. The same K4 prompt collaps
 the installed static soup to 0.39052485709336565 fair WER, proving that the fixed-card
 prototype requires the history-trained adapter and is not a prompt-only upgrade.
 
-### 2026-10-06: reverse-SALM v0.1.0-alpha.1 model card
+### 2026-10-06: reverse-SALM v0.1.0-alpha.1 private adapter release
 
 The private Hugging Face placeholder
 `RESMP-DEV/phonon-reverse-salm` was promoted from a bare stub to a proper alpha
-model card. The card records the provisional fixed-history prototype, prompt and
+model card and then, by explicit owner instruction, updated from metadata-only to
+a private runnable adapter release for collaborators. The card records the provisional fixed-history prototype, prompt and
 kernel contracts, aggregate selection/future results, exact optimized-runtime
 parity, runtime non-claims, release state, privacy boundaries, and honest
 limitations. It follows the house card convention used by the ASR and calibrated
@@ -1830,17 +1831,31 @@ explicit statements about what the artifact is not.
   `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/b9329d42078bccc493d2b58e3de9277bed9366e8`
 - Config commit:
   `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/686c15dd7ee02a2c5e284568e1c909e0daae56a8`
+- Alpha adapter commit:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/899e8a21a1389c4df8bc13e93018df942c9dd9a6`
+- Static-soup control commit:
+  `https://huggingface.co/RESMP-DEV/phonon-reverse-salm/commit/850ff731eee028daedb2903f23affccc47f1b502`
+- Artifact documentation/config/checksum commits:
+  `50f7f6252c7412dfcd9eaeea2b4295b5a188986b`,
+  `b4b4323fc7ef253ace39a5adbf732acb5753ea2f`, and
+  `c3d37ce12a1a106ff65aa73093ede5ca8fc409d8`
 - Hub API verification: `private: true`
-- Repository files after upload: `.gitattributes`, `README.md`, and `config.json`
-- Weights published: no
-- Tokenizer published: no
-- Adapter published: no
+- Repository files after release: `.gitattributes`, `README.md`, `config.json`,
+  `ADAPTER_SHA256SUMS`, and two private research adapters
+- Private research adapters published: yes
+  - `adapters/v0.1.0-alpha.1.safetensors`, SHA-256
+    `44a379ee1762461077319fa28173d2da782ad1ea5f29b0303c8fde3218e033a4`
+  - `adapters/static-soup-v0.safetensors`, SHA-256
+    `9a70586a682fe2c694896efe3ac5aa5c467874ab6a9f5e0c2dc847eff31a3f5c`
+- Base weights and tokenizer published: no
 - Personal audio, accepted text, dictionary values, screenshots, history cards,
   audio IDs, session IDs, and internal manifest hashes published: no
 
 The remote card was re-downloaded and scanned for prohibited optimization-method
 vocabulary, local absolute paths, Aqua audio IDs, and session IDs; all checks
-were negative. This is a metadata-only alpha release and does not change the
+were negative. Both adapters were subsequently re-downloaded from the Hub and
+their SHA-256 values matched the source adapters byte-for-byte. This private
+adapter release does not authorize public redistribution and does not change the
 default product engine.
 
 ## Contracts to preserve

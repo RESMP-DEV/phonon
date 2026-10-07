@@ -1997,6 +1997,52 @@ capture a screen, claim adapter quality, or replace the Rust/Swift/native gates.
 Those remain separate matrix rows. This is process scaffolding only: it changes
 no runtime behavior and does not repair the audited consent/retention P0s.
 
+### 2026-10-06: consent revocation and interruption cleanup
+
+This slice closes the audited retention P0s without widening into persistence
+recovery or engine-contract work. Rust fresh settings now default local history
+and screen context off while preserving legacy schema-1 absent-key behavior.
+Read-only CLI loading no longer rewrites an existing native settings file or
+downgrades its schema version.
+`phonon corpus revoke-screenshots` removes every registered, orphan, or
+unindexed screenshot sidecar; normal expiry also removes such sidecars and no
+longer depends on either training switch. Turning either native screen-image
+consent switch off invokes revocation immediately, and launch does the same if
+an earlier revocation was interrupted.
+
+Native recording metadata now carries `retention_pending` from registration
+until an explicit keep decision. The macOS launch path reaps metadata-less
+directories and, when local history is off, pending recordings left by a crash.
+Previously finalized recordings remain untouched after screenshot expiry or
+revocation; malformed settings do not authorize that pending-recording sweep.
+It also removes abandoned `phonon-screen-training-*` staging roots
+before a new capture can stage an image. Ordinary screenshot expiry is
+unconditional. The onboarding and Settings copy now says every display rather
+than the frontmost window, matching the actual ScreenCaptureKit OCR scope.
+Corpus attach, retain, revoke, and expiry operations share one serialized
+maintenance queue; an attachment that began before consent withdrawal is
+followed by revocation before any keep decision is persisted.
+
+Windows now has the same default-off audio boundary. Its runner deletes each
+dictation WAV after the pass unless `%LOCALAPPDATA%\Phonon\settings.json`
+explicitly sets `retain_audio` and a finite `audio_retention_days`. The policy
+is enforced at startup and after every pass; malformed settings delete audio
+fail-closed, surface the recovery error, and leave dictation available for
+repair.
+
+Non-claims: malformed settings and dictionary recovery remain the next
+persistence slice. This work does not qualify OCR text extraction, model
+quality, Windows dictation, or a clean-machine TCC transition, and no owner
+screen content or real Aqua data was used for tests.
+
+Verification of the implementation slice at commit
+`8dc9c39d0f54b4bb4a9713c7615eefb512c09c67` passed `just quality` (53 Python
+tests plus repository contracts), `just rust` (including 42 phonon-core tests
+and 43 portable Windows tests), `just swift` (89 tests), the ten-render
+synthetic UI set, and the signed non-prompting permission gate. The integrating
+review repairs are revalidated at the final pull-request head, and the
+parent receipt is `build/reports/consent-retention/parent-receipt.json`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

@@ -82,6 +82,29 @@ enum TrainingRetentionPolicy {
     }
 }
 
+@MainActor
+final class CorpusMaintenanceQueue {
+    private var previousTask: Task<Void, Never> = Task {}
+
+    @discardableResult
+    func enqueue(
+        _ operation: @escaping () async throws -> Void,
+        onError: @escaping (Error) -> Void
+    ) -> Task<Void, Never> {
+        let previous = previousTask
+        let task = Task {
+            await previous.value
+            do {
+                try await operation()
+            } catch {
+                onError(error)
+            }
+        }
+        previousTask = task
+        return task
+    }
+}
+
 struct TrainingScreenshotAttacher {
     struct Configuration {
         var phononBinary: String
@@ -158,6 +181,14 @@ struct TrainingScreenshotAttacher {
         return arguments
     }
 
+    static func revocationArguments() -> [String] {
+        ["corpus", "revoke-screenshots"]
+    }
+
+    static func retentionArguments(audioPath: String) -> [String] {
+        ["corpus", "retain-recording", "--audio-path", audioPath]
+    }
+
     static func stage(_ pngData: Data, in root: URL) throws -> URL {
         let uniqueDirectory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
@@ -228,6 +259,34 @@ struct TrainingScreenshotAttacher {
         }
     }
 
+    /// Remove all retained or unindexed images after screen-image consent is
+    /// withdrawn. Unlike expiry, this is not limited by a prior deadline.
+    func revoke() async throws {
+        let outcome = try await Self.runProcessAsync(
+            executablePath: configuration.phononBinary,
+            arguments: Self.revocationArguments())
+        guard outcome.terminationStatus == 0 else {
+            throw NSError(
+                domain: "PhononTrainingCapture",
+                code: Int(outcome.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: outcome.standardError])
+        }
+    }
+
+    /// Persist the explicit decision to keep a native recording after final
+    /// text and, when applicable, the screen-image attachment decision.
+    func retain(audioPath: String) async throws {
+        let outcome = try await Self.runProcessAsync(
+            executablePath: configuration.phononBinary,
+            arguments: Self.retentionArguments(audioPath: audioPath))
+        guard outcome.terminationStatus == 0 else {
+            throw NSError(
+                domain: "PhononTrainingCapture",
+                code: Int(outcome.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: outcome.standardError])
+        }
+    }
+
     private static func runProcessAsync(
         executablePath: String, arguments: [String]
     ) async throws -> TrainingProcessOutcome {
@@ -270,5 +329,23 @@ struct TrainingScreenshotAttacher {
             "phonon-screen-training-\(ProcessInfo.processInfo.processIdentifier)",
             isDirectory: true)
         try? FileManager.default.removeItem(at: root)
+    }
+
+    /// Remove staging roots left by prior process crashes before a new capture
+    /// can begin. The current root is recreated on demand by `stage`.
+    @discardableResult
+    static func removeStagingRoots(in parent: URL? = nil) -> [String] {
+        let parent = parent ?? FileManager.default.temporaryDirectory
+        let names = (try? FileManager.default.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        var removed: [String] = []
+        for url in names where url.lastPathComponent.hasPrefix("phonon-screen-training-") {
+            if (try? FileManager.default.removeItem(at: url)) != nil {
+                removed.append(url.lastPathComponent)
+            }
+        }
+        return removed
     }
 }

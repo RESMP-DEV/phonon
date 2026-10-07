@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use phonon_core::data::{
     app_support_dir, corpus_dir, delete_recording, dictionary_path, import_recording,
     list_recordings, load_recording_by_id, polish_config, register_screen_image,
+    retain_recording as retain_recording_in_corpus, revoke_screenshots as revoke_all_screenshots,
     safe_polish_output, set_intended_transcript, settings_path, usage_stats, CorpusExportOptions,
     DictionaryEntry, DictionaryFile, ScreenImageCaptureRequest, SettingsFile,
 };
@@ -920,6 +921,12 @@ pub fn set_intended(id: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn retain_recording(audio_path: &Path) -> Result<()> {
+    let recording = retain_recording_in_corpus(audio_path)?;
+    println!("recording {} marked as retained", recording.id);
+    Ok(())
+}
+
 pub fn delete_corpus_recording(id: &str) -> Result<()> {
     delete_recording(id)?;
     println!("deleted recording {id}");
@@ -994,6 +1001,15 @@ pub fn expire_screenshots(now_ms: Option<u64>) -> Result<()> {
     );
     let deleted = phonon_core::data::delete_expired_screenshots(now)?;
     println!("expired {} screenshots", deleted.len());
+    Ok(())
+}
+
+pub fn revoke_screenshots() -> Result<()> {
+    let revoked = revoke_all_screenshots()?;
+    println!("revoked {} screenshots", revoked.len());
+    for id in revoked {
+        println!("revoked screenshot for {id}");
+    }
     Ok(())
 }
 

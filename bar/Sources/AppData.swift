@@ -347,9 +347,11 @@ final class NativeAppStore: ObservableObject {
     var onDictionaryChanged: (() -> Void)?
     var onMicrophonePermissionGranted: (() -> Void)?
     var onPermissionsRefresh: (() -> Void)?
+    var onScreenImageConsentRevoked: (() -> Void)?
 
     private let fileManager: FileManager
     private let supportDirectory: URL
+    private var settingsDecodedSuccessfully = false
 
     init(fileManager: FileManager = .default, supportDirectory: URL? = nil) {
         self.fileManager = fileManager
@@ -382,6 +384,7 @@ final class NativeAppStore: ObservableObject {
         settings = updated
         do {
             try writeJSON(updated, to: settingsURL)
+            settingsDecodedSuccessfully = true
             lastError = nil
             captureMirror()
         } catch {
@@ -459,6 +462,7 @@ final class NativeAppStore: ObservableObject {
     /// on. Turning either switch off invalidates the prior timestamp, so a
     /// later re-enable records a fresh consent.
     func setTrainingCapture(enabled: Bool, includesScreenImages: Bool) {
+        let wasAllowed = settings.screenImageTrainingAllowed
         updateSettings { settings in
             settings.trainingCaptureEnabled = enabled
             settings.includeScreenImages = includesScreenImages
@@ -470,6 +474,45 @@ final class NativeAppStore: ObservableObject {
                 settings.trainingCaptureConsentedAtUnixMs = nil
             }
         }
+        if wasAllowed, !settings.screenImageTrainingAllowed {
+            onScreenImageConsentRevoked?()
+        }
+    }
+
+    /// Launch-only cleanup. A corpus directory without metadata is an
+    /// interrupted transient WAV write. With history off, an indexed recording
+    /// still marked `retention_pending` is likewise an interrupted candidate,
+    /// not reviewable history.
+    @discardableResult
+    func reapInterruptedRecordings() -> [String] {
+        guard let directories = try? fileManager.contentsOfDirectory(
+            at: corpusURL, includingPropertiesForKeys: nil
+        ) else { return [] }
+        var removed: [String] = []
+        for directory in directories {
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else { continue }
+            let metadataURL = directory.appendingPathComponent("metadata.json")
+            guard fileManager.fileExists(atPath: metadataURL.path) else {
+                if (try? fileManager.removeItem(at: directory)) != nil {
+                    removed.append(directory.lastPathComponent)
+                }
+                continue
+            }
+            guard !settings.localHistory else { continue }
+            guard settingsDecodedSuccessfully else { continue }
+            guard let data = try? Data(contentsOf: metadataURL),
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                object["retention_pending"] as? Bool == true
+            else { continue }
+            if (try? fileManager.removeItem(at: directory)) != nil {
+                removed.append(directory.lastPathComponent)
+            }
+        }
+        if !removed.isEmpty { loadHistory() }
+        return removed
     }
 
     func clearAllHistory() {
@@ -609,16 +652,29 @@ final class NativeAppStore: ObservableObject {
 
     private func loadSettings() {
         let url = settingsURL
-        guard let data = try? Data(contentsOf: url),
-            let decoded = try? JSONDecoder().decode(NativeSettings.self, from: data)
-        else {
-            var fresh = NativeSettings()
-            fresh.microphonePriority = Self.defaultMicrophonePriority()
-            settings = fresh
+        let fresh = {
+            var value = NativeSettings()
+            value.microphonePriority = Self.defaultMicrophonePriority()
+            return value
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            // A missing file is a valid default-off install, not corrupt state,
+            // so launch cleanup may still enforce the privacy defaults.
+            settings = fresh()
+            settingsDecodedSuccessfully = true
+            try? writeJSON(settings, to: url)
+            return
+        }
+        guard let decoded = try? JSONDecoder().decode(NativeSettings.self, from: data) else {
+            // An unreadable file keeps default privacy in memory. Destructive
+            // cleanup stays blocked until a valid settings write succeeds.
+            settings = fresh()
+            settingsDecodedSuccessfully = false
             try? writeJSON(settings, to: url)
             return
         }
         settings = decoded
+        settingsDecodedSuccessfully = true
     }
 
     /// Nothing ranked on a fresh install: Phonon follows the system input the

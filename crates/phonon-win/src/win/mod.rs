@@ -21,6 +21,7 @@ use crate::fetch;
 use crate::manifest;
 use crate::paths;
 use crate::pipeline::Engine;
+use crate::retention;
 
 /// Everything the worker thread reacts to.
 enum Event {
@@ -98,6 +99,23 @@ fn work(inbox: Receiver<Event>) -> Result<()> {
 
     tray::set_status("loading the correction model");
     let engine = Engine::start()?;
+
+    if let Err(error) = retention::enforce(&paths::data_root()) {
+        // `enforce` has already attempted every deletion and, for malformed
+        // settings, run its fail-closed sweep before returning. Quitting here
+        // would take dictation offline over a settings file the user can fix.
+        eprintln!("phonon: {error:#}");
+        tray::notify(
+            "Phonon could not verify audio retention",
+            &format!(
+                "{error:#}. Fix or delete {} to restore audio retention.",
+                paths::data_root()
+                    .join(retention::SETTINGS_FILE_NAME)
+                    .display()
+            ),
+            true,
+        );
+    }
 
     // The same readiness gate macOS applies: prove the real audio path before
     // telling the user Phonon is ready.
@@ -232,6 +250,13 @@ fn finish(engine: &Engine, recording: Option<capture::Recording>, idle: &str) {
                 true,
             );
         }
+    }
+    if let Err(error) = retention::enforce(&paths::data_root()) {
+        tray::notify(
+            "Phonon could not enforce audio retention",
+            &format!("{error:#}"),
+            true,
+        );
     }
     tray::set_status(idle);
 }

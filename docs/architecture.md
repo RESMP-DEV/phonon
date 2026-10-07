@@ -2031,11 +2031,12 @@ persistence slice. This work does not qualify OCR text extraction, model
 quality, Windows dictation, or a clean-machine TCC transition, and no owner
 screen content or real Aqua data was used for tests.
 
-Verification at clean commit
-`c9833ae4722260d0508611cb348e2ab74720ad2e` passed `just quality` (53 Python
+Verification of the implementation slice at commit
+`8dc9c39d0f54b4bb4a9713c7615eefb512c09c67` passed `just quality` (53 Python
 tests plus repository contracts), `just rust` (including 42 phonon-core tests
 and 43 portable Windows tests), `just swift` (89 tests), the ten-render
 synthetic UI set, and the signed non-prompting permission gate. The integrating
+review repairs are revalidated at the final pull-request head, and the
 parent receipt is `build/reports/consent-retention/parent-receipt.json`.
 
 ## Contracts to preserve

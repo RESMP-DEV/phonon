@@ -1732,8 +1732,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         TrainingScreenshotAttacher.removeStagingRoots()
         if !appStore.settings.screenImageTrainingAllowed {
             revokeScreenshotsAsynchronously()
+        } else {
+            expireScreenshotsAsynchronously()
         }
-        expireScreenshotsAsynchronously()
         showMainWindow()
         showModelStatus()
         startEngine()

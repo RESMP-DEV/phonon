@@ -1165,7 +1165,8 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
         };
         let metadata_path = entry.path().join("metadata.json");
         if !metadata_path.is_file() {
-            if remove_screenshot_files(&entry.path(), &mut errors) {
+            let (removed, failed) = remove_screenshot_files(&entry.path(), &mut errors);
+            if removed && !failed {
                 push_recording_id(&entry.path(), &mut deleted);
             }
             continue;
@@ -1174,14 +1175,16 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
             Ok(metadata) => metadata,
             Err(error) => {
                 errors.push(format!("{}: {error:#}", metadata_path.display()));
-                if remove_screenshot_files(&entry.path(), &mut errors) {
+                let (removed, failed) = remove_screenshot_files(&entry.path(), &mut errors);
+                if removed && !failed {
                     push_recording_id(&entry.path(), &mut deleted);
                 }
                 continue;
             }
         };
         let Some(capture) = metadata.screen_image.clone() else {
-            if remove_screenshot_files(&entry.path(), &mut errors) {
+            let (removed, failed) = remove_screenshot_files(&entry.path(), &mut errors);
+            if removed && !failed {
                 push_recording_id(&entry.path(), &mut deleted);
             }
             continue;
@@ -1225,7 +1228,7 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
     Ok(deleted)
 }
 
-fn remove_screenshot_files(directory: &Path, errors: &mut Vec<String>) -> bool {
+fn remove_screenshot_files(directory: &Path, errors: &mut Vec<String>) -> (bool, bool) {
     let image_path = directory.join(SCREENSHOT_FILE_NAME);
     let manifest_path = screenshot_manifest_path(directory);
     let temporary_prefix = format!("{SCREENSHOT_FILE_NAME}.tmp-");
@@ -1241,24 +1244,38 @@ fn remove_screenshot_files(directory: &Path, errors: &mut Vec<String>) -> bool {
             }
         }
     }
-    if let Ok(entries) = fs::read_dir(directory) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            if !name.starts_with(&temporary_prefix) {
-                continue;
-            }
-            match fs::remove_file(entry.path()) {
-                Ok(()) => removed = true,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    errors.push(format!("delete {}: {error:#}", entry.path().display()));
-                    failed = true;
+    match fs::read_dir(directory) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        errors.push(format!("read {}: {error:#}", directory.display()));
+                        failed = true;
+                        continue;
+                    }
+                };
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else { continue };
+                if !name.starts_with(&temporary_prefix) {
+                    continue;
+                }
+                match fs::remove_file(entry.path()) {
+                    Ok(()) => removed = true,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        errors.push(format!("delete {}: {error:#}", entry.path().display()));
+                        failed = true;
+                    }
                 }
             }
         }
+        Err(error) => {
+            errors.push(format!("read {}: {error:#}", directory.display()));
+            failed = true;
+        }
     }
-    removed && !failed
+    (removed, failed)
 }
 
 fn has_screenshot_artifacts(directory: &Path) -> bool {
@@ -1267,14 +1284,15 @@ fn has_screenshot_artifacts(directory: &Path) -> bool {
         return true;
     }
     let temporary_prefix = format!("{SCREENSHOT_FILE_NAME}.tmp-");
-    fs::read_dir(directory).is_ok_and(|entries| {
-        entries.flatten().any(|entry| {
+    match fs::read_dir(directory) {
+        Ok(entries) => entries.flatten().any(|entry| {
             entry
                 .file_name()
                 .to_str()
                 .is_some_and(|name| name.starts_with(&temporary_prefix))
-        })
-    })
+        }),
+        Err(_) => true,
+    }
 }
 
 fn push_recording_id(directory: &Path, values: &mut Vec<String>) {
@@ -1311,7 +1329,7 @@ pub fn revoke_screenshots_at(app_support: &Path) -> Result<Vec<String>> {
         if !had_registered_image && !has_screenshot_artifacts(&directory) {
             continue;
         }
-        let removal_failed = !remove_screenshot_files(&directory, &mut errors);
+        let (_, removal_failed) = remove_screenshot_files(&directory, &mut errors);
         if removal_failed {
             continue;
         }
@@ -2298,6 +2316,24 @@ mod tests {
             .join("session-1")
             .join("audio.wav")
             .is_file());
+    }
+
+    #[test]
+    fn revocation_clears_metadata_when_image_files_are_already_absent() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let recording = app_support.join("Corpus").join("session-1");
+        fs::remove_file(recording.join(SCREENSHOT_FILE_NAME)).unwrap();
+        fs::remove_file(recording.join(super::SCREENSHOT_MANIFEST_FILE_NAME)).unwrap();
+
+        let revoked = super::revoke_screenshots_at(&app_support).unwrap();
+
+        assert_eq!(revoked, ["session-1"]);
+        let metadata = super::load_recording_at(&recording.join("metadata.json")).unwrap();
+        assert!(metadata.screen_image.is_none());
     }
 
     #[test]

@@ -46,7 +46,9 @@ pub fn enforce(root: &Path) -> Result<Vec<PathBuf>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return enforce_with_policy(root, &AudioRetention::default());
         }
-        Err(error) => return Err(error).with_context(|| format!("read {}", root.display())),
+        Err(error) => {
+            return Err(error).with_context(|| format!("read {}", settings_path(root).display()))
+        }
     };
     let policy = match serde_json::from_str(&contents) {
         Ok(policy) => policy,
@@ -65,21 +67,41 @@ fn enforce_with_policy(root: &Path, policy: &AudioRetention) -> Result<Vec<PathB
         return Ok(Vec::new());
     }
     let mut removed = Vec::new();
+    let mut failures = Vec::new();
     for entry in
         fs::read_dir(&directory).with_context(|| format!("read {}", directory.display()))?
     {
-        let path = entry?.path();
-        if path.extension().and_then(|value| value.to_str()) != Some("wav") {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                failures.push(format!("read {}: {error:#}", directory.display()));
+                continue;
+            }
+        };
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("wav") {
             continue;
         }
-        let age = file_age(&path)?;
         let expired = !policy.retain_audio
             || policy.audio_retention_days == 0
-            || age >= retention_window(policy.audio_retention_days);
+            || match file_age(&path) {
+                Ok(age) => age >= retention_window(policy.audio_retention_days),
+                Err(error) => {
+                    failures.push(format!("{error:#}"));
+                    continue;
+                }
+            };
         if expired {
-            fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
-            removed.push(path);
+            match fs::remove_file(&path) {
+                Ok(()) => removed.push(path),
+                Err(error) => {
+                    failures.push(format!("delete {}: {error}", path.display()));
+                }
+            }
         }
+    }
+    if !failures.is_empty() {
+        anyhow::bail!("audio retention incomplete: {}", failures.join("; "));
     }
     Ok(removed)
 }
@@ -155,6 +177,7 @@ mod tests {
         fs::create_dir_all(&recordings).unwrap();
         let current = recordings.join("current.wav");
         let old = recordings.join("old.wav");
+        fs::create_dir_all(recordings.join("not-a-file.wav")).unwrap();
         fs::write(&current, b"synthetic").unwrap();
         fs::write(&old, b"synthetic").unwrap();
         let old_time = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);

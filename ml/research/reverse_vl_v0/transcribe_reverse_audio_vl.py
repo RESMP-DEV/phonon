@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -104,12 +105,31 @@ def main() -> None:
     parser.add_argument("--audio-root", default="~/aqua-training-data")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--prompt-id", default="prose_dictation_v1")
+    parser.add_argument(
+        "--prompt-file",
+        type=Path,
+        default=None,
+        help=(
+            "read the system prompt from a controlled-storage file instead of the\n"
+            "committed registry; used for personal history cards that must never\n"
+            "be committed"
+        ),
+    )
     parser.add_argument("--history-manifest", type=Path, default=None)
     parser.add_argument("--history-count", type=int, default=2)
     args = parser.parse_args()
     get_prompt(args.prompt_id)
+    # A prompt file is a fully rendered prompt; it wins over per-row retrieval
+    # so a fixed user-history card needs no retrieval query and no oracle text.
+    dynamic_prompt = (
+        args.prompt_id in DYNAMIC_HISTORY_PROMPT_IDS and args.prompt_file is None
+    )
+    fixed_prompt: str | None = None
+    fixed_prompt_sha256: str | None = None
+    if args.prompt_file is not None:
+        fixed_prompt = args.prompt_file.read_text()
+        fixed_prompt_sha256 = hashlib.sha256(fixed_prompt.encode()).hexdigest()
     history_pool: list[dict[str, object]] = []
-    dynamic_prompt = args.prompt_id in DYNAMIC_HISTORY_PROMPT_IDS
     if dynamic_prompt:
         if args.history_manifest is None:
             raise RuntimeError(
@@ -154,6 +174,10 @@ def main() -> None:
                 system_prompt = render_history_prompt(contract, prompt_id=args.prompt_id)
                 dynamic_hash = history_prompt_sha256(contract, prompt_id=args.prompt_id)
                 history_audio = contract["history_audio"]
+            elif fixed_prompt is not None:
+                system_prompt = fixed_prompt
+                dynamic_hash = fixed_prompt_sha256
+                history_audio = []
             else:
                 system_prompt = get_prompt(args.prompt_id)
             t0 = time.time()
@@ -172,7 +196,8 @@ def main() -> None:
                 "dur": row.get("dur", 0),
                 "gen_s": round(time.time() - t0, 2),
                 "prompt_id": args.prompt_id,
-                "prompt_sha256": prompt_sha256(args.prompt_id),
+                "prompt_sha256": fixed_prompt_sha256 or prompt_sha256(args.prompt_id),
+                "prompt_file": None if args.prompt_file is None else str(args.prompt_file),
                 "dynamic_prompt_sha256": dynamic_hash,
                 "history_audio": history_audio,
             }

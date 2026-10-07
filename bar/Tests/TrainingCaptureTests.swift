@@ -65,6 +65,20 @@ final class TrainingCaptureTests: XCTestCase {
         XCTAssertFalse(store.settings.screenImageTrainingAllowed)
     }
 
+    @MainActor
+    func testTurningOffScreenImageConsentRequestsImmediateRevocation() throws {
+        let store = NativeAppStore(supportDirectory: directory)
+        var revocations = 0
+        store.onScreenImageConsentRevoked = { revocations += 1 }
+
+        store.setTrainingCapture(enabled: true, includesScreenImages: true)
+        XCTAssertEqual(revocations, 0)
+        store.setTrainingCapture(enabled: true, includesScreenImages: false)
+        XCTAssertEqual(revocations, 1)
+        store.setTrainingCapture(enabled: false, includesScreenImages: false)
+        XCTAssertEqual(revocations, 1)
+    }
+
     func testAttachmentPolicyKeepsSuccessfulCandidateButNotFailedCandidateWithoutHistory() {
         XCTAssertTrue(
             TrainingRetentionPolicy.shouldKeepCandidate(
@@ -115,6 +129,12 @@ final class TrainingCaptureTests: XCTestCase {
         XCTAssertEqual(TrainingScreenshotAttacher.expiryArguments(nowUnixMs: nil), [
             "corpus", "expire-screenshots",
         ])
+        XCTAssertEqual(TrainingScreenshotAttacher.revocationArguments(), [
+            "corpus", "revoke-screenshots",
+        ])
+        XCTAssertEqual(
+            TrainingScreenshotAttacher.retentionArguments(audioPath: "/tmp/fake/audio.wav"),
+            ["corpus", "retain-recording", "--audio-path", "/tmp/fake/audio.wav"])
     }
 
     func testSuccessfulAttachCleansItsUniqueStagedDirectory() async throws {
@@ -191,6 +211,62 @@ final class TrainingCaptureTests: XCTestCase {
             XCTAssertEqual(error.domain, "PhononTrainingCapture")
             XCTAssertEqual(error.code, 4)
         }
+    }
+
+    func testRevocationRunsImmediateCLICommand() async throws {
+        let argsFile = directory.appendingPathComponent("revocation-arguments.txt")
+        let fakePhonon = try fakePhonon(exitStatus: 0, argumentsFile: argsFile)
+        let attacher = TrainingScreenshotAttacher(
+            configuration: .init(
+                phononBinary: fakePhonon.path,
+                stagingRoot: directory.appendingPathComponent("unused"),
+                permissionPreflight: { true }))
+
+        try await attacher.revoke()
+
+        XCTAssertEqual(
+            try String(contentsOf: argsFile, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .map(String.init),
+            ["corpus", "revoke-screenshots"])
+    }
+
+    func testExplicitRetentionRunsCLICommand() async throws {
+        let argsFile = directory.appendingPathComponent("retention-arguments.txt")
+        let fakePhonon = try fakePhonon(exitStatus: 0, argumentsFile: argsFile)
+        let attacher = TrainingScreenshotAttacher(
+            configuration: .init(
+                phononBinary: fakePhonon.path,
+                stagingRoot: directory.appendingPathComponent("unused"),
+                permissionPreflight: { true }))
+
+        try await attacher.retain(audioPath: "/tmp/fake-corpus/audio.wav")
+
+        XCTAssertEqual(
+            try String(contentsOf: argsFile, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .map(String.init),
+            [
+                "corpus", "retain-recording", "--audio-path",
+                "/tmp/fake-corpus/audio.wav",
+            ])
+    }
+
+    func testAbandonedStagingRootsAreRemovedWithoutTouchingUnrelatedFiles() throws {
+        let parent = directory.appendingPathComponent("staging-parent", isDirectory: true)
+        let current = parent.appendingPathComponent("phonon-screen-training-1", isDirectory: true)
+        let abandoned = parent.appendingPathComponent("phonon-screen-training-2", isDirectory: true)
+        let unrelated = parent.appendingPathComponent("unrelated", isDirectory: true)
+        for url in [current, abandoned, unrelated] {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+
+        let removed = TrainingScreenshotAttacher.removeStagingRoots(in: parent)
+
+        XCTAssertEqual(removed.sorted(), [
+            "phonon-screen-training-1", "phonon-screen-training-2",
+        ])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
     }
 
     func testLargeStandardErrorOutputCannotDeadlockExpiry() async throws {

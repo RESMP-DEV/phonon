@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DATA_SCHEMA_VERSION: u32 = 1;
+const SETTINGS_SCHEMA_VERSION: u32 = 2;
 pub const TRAINING_CAPTURE_CONSENT_VERSION: u32 = 1;
 pub const SCREENSHOT_FILE_NAME: &str = "screenshot.png";
 pub const SCREENSHOT_MANIFEST_FILE_NAME: &str = "screenshot.json";
@@ -455,8 +456,17 @@ pub struct RecordingMetadata {
     pub screen_context_terms: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llm: Option<LlmMetadata>,
+    /// True between native registration and an explicit retention decision.
+    /// It lets the next launch distinguish a crash from a previously accepted
+    /// recording whose screenshot later expired or was revoked.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retention_pending: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_image: Option<ScreenImageCapture>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl RecordingMetadata {
@@ -477,6 +487,7 @@ impl RecordingMetadata {
             dictionary_corrections: Vec::new(),
             screen_context_terms: Vec::new(),
             llm: None,
+            retention_pending: false,
             screen_image: None,
         }
     }
@@ -490,48 +501,98 @@ pub struct UsageStats {
     pub dictionary_fixes: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SettingsFile {
     pub schema_version: u32,
-    #[serde(default = "default_true")]
     pub streaming: bool,
-    #[serde(default = "default_true")]
     pub local_history: bool,
-    #[serde(default = "default_true")]
     pub screen_context: bool,
-    #[serde(default = "default_microphone_priority")]
     pub microphone_priority: Vec<String>,
-    #[serde(default = "default_true")]
     pub instant_mic: bool,
-    #[serde(default = "default_shortcut_mode")]
     pub shortcut_mode: String,
     /// Bundle IDs of competing dictation apps the owner told the native app not
     /// to ask about again. Owned by the Swift bar; kept here so a rewrite of
     /// the file by the CLI does not drop it.
-    #[serde(default)]
     pub competitor_quit_muted: Vec<String>,
     /// Put `profile/user.md` and `profile/vocab.md` in the correction prompt.
-    #[serde(default = "default_profile_prefix")]
     pub profile_prefix: bool,
-    #[serde(default)]
     pub training_capture_enabled: bool,
-    #[serde(default)]
     pub include_screen_images: bool,
-    #[serde(default = "default_screenshot_retention_seconds")]
     pub screenshot_retention_seconds: u64,
     /// Owned by the native bar. Preserve it on a CLI settings rewrite so an
     /// already-given screenshot consent is not silently invalidated.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub training_capture_consented_at_unix_ms: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct SettingsFileRecord {
+    #[serde(default)]
+    schema_version: Option<u32>,
+    #[serde(default)]
+    streaming: Option<bool>,
+    #[serde(default)]
+    local_history: Option<bool>,
+    #[serde(default)]
+    screen_context: Option<bool>,
+    #[serde(default)]
+    microphone_priority: Option<Vec<String>>,
+    #[serde(default)]
+    instant_mic: Option<bool>,
+    #[serde(default)]
+    shortcut_mode: Option<String>,
+    #[serde(default)]
+    competitor_quit_muted: Option<Vec<String>>,
+    #[serde(default)]
+    profile_prefix: Option<bool>,
+    #[serde(default)]
+    training_capture_enabled: Option<bool>,
+    #[serde(default)]
+    include_screen_images: Option<bool>,
+    #[serde(default)]
+    screenshot_retention_seconds: Option<u64>,
+    #[serde(default)]
+    training_capture_consented_at_unix_ms: Option<Option<u64>>,
+}
+
+impl<'de> Deserialize<'de> for SettingsFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let record = SettingsFileRecord::deserialize(deserializer)?;
+        let schema_version = record.schema_version.unwrap_or(1);
+        let legacy_privacy_default = schema_version < SETTINGS_SCHEMA_VERSION;
+        Ok(Self {
+            schema_version,
+            streaming: record.streaming.unwrap_or(true),
+            local_history: record.local_history.unwrap_or(legacy_privacy_default),
+            screen_context: record.screen_context.unwrap_or(legacy_privacy_default),
+            microphone_priority: record
+                .microphone_priority
+                .unwrap_or_else(default_microphone_priority),
+            instant_mic: record.instant_mic.unwrap_or(true),
+            shortcut_mode: record.shortcut_mode.unwrap_or_else(default_shortcut_mode),
+            competitor_quit_muted: record.competitor_quit_muted.unwrap_or_default(),
+            profile_prefix: record.profile_prefix.unwrap_or_default(),
+            training_capture_enabled: record.training_capture_enabled.unwrap_or(false),
+            include_screen_images: record.include_screen_images.unwrap_or(false),
+            screenshot_retention_seconds: record
+                .screenshot_retention_seconds
+                .unwrap_or(DEFAULT_SCREENSHOT_RETENTION_SECONDS),
+            training_capture_consented_at_unix_ms: record
+                .training_capture_consented_at_unix_ms
+                .unwrap_or(None),
+        })
+    }
 }
 
 impl Default for SettingsFile {
     fn default() -> Self {
         Self {
-            schema_version: DATA_SCHEMA_VERSION,
+            schema_version: SETTINGS_SCHEMA_VERSION,
             streaming: true,
-            local_history: true,
-            screen_context: true,
+            local_history: false,
+            screen_context: false,
             microphone_priority: default_microphone_priority(),
             instant_mic: true,
             shortcut_mode: default_shortcut_mode(),
@@ -556,14 +617,6 @@ fn default_profile_prefix() -> bool {
     DEFAULT_PROFILE_PREFIX
 }
 
-fn default_screenshot_retention_seconds() -> u64 {
-    DEFAULT_SCREENSHOT_RETENTION_SECONDS
-}
-
-fn default_true() -> bool {
-    true
-}
-
 fn default_microphone_priority() -> Vec<String> {
     Vec::new()
 }
@@ -584,14 +637,12 @@ impl SettingsFile {
     }
 
     pub fn load_or_create() -> Result<Self> {
-        let path = settings_path()?;
+        Self::load_or_create_at(settings_path()?)
+    }
+
+    pub fn load_or_create_at(path: PathBuf) -> Result<Self> {
         if path.is_file() {
-            let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-            let mut settings: Self = serde_json::from_slice(&bytes)
-                .with_context(|| format!("parse {}", path.display()))?;
-            settings.schema_version = DATA_SCHEMA_VERSION;
-            write_json_atomic(&path, &settings)?;
-            return Ok(settings);
+            return Self::load_at(path);
         }
         let settings = Self::default();
         write_json_atomic(&path, &settings)?;
@@ -760,6 +811,7 @@ pub fn register_recording(audio_path: &Path, source: &str) -> Result<RecordingMe
         .unwrap_or("audio.wav")
         .to_string();
     let mut metadata = RecordingMetadata::new(id, source, audio_file);
+    metadata.retention_pending = source == "bar";
     metadata.audio_duration_ms = wav_duration_ms(audio_path).ok();
     save_recording(&metadata)?;
     Ok(metadata)
@@ -863,6 +915,24 @@ pub fn set_intended_transcript(id: &str, intended: &str) -> Result<RecordingMeta
     Ok(metadata)
 }
 
+pub fn retain_recording(audio_path: &Path) -> Result<RecordingMetadata> {
+    retain_recording_at(&app_support_dir()?, audio_path)
+}
+
+pub fn retain_recording_at(app_support: &Path, audio_path: &Path) -> Result<RecordingMetadata> {
+    let parent = audio_path
+        .parent()
+        .with_context(|| format!("audio path has no parent: {}", audio_path.display()))?;
+    let id = parent
+        .file_name()
+        .and_then(|value| value.to_str())
+        .context("recording directory has no UTF-8 id")?;
+    update_recording_at(app_support, id, |recording| {
+        recording.retention_pending = false;
+        Ok(())
+    })
+}
+
 pub fn update_recording(
     id: &str,
     update: impl FnOnce(&mut RecordingMetadata) -> Result<()>,
@@ -925,6 +995,7 @@ fn register_or_load_recording_at(
         .unwrap_or("audio.wav")
         .to_string();
     let mut metadata = RecordingMetadata::new(id.to_string(), source, audio_file);
+    metadata.retention_pending = source == "bar";
     metadata.audio_duration_ms = wav_duration_ms(audio_path).ok();
     save_recording_at(app_support, &metadata)?;
     Ok(metadata)
@@ -1013,6 +1084,7 @@ pub fn register_screen_image_at(
             capability: "local_training_corpus_image".to_string(),
         };
         metadata.screen_image = Some(capture.clone());
+        metadata.retention_pending = false;
         save_screenshot_manifest(app_support, &metadata, &capture)?;
         save_recording_at(app_support, &metadata)
     });
@@ -1093,16 +1165,25 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
         };
         let metadata_path = entry.path().join("metadata.json");
         if !metadata_path.is_file() {
+            if remove_screenshot_files(&entry.path(), &mut errors) {
+                push_recording_id(&entry.path(), &mut deleted);
+            }
             continue;
         }
         let mut metadata = match load_recording_at(&metadata_path) {
             Ok(metadata) => metadata,
             Err(error) => {
                 errors.push(format!("{}: {error:#}", metadata_path.display()));
+                if remove_screenshot_files(&entry.path(), &mut errors) {
+                    push_recording_id(&entry.path(), &mut deleted);
+                }
                 continue;
             }
         };
         let Some(capture) = metadata.screen_image.clone() else {
+            if remove_screenshot_files(&entry.path(), &mut errors) {
+                push_recording_id(&entry.path(), &mut deleted);
+            }
             continue;
         };
         if capture.deletion_deadline_unix_ms > now_unix_ms {
@@ -1142,6 +1223,119 @@ pub fn delete_expired_screenshots_at(app_support: &Path, now_unix_ms: u128) -> R
         );
     }
     Ok(deleted)
+}
+
+fn remove_screenshot_files(directory: &Path, errors: &mut Vec<String>) -> bool {
+    let image_path = directory.join(SCREENSHOT_FILE_NAME);
+    let manifest_path = screenshot_manifest_path(directory);
+    let temporary_prefix = format!("{SCREENSHOT_FILE_NAME}.tmp-");
+    let mut removed = false;
+    let mut failed = false;
+    for path in [&image_path, &manifest_path] {
+        match fs::remove_file(path) {
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                errors.push(format!("delete {}: {error:#}", path.display()));
+                failed = true;
+            }
+        }
+    }
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if !name.starts_with(&temporary_prefix) {
+                continue;
+            }
+            match fs::remove_file(entry.path()) {
+                Ok(()) => removed = true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    errors.push(format!("delete {}: {error:#}", entry.path().display()));
+                    failed = true;
+                }
+            }
+        }
+    }
+    removed && !failed
+}
+
+fn has_screenshot_artifacts(directory: &Path) -> bool {
+    if directory.join(SCREENSHOT_FILE_NAME).exists() || screenshot_manifest_path(directory).exists()
+    {
+        return true;
+    }
+    let temporary_prefix = format!("{SCREENSHOT_FILE_NAME}.tmp-");
+    fs::read_dir(directory).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(&temporary_prefix))
+        })
+    })
+}
+
+fn push_recording_id(directory: &Path, values: &mut Vec<String>) {
+    if let Some(id) = directory.file_name().and_then(|value| value.to_str()) {
+        values.push(id.to_string());
+    }
+}
+
+pub fn revoke_screenshots() -> Result<Vec<String>> {
+    revoke_screenshots_at(&app_support_dir()?)
+}
+
+pub fn revoke_screenshots_at(app_support: &Path) -> Result<Vec<String>> {
+    let corpus = corpus_dir_at(app_support);
+    if !corpus.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut revoked = Vec::new();
+    let mut errors = Vec::new();
+    for entry in fs::read_dir(&corpus).with_context(|| format!("read {}", corpus.display()))? {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push(format!("read corpus entry: {error:#}"));
+                continue;
+            }
+        };
+        let directory = entry.path();
+        let metadata_path = directory.join("metadata.json");
+        let mut metadata = load_recording_at(&metadata_path).ok();
+        let had_registered_image = metadata
+            .as_ref()
+            .is_some_and(|value| value.screen_image.is_some());
+        if !had_registered_image && !has_screenshot_artifacts(&directory) {
+            continue;
+        }
+        let removal_failed = !remove_screenshot_files(&directory, &mut errors);
+        if removal_failed {
+            continue;
+        }
+        if let Some(value) = metadata.as_mut() {
+            value.screen_image = None;
+            if let Err(error) = save_recording_at(app_support, value) {
+                errors.push(format!(
+                    "screenshot revoked, but metadata update failed for {}: {error:#}",
+                    value.id
+                ));
+                continue;
+            }
+        }
+        if let Some(id) = directory.file_name().and_then(|value| value.to_str()) {
+            revoked.push(id.to_string());
+        }
+    }
+    if !errors.is_empty() {
+        bail!(
+            "screenshot revocation completed with errors: {}",
+            errors.join("; ")
+        );
+    }
+    Ok(revoked)
 }
 
 pub fn extract_transcript_payload(output: &str) -> &str {
@@ -1891,6 +2085,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(saved.screen_image.unwrap().sha256, capture.sha256);
+        assert!(!saved.retention_pending);
         let sidecar: serde_json::Value = serde_json::from_slice(
             &fs::read(
                 app_support
@@ -1922,6 +2117,26 @@ mod tests {
     }
 
     #[test]
+    fn native_registration_is_pending_until_an_explicit_retention_decision() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, _image_path, _image) = attach_fixture(&app_support);
+
+        let pending = super::register_or_load_recording_at(&app_support, &audio, "bar").unwrap();
+        assert!(pending.retention_pending);
+        let retained = super::retain_recording_at(&app_support, &audio).unwrap();
+        assert!(!retained.retention_pending);
+        let reloaded = super::load_recording_at(
+            &app_support
+                .join("Corpus")
+                .join("session-1")
+                .join("metadata.json"),
+        )
+        .unwrap();
+        assert!(!reloaded.retention_pending);
+    }
+
+    #[test]
     fn screen_capture_rejects_replacement_without_orphan_sidecar() {
         let support = tempfile::tempdir().unwrap();
         let app_support = support.path().to_path_buf();
@@ -1950,6 +2165,48 @@ mod tests {
         assert!(!settings.include_screen_images);
         assert_eq!(settings.screenshot_retention_seconds, 24 * 60 * 60);
         assert_eq!(settings.training_capture_consented_at_unix_ms, None);
+    }
+
+    #[test]
+    fn fresh_rust_settings_default_local_history_and_screen_context_off() {
+        let settings = SettingsFile::default();
+        assert!(!settings.local_history);
+        assert!(!settings.screen_context);
+        assert!(!settings.training_capture_enabled);
+        assert!(!settings.include_screen_images);
+    }
+
+    #[test]
+    fn settings_privacy_defaults_are_schema_aware() {
+        let schema_one: SettingsFile = serde_json::from_str(r#"{"schema_version":1}"#).unwrap();
+        assert!(schema_one.local_history);
+        assert!(schema_one.screen_context);
+
+        let schema_two: SettingsFile = serde_json::from_str(r#"{"schema_version":2}"#).unwrap();
+        assert!(!schema_two.local_history);
+        assert!(!schema_two.screen_context);
+    }
+
+    #[test]
+    fn load_or_create_creates_schema_two_without_rewriting_existing_settings() {
+        let missing = tempfile::tempdir().unwrap();
+        let missing_path = missing.path().join("settings.json");
+        let created = SettingsFile::load_or_create_at(missing_path.clone()).unwrap();
+        assert_eq!(created.schema_version, 2);
+        assert!(!created.local_history);
+        assert!(!created.screen_context);
+
+        let existing = tempfile::tempdir().unwrap();
+        let existing_path = existing.path().join("settings.json");
+        let raw = r#"{"schema_version":2,"local_history":false,"screen_context":false}"#;
+        fs::write(&existing_path, raw).unwrap();
+        let loaded = SettingsFile::load_or_create_at(existing_path.clone()).unwrap();
+        assert_eq!(loaded.schema_version, 2);
+        assert_eq!(
+            fs::read_to_string(existing_path).unwrap(),
+            raw,
+            "the CLI must not rewrite native settings during read-only loading"
+        );
     }
 
     #[test]
@@ -1998,6 +2255,76 @@ mod tests {
         assert!(!recording.join(SCREENSHOT_FILE_NAME).exists());
         assert!(!recording
             .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+            .exists());
+    }
+
+    #[test]
+    fn revoked_screenshots_are_removed_even_without_readable_metadata() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let (_image_dir, audio, image_path, _image) = attach_fixture(&app_support);
+        register_screen_image_at(&app_support, &audio, &image_path, capture_request(), "bar")
+            .unwrap();
+        let orphan = app_support.join("Corpus").join("crash-orphan");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join(SCREENSHOT_FILE_NAME), b"privacy fixture").unwrap();
+        fs::write(
+            orphan.join(format!("{SCREENSHOT_FILE_NAME}.tmp-1-2")),
+            b"privacy fixture",
+        )
+        .unwrap();
+        fs::write(
+            orphan.join(super::SCREENSHOT_MANIFEST_FILE_NAME),
+            r#"{"schema_version":1}"#,
+        )
+        .unwrap();
+
+        let mut revoked = super::revoke_screenshots_at(&app_support).unwrap();
+        revoked.sort();
+
+        assert_eq!(revoked, ["crash-orphan", "session-1"]);
+        for id in ["crash-orphan", "session-1"] {
+            let recording = app_support.join("Corpus").join(id);
+            assert!(!recording.join(SCREENSHOT_FILE_NAME).exists());
+            assert!(!recording
+                .join(super::SCREENSHOT_MANIFEST_FILE_NAME)
+                .exists());
+            assert!(!recording
+                .join(format!("{SCREENSHOT_FILE_NAME}.tmp-1-2"))
+                .exists());
+        }
+        assert!(app_support
+            .join("Corpus")
+            .join("session-1")
+            .join("audio.wav")
+            .is_file());
+    }
+
+    #[test]
+    fn expiry_removes_unindexed_screenshot_sidecars() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let orphan = app_support.join("Corpus").join("interrupted");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join(SCREENSHOT_FILE_NAME), b"privacy fixture").unwrap();
+        fs::write(
+            orphan.join(format!("{SCREENSHOT_FILE_NAME}.tmp-1-2")),
+            b"privacy fixture",
+        )
+        .unwrap();
+        fs::write(
+            orphan.join(super::SCREENSHOT_MANIFEST_FILE_NAME),
+            r#"{"schema_version":1}"#,
+        )
+        .unwrap();
+
+        let deleted = super::delete_expired_screenshots_at(&app_support, 0).unwrap();
+
+        assert_eq!(deleted, ["interrupted"]);
+        assert!(!orphan.join(SCREENSHOT_FILE_NAME).exists());
+        assert!(!orphan.join(super::SCREENSHOT_MANIFEST_FILE_NAME).exists());
+        assert!(!orphan
+            .join(format!("{SCREENSHOT_FILE_NAME}.tmp-1-2"))
             .exists());
     }
 

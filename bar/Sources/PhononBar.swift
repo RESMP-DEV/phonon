@@ -441,7 +441,7 @@ struct BarSettings: Decodable {
     }
 
     static func screenContextEnabled() -> Bool {
-        load()?.screenContext ?? true
+        load()?.screenContext ?? false
     }
 
     static func microphonePriorities() -> [String] {
@@ -1670,6 +1670,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         appStore.onPermissionsRefresh = { [weak self] in
             self?.refreshPermissionDependentServices()
         }
+        appStore.onScreenImageConsentRevoked = { [weak self] in
+            self?.revokeScreenshotsAsynchronously()
+        }
         state.streamingPreviewEnabled = appStore.settings.streaming
         offerBackupRestoreIfNeeded()
         setupPanel()
@@ -1725,6 +1728,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         promptPermissions()
+        appStore.reapInterruptedRecordings()
+        TrainingScreenshotAttacher.removeStagingRoots()
+        if !appStore.settings.screenImageTrainingAllowed {
+            revokeScreenshotsAsynchronously()
+        }
+        expireScreenshotsAsynchronously()
         showMainWindow()
         showModelStatus()
         startEngine()
@@ -1744,7 +1753,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         competitors.subscribeToLaunches()
         competitors.check(trigger: "launch")
-        expireScreenshotsAsynchronously()
     }
 
     /// The dictation-start scan defers its prompt; show it once the pipeline is
@@ -2481,13 +2489,28 @@ final class AppController: NSObject, NSApplicationDelegate {
             activeWavPath = nil
             appStore.reloadAll()
         }
-        guard
-            !TrainingRetentionPolicy.shouldKeepCandidate(
-                localHistoryEnabled: appStore.settings.localHistory,
-                attachmentSucceeded: forceKeepCandidate),
-            let activeWavPath
-        else { return }
+        let shouldKeepCandidate = TrainingRetentionPolicy.shouldKeepCandidate(
+            localHistoryEnabled: appStore.settings.localHistory,
+            attachmentSucceeded: forceKeepCandidate)
+        guard let activeWavPath else { return }
+        if shouldKeepCandidate {
+            retainRecordingAsynchronously(activeWavPath)
+            return
+        }
         MicRecorder.discardWav(at: activeWavPath)
+    }
+
+    private func retainRecordingAsynchronously(_ audioPath: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.trainingScreenshotAttacher.retain(audioPath: audioPath)
+            } catch {
+                NSLog("phonon recording retention failed: \(error.localizedDescription)")
+                self.appStore.lastError =
+                    "Could not mark a recording as retained; it will be treated as interrupted."
+            }
+        }
     }
 
     /// Called only after final text was already inserted. The attachment and
@@ -2547,15 +2570,20 @@ final class AppController: NSObject, NSApplicationDelegate {
                 attachmentSucceeded: attachmentSucceeded)
             {
                 MicRecorder.discardWav(at: audioPath)
+            } else {
+                do {
+                    try await self.trainingScreenshotAttacher.retain(audioPath: audioPath)
+                } catch {
+                    NSLog("phonon recording retention failed: \(error.localizedDescription)")
+                    self.appStore.lastError =
+                        "Could not mark a recording as retained; it will be treated as interrupted."
+                }
             }
             self.appStore.reloadAll()
         }
     }
 
     private func expireScreenshotsAsynchronously() {
-        guard appStore.settings.trainingCaptureEnabled
-            || appStore.settings.includeScreenImages
-        else { return }
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -2563,6 +2591,20 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 NSLog("phonon screenshot expiry failed: \(error.localizedDescription)")
                 self.appStore.lastError = "Screen-image retention expiry failed; see Phonon logs."
+            }
+        }
+    }
+
+    private func revokeScreenshotsAsynchronously() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.trainingScreenshotAttacher.revoke()
+                self.appStore.reloadAll()
+            } catch {
+                NSLog("phonon screenshot revocation failed: \(error.localizedDescription)")
+                self.appStore.lastError =
+                    "Screen-image revocation failed; see Phonon logs."
             }
         }
     }

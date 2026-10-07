@@ -20,6 +20,7 @@ mod manifest;
 mod paths;
 mod pipeline;
 mod polish;
+mod retention;
 mod smoke;
 
 #[cfg(target_os = "linux")]

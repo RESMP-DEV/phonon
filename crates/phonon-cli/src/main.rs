@@ -160,6 +160,12 @@ enum CorpusCommands {
     Show { id: String },
     /// Set the ground-truth/intended transcript for a recording.
     SetIntended { id: String, text: String },
+    /// Mark one native recording as intentionally retained.
+    RetainRecording {
+        /// Paired WAV inside the Phonon corpus.
+        #[arg(long)]
+        audio_path: PathBuf,
+    },
     /// Copy legacy Phonon WAV-backed History.json rows into the paired corpus.
     MigrateLegacy,
     /// Delete one recording directory and its paired WAV/metadata.
@@ -211,6 +217,8 @@ enum CorpusCommands {
         #[arg(long)]
         now_ms: Option<u64>,
     },
+    /// Remove every retained or unindexed screenshot immediately.
+    RevokeScreenshots,
     /// Run the warmed correction path over labeled corpus recordings (and
     /// fixture files), reporting text and timing per case. Prompt options
     /// come from settings.json plus PHONON_PROFILE_* overrides.
@@ -339,6 +347,7 @@ fn run_corpus(command: CorpusCommands) -> Result<()> {
         CorpusCommands::List { search, json } => data_cmd::list_corpus(search.as_deref(), json),
         CorpusCommands::Show { id } => data_cmd::show_recording(&id),
         CorpusCommands::SetIntended { id, text } => data_cmd::set_intended(&id, &text),
+        CorpusCommands::RetainRecording { audio_path } => data_cmd::retain_recording(&audio_path),
         CorpusCommands::MigrateLegacy => data_cmd::migrate_legacy_history(),
         CorpusCommands::Delete { id } => data_cmd::delete_corpus_recording(&id),
         CorpusCommands::AttachScreenshot {
@@ -380,6 +389,7 @@ fn run_corpus(command: CorpusCommands) -> Result<()> {
             json,
         ),
         CorpusCommands::ExpireScreenshots { now_ms } => data_cmd::expire_screenshots(now_ms),
+        CorpusCommands::RevokeScreenshots => data_cmd::revoke_screenshots(),
         CorpusCommands::PolishEval {
             fixtures,
             unlabeled,

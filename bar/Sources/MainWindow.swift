@@ -506,7 +506,7 @@ struct SettingsView: View {
                     Divider()
                     ToggleRow(
                         title: "Screen context",
-                        detail: "Run local OCR and use only relevant dictionary terms.",
+                        detail: "Read every display with local OCR for relevant terms.",
                         isOn: settingBinding(\.screenContext)
                     )
                     Divider()
@@ -784,9 +784,9 @@ struct PrivacyChoiceView: View {
                 )
                 Divider()
                 ToggleRow(
-                    title: "Read the active window",
+                    title: "Read every display",
                     detail:
-                        "Run local OCR on the frontmost window to spell technical terms correctly. Nothing leaves the Mac.",
+                        "Run local OCR on each display to spell technical terms correctly. Nothing leaves the Mac.",
                     isOn: $screenContext
                 )
             }

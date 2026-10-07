@@ -52,6 +52,13 @@ phonon-win.exe fetch     # download and verify, then stop
 phonon-win.exe selftest  # one real pass through both models; the release gate
 ```
 
+Dictation audio is transient by default: Phonon deletes the WAV after each
+pass. To retain Windows recordings locally, create
+`%LOCALAPPDATA%\Phonon\settings.json` before dictating with
+`{"retain_audio":true,"audio_retention_days":7}`. Phonon checks this policy at
+startup and after every pass, and malformed settings fail closed by deleting
+recordings before reporting the recovery error.
+
 Everything lives in `%LOCALAPPDATA%\Phonon`. Delete that folder to start over.
 
 ## Pipeline
@@ -144,7 +151,7 @@ after the models rather than the app, and no uninstaller touches them.
 ## Local data and correction loop
 
 Nothing is retained until you say so. On first launch the app asks once whether
-to keep local history and whether to use active-window context; both start off,
+to keep local history and read every visible display for context; both start off,
 and declining leaves dictation fully working. Settings carries the retention
 window (keep until deleted, or 7 / 30 / 90 days) and a clear-everything button.
 

@@ -116,6 +116,68 @@ final class AppDataTests: XCTestCase {
         XCTAssertTrue(store.history.isEmpty)
     }
 
+    func testInterruptedRecordingWithoutMetadataIsReapedAtLaunch() throws {
+        let interrupted = directory.appendingPathComponent("Corpus/interrupted", isDirectory: true)
+        try FileManager.default.createDirectory(at: interrupted, withIntermediateDirectories: true)
+        try Data([0x01]).write(to: interrupted.appendingPathComponent("audio.wav"))
+        let indexed = directory.appendingPathComponent("Corpus/indexed", isDirectory: true)
+        try FileManager.default.createDirectory(at: indexed, withIntermediateDirectories: true)
+        try Data(
+            #"{"id":"indexed","created_at_unix_ms":1,"raw_transcript":"kept"}"#.utf8
+        ).write(to: indexed.appendingPathComponent("metadata.json"))
+
+        let store = NativeAppStore(supportDirectory: directory)
+        store.updateSettings { $0.localHistory = true }
+        let removed = store.reapInterruptedRecordings()
+
+        XCTAssertEqual(removed, ["interrupted"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: interrupted.path))
+        XCTAssertTrue(store.history.map(\.id).contains("indexed"))
+    }
+
+    func testHistoryOffReapsOnlyIndexedCandidatesStillPendingRetention() throws {
+        try Data(
+            #"{"schema_version":2,"local_history":false,"screen_context":false}"#.utf8
+        ).write(to: directory.appendingPathComponent("settings.json"))
+        let interrupted = directory.appendingPathComponent("Corpus/candidate", isDirectory: true)
+        try FileManager.default.createDirectory(at: interrupted, withIntermediateDirectories: true)
+        try Data([0x01]).write(to: interrupted.appendingPathComponent("audio.wav"))
+        try Data(
+            #"{"id":"candidate","created_at_unix_ms":1,"raw_transcript":"synthetic","retention_pending":true}"#
+                .utf8
+        ).write(to: interrupted.appendingPathComponent("metadata.json"))
+        let finalized = directory.appendingPathComponent("Corpus/finalized", isDirectory: true)
+        try FileManager.default.createDirectory(at: finalized, withIntermediateDirectories: true)
+        try Data(
+            #"{"id":"finalized","created_at_unix_ms":1,"raw_transcript":"synthetic","retention_pending":false}"#
+                .utf8
+        ).write(to: finalized.appendingPathComponent("metadata.json"))
+
+        let store = NativeAppStore(supportDirectory: directory)
+        let removed = store.reapInterruptedRecordings()
+
+        XCTAssertEqual(removed, ["candidate"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: interrupted.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: finalized.path))
+    }
+
+    func testMalformedSettingsDoNotAuthorizePendingRecordingDeletion() throws {
+        try Data(#"{"schema_version":"broken"}"#.utf8)
+            .write(to: directory.appendingPathComponent("settings.json"))
+        let pending = directory.appendingPathComponent("Corpus/pending", isDirectory: true)
+        try FileManager.default.createDirectory(at: pending, withIntermediateDirectories: true)
+        try Data(
+            #"{"id":"pending","created_at_unix_ms":1,"raw_transcript":"synthetic","retention_pending":true}"#
+                .utf8
+        ).write(to: pending.appendingPathComponent("metadata.json"))
+
+        let store = NativeAppStore(supportDirectory: directory)
+        let removed = store.reapInterruptedRecordings()
+
+        XCTAssertTrue(removed.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.path))
+    }
+
     func testDictionaryAddEditAndRemoveRoundTrips() throws {
         try Data(#"{"schema_version":1,"updated_at_unix_ms":1,"entries":[]}"#.utf8)
             .write(to: directory.appendingPathComponent("dictionary.json"))

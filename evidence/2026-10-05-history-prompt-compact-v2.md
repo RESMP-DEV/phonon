@@ -137,3 +137,52 @@ control scored 0.208470465962238 fair WER, 0.24340309372156507 strict WER, and
 0.310 exact. Its hypothesis SHA-256 is
 `d55d7bbf7cee0383262ae6d34fd6aa71b7efcbb472f6e1c0d43f071f22203205`; neither
 soup is promoted.
+
+## Optimized-runtime parity
+
+On 2026-10-06, the full compact-history adapter was re-evaluated with Torch
+`2.14.0+cu130`, FlashAttention `2.8.3.post1`, and causal-conv1d `1.7.0`. It
+matched every reference aggregate metric exactly:
+
+| Split | Fair WER | Strict WER | Exact | Mean generation |
+| --- | ---: | ---: | ---: | ---: |
+| Selection 500 | 0.11345920665165425 | 0.14522292993630573 | 0.350 | 0.9088 s |
+| Future 750 | 0.14445223898047468 | 0.19297487499228347 | 0.20533333333333334 | 0.9295 s |
+
+Selection hypothesis SHA-256:
+`4db68a869286f3bcbee7ca55ba1ac30daaf457fed117a5ac24949be8d653ea97`.
+Future hypothesis SHA-256:
+`b204249805221730d80902431d97405452a4f3b7278aab73d570e61c5b5cb998`.
+The canonical receipt is
+`/home/kearm/salm-lora/build/history-compact-full-epoch-v1/optimized-runtime-v1/receipt.json`.
+These generation timings are research-evaluator timings, not resident product
+protocol, macOS end-to-end, or streaming latency claims.
+
+## No-oracle self-retrieval control
+
+The oracle-free evaluator uses one resident reverse model for two passes:
+
+1. generate a draft with `prose_dictation_v1`;
+2. use that draft as the only history-retrieval query;
+3. retrieve two historical examples and generate the final transcript with
+   `prose_history_dictation_v2`.
+
+The target row's Aqua raw text and accepted text are not passed to retrieval.
+Every output records `oracle_query: false`.
+
+| Stage | Fair WER | Strict WER | Exact |
+| --- | ---: | ---: | ---: |
+| First-pass draft | 0.1268837692707431 | 0.16041856232939036 | 0.322 |
+| Second-pass self-retrieval final | 0.123592586177031 | 0.15668789808917197 | 0.324 |
+| Oracle-query history final | 0.11345920665165425 | 0.14522292993630573 | 0.350 |
+
+The final hypothesis SHA-256 is
+`b0ec7f04d46a52d3d525346f5f4693e0ed62b36bde1a490486e2ddaddd998edd`; the final
+score SHA-256 is
+`f71c2f819e0886e963d010136023a1ae4ed81a25152346c3035c384fda0a3988`. Mean
+draft, retrieval, final, and total times were 0.8963 s, 0.0617 s, 0.9031 s,
+and 1.8611 s. A peer two-GPU Qwen calibration was active, so those timings are
+not an exclusive-load latency receipt. The canonical receipt is
+`/home/kearm/salm-lora/build/history-compact-full-epoch-v1/self-retrieval-v2/receipt.json`.
+The first launch failed before generation on an invalid aggregate `.eval()` call
+and is preserved under `self-retrieval-v1-launch-failed`.

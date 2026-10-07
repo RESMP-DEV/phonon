@@ -147,6 +147,10 @@
   `/home/kearm/salm-lora/build/history-compact-control-v1`.
 - Compact-history full-epoch receipt:
   `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/aqua-full-epoch-v1/receipt.json`.
+- Optimized-runtime and no-oracle self-retrieval receipts:
+  `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/optimized-runtime-v1/receipt.json`
+  and
+  `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/self-retrieval-v2/receipt.json`.
 - Promoted soup and installation receipts:
   `/home/kearm/salm-lora/build/aqua-length-bracket-v3/soup-8000-full-receipt.json`
   and

@@ -1781,6 +1781,27 @@ static full, and history full scored 0.208470465962238 fair WER,
 damages WER; the second damages all headline metrics. Neither was sent to the
 future split or promoted.
 
+The same full-history adapter later matched every reference aggregate metric
+exactly under the optimized runtime (Torch `2.14.0+cu130`, FlashAttention
+`2.8.3.post1`, and causal-conv1d `1.7.0`): selection scored 0.11345920665165425
+fair WER, 0.14522292993630573 strict WER, and 0.350 exact; future scored
+0.14445223898047468, 0.19297487499228347, and 0.20533333333333334. The receipt
+is `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/optimized-runtime-v1/receipt.json`.
+Research-evaluator mean generation was 0.9088 seconds on selection and 0.9295
+seconds on future. This proves optimized-kernel quality parity only; it is not
+a resident product-protocol or macOS end-to-end latency claim.
+
+The oracle dependency was then tested directly. A two-pass, same-adapter
+evaluator first generated a static-prompt draft, used that draft as the only
+retrieval query, and generated the final history-conditioned transcript; the
+slice row's Aqua raw text was not passed to retrieval. The draft scored
+0.1268837692707431 fair WER and the final improved to 0.123592586177031, but
+remained well behind the oracle-query result of 0.11345920665165425. Mean
+two-pass time was 1.8611 seconds while a peer calibration used both GPUs, so
+that timing is diagnostic rather than a clean latency gate. This rejects the
+current two-pass self-retrieval design for product use: the second pass helps,
+but the draft query loses too much retrieval quality and doubles generation.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

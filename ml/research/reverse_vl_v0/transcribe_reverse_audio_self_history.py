@@ -66,7 +66,7 @@ def main() -> None:
         }
 
     device = torch.device(args.device)
-    model = ReverseAudioVL.from_pretrained(device=device).eval()
+    model = ReverseAudioVL.from_pretrained(device=device)
     load_adapter(model, Path(args.adapter), rank=args.lora_rank)
     with output.open("a", encoding="utf-8") as sink:
         for index, row in enumerate(rows):

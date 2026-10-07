@@ -934,6 +934,12 @@ pub fn retain_recording_at(app_support: &Path, audio_path: &Path) -> Result<Reco
             audio_path.display()
         );
     }
+    // A keep decision is only meaningful for audio that exists. Otherwise a
+    // missing WAV would still clear `retention_pending` and suppress the
+    // launch sweep that removes an interrupted candidate.
+    if !audio_path.is_file() {
+        bail!("audio file not found: {}", audio_path.display());
+    }
     update_recording_at(app_support, id, |recording| {
         recording.retention_pending = false;
         Ok(())
@@ -2182,6 +2188,29 @@ mod tests {
             "{error:#}"
         );
         assert!(metadata.retention_pending);
+    }
+
+    #[test]
+    fn retain_recording_rejects_a_missing_audio_file() {
+        let support = tempfile::tempdir().unwrap();
+        let app_support = support.path().to_path_buf();
+        let recording = app_support.join("Corpus").join("session-1");
+        fs::create_dir_all(&recording).unwrap();
+        let mut metadata = RecordingMetadata::new("session-1".into(), "bar", "audio.wav".into());
+        // Native registration marks a recording pending until the app records a
+        // keep decision; mirror that state so the test is meaningful.
+        metadata.retention_pending = true;
+        super::save_recording_at(&app_support, &metadata).unwrap();
+
+        let error =
+            super::retain_recording_at(&app_support, &recording.join("audio.wav")).unwrap_err();
+        let reloaded = super::load_recording_at(&recording.join("metadata.json")).unwrap();
+
+        assert!(
+            error.to_string().contains("audio file not found"),
+            "{error:#}"
+        );
+        assert!(reloaded.retention_pending);
     }
 
     #[test]

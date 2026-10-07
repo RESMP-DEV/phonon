@@ -145,6 +145,9 @@
 - Compact-history pilots:
   `/home/kearm/salm-lora/build/history-compact-training-v1` and
   `/home/kearm/salm-lora/build/history-compact-control-v1`.
+- Fixed-history-card prototype receipt root:
+  `/home/kearm/salm-lora/build/history-fixed-card-v1`. The rendered card files
+  are personal data and remain on controlled storage; never commit them.
 - Compact-history full-epoch receipt:
   `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/aqua-full-epoch-v1/receipt.json`.
 - Optimized-runtime and no-oracle self-retrieval receipts:

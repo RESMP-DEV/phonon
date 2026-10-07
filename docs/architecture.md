@@ -1802,6 +1802,16 @@ that timing is diagnostic rather than a clean latency gate. This rejects the
 current two-pass self-retrieval design for product use: the second pass helps,
 but the draft query loses too much retrieval quality and doubles generation.
 
+A one-pass alternative replaces retrieval with a fixed history card: a
+deterministic quantile sample of real corrected pairs from the training
+timeline, rendered once into a system prompt. All selection and future audio IDs
+were excluded. The K8 card reaches 0.11449852762861597 fair WER, 0.14904458598726114
+strict WER, and 0.328 exact, close to the oracle 0.11345920665165425/0.14522292993630573/0.350
+result without a retrieval query. The K4 card is slightly easier to package but
+scores 0.11614411917547203/0.14895359417652412/0.336. The same K4 prompt collapses
+the installed static soup to 0.39052485709336565 fair WER, proving that the fixed-card
+prototype requires the history-trained adapter and is not a prompt-only upgrade.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

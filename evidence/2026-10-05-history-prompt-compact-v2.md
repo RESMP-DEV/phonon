@@ -186,3 +186,26 @@ not an exclusive-load latency receipt. The canonical receipt is
 `/home/kearm/salm-lora/build/history-compact-full-epoch-v1/self-retrieval-v2/receipt.json`.
 The first launch failed before generation on an invalid aggregate `.eval()` call
 and is preserved under `self-retrieval-v1-launch-failed`.
+
+## Fixed user-history card prototype
+
+To remove the retrieval query while retaining user history in one pass, a
+deterministic quantile sample of real corrected pairs from the training timeline
+was rendered once into a fixed system prompt. Selection and future audio IDs were
+excluded from the card pool. The card file remains on controlled storage because
+it contains transcript text; only its hash and aggregate scores are receipted.
+
+Three selection-500 arms used `prose_history_dictation_v2` prompt IDs with fully
+rendered prompt files:
+
+| Arm | Adapter | Fair WER | Strict WER | Exact | Mean gen |
+| --- | --- | ---: | ---: | ---: | ---: |
+| K4 fixed card | Compact-history full | 0.11614411917547203 | 0.14895359417652412 | 0.336 | 0.9141 s |
+| K8 fixed card | Compact-history full | 0.11449852762861597 | 0.14904458598726114 | 0.328 | 0.9469 s |
+| K4 fixed card | Installed static soup | 0.39052485709336565 | 0.41828935395814376 | 0.318 | 1.0478 s |
+| Oracle per-row retrieval | Compact-history full | 0.11345920665165425 | 0.14522292993630573 | 0.350 | 0.9088 s |
+| Two-pass self-retrieval | Compact-history full | 0.123592586177031 | 0.15668789808917197 | 0.324 | 1.8611 s |
+
+The K8 card is the closest one-pass, no-oracle prototype to the oracle result.
+The history adapter remains a provisional research prototype, not a promoted
+product engine. The installed soup is not usable with this history prompt.

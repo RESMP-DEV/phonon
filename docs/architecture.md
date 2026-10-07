@@ -2030,6 +2030,24 @@ a new four-trial Optuna study selected the learning rate. Trial 2 won with LR
 `d3397f013161d8d38244b3d8ef4c77b2e0395d57681830d97c4ac733b44a664c`. Full results
 are in `evidence/2026-10-07-phonon-history-sft-optuna-lr.md`.
 
+### 2026-10-07: Phonon history-prompt 2,000-step SFT study
+
+A full-length Optuna study on the history prompt pack completed three 2,000-step
+trials. Trial 0 selected learning rate `1.0231901903347211e-04` with audio fair
+WER `0.08626364108782263`, strict WER `0.11546860782529572`, exact `0.358`,
+vision WER `0.027262400605831124`, and vision exact `0.770`. Its adapter
+SHA-256 is
+`d0bd203510dae234839e2afa5fdd337ef382a5406bd9acd5b38ac0f1f38515f5`. The LoRA was
+fused into the language weights as `merged_lfm.safetensors` with SHA-256
+`e15bc9059d70f05341a3c83b82cee477f1307e82bfc1a16ca4617f452b821ae7`, merging 184
+LoRA tensors across 92 target layers with injected cross-entropy
+`0.12680479884147644`.
+
+This is the best measured audio result among vision-capable adapters, and it
+remains `0.0024` behind the audio-only GRPO adapter. The fused weights were not
+scored standalone and the future split was not scored. Receipt:
+`evidence/2026-10-07-phonon-history-sft-2000-study.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

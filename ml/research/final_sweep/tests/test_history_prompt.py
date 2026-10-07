@@ -86,3 +86,22 @@ def test_v2_history_prompt_preserves_static_prefix() -> None:
     assert module.history_prompt_sha256(
         contract, prompt_id="prose_history_dictation_v2"
     ) != module.history_prompt_sha256(contract)
+
+
+def test_explicit_query_can_replace_oracle_raw_text() -> None:
+    target = {
+        "audio": "target",
+        "raw": "unrelated oracle phrase",
+        "corrected": "must not be read",
+    }
+    pool = [
+        make_row("history", "CUDA kernel launch", "CUDA kernel launch"),
+        make_row("other", "cooking note", "cooking note"),
+    ]
+    contract = module.history_contract(
+        target,
+        pool,
+        count=1,
+        query_text="CUDA kernel launch",
+    )
+    assert contract["history_audio"] == ["history"]

@@ -78,18 +78,24 @@ def history_contract(
     *,
     count: int = 2,
     index: dict[str, object] | None = None,
+    query_text: str | None = None,
 ) -> dict[str, object]:
     """Select historical raw-to-accepted pairs without exposing target labels.
 
-    The target's raw Aqua transcript is the query. Its accepted text is never
-    read or selected. Candidates come only from the supplied training pool and
-    are excluded by audio ID.
+    The target's raw Aqua transcript is the default query. A caller may supply
+    an inference-generated draft with ``query_text`` so retrieval can run
+    without oracle text. The target's accepted text is never read or selected.
+    Candidates come only from the supplied training pool and are excluded by
+    audio ID.
     """
 
     if count < 1:
         raise ValueError("history count must be positive")
     target_audio = str(target.get("audio") or "")
-    query = tokenize(str(target.get("raw") or target.get("raw_aqua") or ""))
+    selected_query = query_text
+    if selected_query is None:
+        selected_query = str(target.get("raw") or target.get("raw_aqua") or "")
+    query = tokenize(selected_query)
     selected_index = index or build_history_index(pool)
     vectorizer = selected_index["vectorizer"]
     query_vector = vectorizer(query)

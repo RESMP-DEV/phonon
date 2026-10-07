@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 from pathlib import Path
 
@@ -89,10 +88,9 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     run(audio_command, root / "audio-eval.log")
     score_path = root / "audio-score.json"
     with score_path.open("w") as sink:
-        process = subprocess.run([str(PY), str(SCORER), str(hyps)], stdout=sink, stderr=subprocess.STDOUT, check=True, text=True)
+        subprocess.run([str(PY), str(SCORER), str(hyps)], stdout=sink, stderr=subprocess.STDOUT, check=True, text=True)
     audio = load_json(score_path)
 
-    vision_summary_path = root / "vision-summary.json"
     vision_command = [
         str(PY), str(VISION_EVAL),
         "--adapter", str(train / "cpt_adapter.safetensors"),
@@ -111,7 +109,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     trial.set_user_attr("adapter_sha256", sha256(train / "cpt_adapter.safetensors"))
     trial.set_user_attr("hyps_sha256", sha256(hyps))
     trial.set_user_attr("score_sha256", sha256(score_path))
-    trial.set_user_attr("vision_summary_sha256", sha256(vision_summary_path))
+    trial.set_user_attr("vision_summary_sha256", sha256(root / "vision-eval.json"))
     return objective_value
 
 

@@ -55,11 +55,21 @@ def main() -> None:
     model = LFM2AudioModel.from_pretrained(
         "LiquidAI/LFM2.5-Audio-1.5B", device=device, dtype=torch.bfloat16
     )
-    missing, unexpected = model.load_state_dict(load_file(str(args.merged)), strict=False)
+    target = model.state_dict()
+    merged = load_file(str(args.merged))
+    adapted = {}
+    for key, tensor in merged.items():
+        candidate = key if key in target else f"lfm.{key}"
+        if candidate in target and target[candidate].shape == tensor.shape:
+            adapted[candidate] = tensor
+    missing, unexpected = model.load_state_dict(adapted, strict=False)
+    unexpected = [k for k in unexpected if "lora_" not in k]
     if unexpected:
         raise RuntimeError(f"unexpected merged keys: {unexpected[:5]}")
-    if missing:
-        print(f"note: {len(missing)} keys absent from merged state", flush=True)
+    print(
+        f"merged weights applied: {len(adapted)}/{len(merged)} keys; unmatched={len(missing)}",
+        flush=True,
+    )
     if args.vision_rows:
         install_vision(
             model, rows_path=args.vision_rows, init_variant=args.init_variant, verbose=False

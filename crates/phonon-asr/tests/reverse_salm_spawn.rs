@@ -32,6 +32,7 @@ fn reverse_salm_real_spawn_transcribes_opt_in_wav() {
                 AsrEvent::Error { msg } => panic!("reverse SALM startup failed: {msg}"),
                 AsrEvent::Status { .. } => {}
                 AsrEvent::Result { .. } => {}
+                AsrEvent::ImageResult { .. } => {}
             }
         }
         sleep(Duration::from_millis(100));

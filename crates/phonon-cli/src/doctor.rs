@@ -1,6 +1,6 @@
 //! Quick dependency / model presence check for the local dictation stack.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use phonon_core::data::{list_recordings, DictionaryFile, SettingsFile};
 use phonon_core::project_root;
 use phonon_llm::{
@@ -17,6 +17,22 @@ pub fn run_doctor() -> Result<()> {
     check(
         "sidecar/asr_server.py",
         root.join("sidecar/asr_server.py").is_file(),
+    );
+    check(
+        "sidecar/salm_vision_server.py",
+        root.join("sidecar/salm_vision_server.py").is_file(),
+    );
+    let salm_vision = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .context("HOME is required to locate the local SALM vision model")?
+        .join(".local/share/phonon/salm-vision");
+    check(
+        "fused SALM vision weights",
+        salm_vision.join("merged_lfm.safetensors").is_file(),
+    );
+    check(
+        "SALM vision rows",
+        salm_vision.join("rows_omp.safetensors").is_file(),
     );
     check(
         "sidecar/polish_server.py",
@@ -53,13 +69,15 @@ pub fn run_doctor() -> Result<()> {
     // Both sidecars start from uv's cache alone once these pass, so a Mac with
     // no network still dictates. A fresh install fails them until first launch.
     if let Some(uv) = crate::resolve_runtime_tool("uv") {
+        let engine = phonon_asr::AsrEngineSelection::from_environment();
+        let mut cached = engine.runtime_requirements().to_vec();
+        cached.push(POLISH_RUNTIME_REQUIREMENT.to_owned());
+        let complete = cached
+            .iter()
+            .all(|requirement| phonon_asr::uv_offline_ready(&uv, requirement));
         optional(
-            "ASR runtime cached for offline start",
-            phonon_asr::uv_offline_ready(&uv, phonon_asr::ASR_RUNTIME_REQUIREMENT),
-        );
-        optional(
-            "correction runtime cached for offline start",
-            phonon_asr::uv_offline_ready(&uv, POLISH_RUNTIME_REQUIREMENT),
+            &format!("{} runtime cached for offline start", engine.engine_name()),
+            complete,
         );
     }
     // The native app records through CoreAudio. SoX only backs `phonon` runs

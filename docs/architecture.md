@@ -12,9 +12,9 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Architecture and roadmap | `docs/architecture.md` | This document; the single cross-component plan |
 | macOS app surface | `bar/Sources/*.swift` | Native app, settings, retention, backup mirror, microphone and screen capture |
 | Engine process | `crates/phonon-core`, `phonon-cli` | Warm JSONL engine, speech gate, dictionary retrieval, correction orchestration |
-| ASR sidecar | `sidecar/asr_server.py`, `phonon-asr` | Pinned Parakeet MLX process; batch and streaming; reverse SALM remains explicit non-default |
+| ASR/image sidecar | `sidecar/salm_vision_server.py`, `phonon-asr` | Default fused audio-native SALM with transplanted SigLIP2 vision; Parakeet remains an explicit compatibility engine |
 | Correction sidecar | `sidecar/polish_server.py`, `phonon-llm` | Pinned Gemma MLX process, prefix cache and MTP |
-| Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR-only today; image path and sidecar protocol still open |
+| Screen context and vision input | `bar/Sources/PhononBar.swift`, `crates/phonon-core` | OCR remains the UI context source; the engine JSONL now has a consent-gated non-persistent image path, but Swift screenshot dispatch is not wired |
 | Audio front end | `MicRecorder`, `phonon-audio` | Hardware-rate capture with independent streaming and final paths |
 | Local user data | `phonon-core::data`, `AppData.swift` | Dictionary, settings, paired corpus, retention, and explicit export |
 | Training-corpus capture | `phonon-core::data`, `phonon-cli` | Core consent/hash/retention/export path; macOS automatic capture wiring remains unimplemented |
@@ -30,11 +30,11 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 
 | Topic | Current position | Decision gate |
 | --- | --- | --- |
-| Dictation engine | Parakeet plus the local corrector ships; the single-stage SALM lane is experimental | Frozen-fixture audio gate beats or matches the shipped cascade on fair WER at equal or better latency, with the default Parakeet path unchanged |
+| Dictation engine | The local development default is the fused vision-capable SALM plus correction; Parakeet is explicit compatibility only | Real-distribution quality, latency, packaging, and five-day dogfood gates must pass before this default is called a shipped Aqua replacement |
 | Final-training format and hyperparameters | Rank 32/context 512 trial-4 recipe fixed; `prose_dictation_v1` won the matched full-slice format bake-off | A repeat/final-run gate showing the selected family beats the prior native-audio lane under the same frozen protocol |
 | Training kernel stack | Reference execution remains the training-quality winner; active FlashAttention/causal kernels degraded the full repeat, Liger and warm Triton are slower | A kernel mode must match the full-slice quality of its reference-trained adapter before product or final-training promotion |
 | Reverse graft versus native audio student | The promoted reverse graft improved to 0.109302 fair WER on the frozen slice but remains behind the native Audio student | Reverse graft reaches or beats 0.0877 fair WER on the frozen slice at comparable generation latency, then passes an untouched future-set gate |
-| Screen context input | OCR-only today; no image is retained | An explicit image field, a model capability declaration, and a consent-gated retention and deletion policy ship together |
+| Screen context input | OCR-only in the UI; the engine image protocol is explicit, consent-gated, and non-persistent | Swift capture/consent dispatch to the new image lane passes real screenshot and privacy gates without weakening retention |
 | Screenshot scope | All displays are captured for OCR | Measured token, latency, and privacy cost of one display versus all displays, on real captures |
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
@@ -2088,6 +2088,45 @@ loaded, transcribed real audio, passed warmup, and reached full engine readiness
 alongside the correction model. The hardcoded startup label still says
 “parakeet,” but the LiquidAudio and adapter events prove the selected engine.
 Receipt: `evidence/2026-10-09-sft-overfit-audit-and-deployment.md`.
+
+### 2026-10-09: fused SALM vision becomes the default image sidecar
+
+The owner removed Parakeet from the active product direction and authorized the
+vision-capable lane to become the default. `AsrEngineSelection` now selects
+`sidecar/salm_vision_server.py` unless an explicit compatibility override is
+present. The sidecar no longer injects the research LoRA: it applies the fused
+language checkpoint directly with the corrected PEFT-key normalization, installs
+the SigLIP2 tower/projector, and keeps both audio and image inference in one
+process.
+
+The controlled local installation is
+`~/.local/share/phonon/salm-vision/merged_lfm.safetensors` with SHA-256
+`e15bc9059d70f05341a3c83b82cee477f1307e82bfc1a16ca4617f452b821ae7` and
+`rows_omp.safetensors` with SHA-256
+`18a2f5cbc05a88f5da3f490e65eae7212de50c51c8003de4b350c22c00d12117`. Loading
+applies 148/332 merged language tensors and refuses a silently unadapted model.
+The runtime pins the multimodal Python stack, including `torchvision` after a
+live macOS probe showed the LFM2-VL image processor requires it.
+
+The image protocol is deliberately separate from audio dictation:
+`{"cmd":"caption","capability":"screen_image_model","consent":true,...}`. Both
+`phonon-core` and the sidecar fail closed, persistence is rejected, image results
+carry `kind:"image"` and feature count, and the request has no corpus-registration
+side effect. The exact screenshot prompt is product-owned as
+`screenshot_dictation_v1`; audio remains `prose_dictation_v1` with an optional
+bounded one-or-two-example local history extension.
+
+Live verification covered B550 CUDA, direct Mac MPS, and the default
+`phonon engine` product path. The Mac engine loaded the fused model, passed both
+audio startup gates and correction startup, reached all-ready, returned a
+synthetic non-personal screenshot through `caption`, and rejected the identical
+request without consent. Static, protocol, Rust, and Python checks passed.
+Receipt: `evidence/2026-10-09-salm-vision-default-sidecar.md`.
+
+This promotion does not create a new quality claim. The registered checkpoint
+metrics are unchanged, Swift does not yet dispatch captured screenshots to the
+new request, and release packaging, real-distribution latency, and dogfood
+acceptance remain open.
 
 ## Contracts to preserve
 

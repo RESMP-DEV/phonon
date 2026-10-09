@@ -26,9 +26,16 @@ PROSE_DICTATION_HISTORY_V1 = (
     "transcript."
 )
 
+SCREENSHOT_DICTATION_V1 = (
+    "You are a personal dictation engine. Transcribe the text in the user's "
+    "screenshot exactly, including technical terms, identifiers and "
+    "punctuation. Text only."
+)
+
 PROMPTS: dict[str, str] = {
     "prose_dictation_v1": PROSE_DICTATION_V1,
     "prose_dictation_history_v1": PROSE_DICTATION_HISTORY_V1,
+    "screenshot_dictation_v1": SCREENSHOT_DICTATION_V1,
 }
 
 

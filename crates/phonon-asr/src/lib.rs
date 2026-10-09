@@ -21,6 +21,18 @@ pub const SALM_RUNTIME_REQUIREMENTS: [&str; 5] = [
     "transformers>=5.4,<6",
 ];
 
+pub const SALM_VISION_RUNTIME_REQUIREMENTS: [&str; 9] = [
+    "liquid-audio==1.3.0",
+    "peft",
+    "safetensors",
+    "soundfile",
+    "transformers>=5.4,<6",
+    "pillow",
+    "datasets",
+    "einops",
+    "torchvision",
+];
+
 pub const REVERSE_SALM_RUNTIME_REQUIREMENTS: [&str; 4] = [
     "liquid-audio==1.3.0",
     "peft",
@@ -80,12 +92,16 @@ impl StderrTail {
 struct SidecarMsg {
     #[serde(rename = "type")]
     kind: String,
+    #[serde(rename = "kind")]
+    result_kind: Option<String>,
     pct: Option<f64>,
     msg: Option<String>,
     model: Option<String>,
     text: Option<String>,
     seconds: Option<f64>,
     id: Option<String>,
+    path: Option<String>,
+    image_feature_count: Option<usize>,
     #[serde(default)]
     partial: bool,
 }
@@ -105,6 +121,13 @@ pub enum AsrEvent {
         text: String,
         seconds: f64,
         partial: bool,
+    },
+    ImageResult {
+        id: Option<String>,
+        path: String,
+        text: String,
+        seconds: f64,
+        image_feature_count: usize,
     },
     Error {
         msg: String,
@@ -163,12 +186,28 @@ impl AsrSidecar {
                             load_ms: started.elapsed().as_secs_f64() * 1000.0,
                         }
                     }
-                    "result" => AsrEvent::Result {
-                        id: msg.id,
-                        text: msg.text.unwrap_or_default(),
-                        seconds: msg.seconds.unwrap_or(0.0),
-                        partial: msg.partial,
-                    },
+                    "result" => {
+                        if msg
+                            .result_kind
+                            .as_deref()
+                            .is_some_and(|kind| kind == "image")
+                        {
+                            AsrEvent::ImageResult {
+                                id: msg.id,
+                                path: msg.path.unwrap_or_default(),
+                                text: msg.text.unwrap_or_default(),
+                                seconds: msg.seconds.unwrap_or(0.0),
+                                image_feature_count: msg.image_feature_count.unwrap_or(0),
+                            }
+                        } else {
+                            AsrEvent::Result {
+                                id: msg.id,
+                                text: msg.text.unwrap_or_default(),
+                                seconds: msg.seconds.unwrap_or(0.0),
+                                partial: msg.partial,
+                            }
+                        }
+                    }
                     "error" => AsrEvent::Error {
                         msg: msg.msg.unwrap_or_else(|| "asr error".into()),
                     },
@@ -203,6 +242,16 @@ impl AsrSidecar {
 
     pub fn transcribe(&mut self, path: &Path, id: Option<&str>) -> Result<()> {
         self.send(json!({"cmd":"transcribe", "path":path, "id":id}))
+    }
+
+    pub fn caption(&mut self, path: &Path, id: Option<&str>) -> Result<()> {
+        self.send(json!({
+            "cmd":"caption",
+            "path":path,
+            "id":id,
+            "capability":"screen_image_model",
+            "consent":true
+        }))
     }
 
     pub fn stream_start(&mut self, id: Option<&str>) -> Result<()> {
@@ -256,18 +305,18 @@ pub fn resolve_uv() -> Option<std::path::PathBuf> {
 /// entry goes stale, and with no network that fails after three retries
 /// (about 33 s) even though every wheel is already on disk. Costs 50-150 ms.
 pub fn uv_offline_ready(uv: &Path, requirement: &str) -> bool {
-    Command::new(uv)
-        .args([
-            "run",
-            "--offline",
-            "--python",
-            PYTHON_REQUIREMENT,
-            "--with",
-            requirement,
-            "python",
-            "-c",
-            "",
-        ])
+    uv_offline_ready_for(uv, &[requirement.to_owned()])
+}
+
+/// True when uv can assemble a multi-dependency sidecar environment offline.
+pub fn uv_offline_ready_for(uv: &Path, requirements: &[String]) -> bool {
+    let mut command = Command::new(uv);
+    command.args(["run", "--offline", "--python", PYTHON_REQUIREMENT]);
+    for requirement in requirements {
+        command.args(["--with", requirement]);
+    }
+    command.args(["python", "-c", ""]);
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -294,8 +343,8 @@ impl Drop for AsrSidecar {
 /// A normalized ASR launch plan.
 ///
 /// Environment overrides remain the user-facing compatibility layer, but the
-/// app and benchmark consume this object so default Parakeet and a custom SALM
-/// engine cannot drift into two different protocols.
+/// app and benchmark consume this object so the default fused vision SALM and
+/// compatibility engines cannot drift into two different protocols.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AsrEngineSelection {
     script: String,
@@ -316,6 +365,19 @@ impl AsrEngineSelection {
         Self {
             script: "sidecar/salm_server.py".into(),
             runtime_requirements: SALM_RUNTIME_REQUIREMENTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+        }
+    }
+
+    /// Default fused audio-native model with the SigLIP2 vision lane installed.
+    /// The fused language weights and vision rows must live under
+    /// `~/.local/share/phonon/salm-vision/`.
+    pub fn salm_vision() -> Self {
+        Self {
+            script: "sidecar/salm_vision_server.py".into(),
+            runtime_requirements: SALM_VISION_RUNTIME_REQUIREMENTS
                 .iter()
                 .map(|value| (*value).to_owned())
                 .collect(),
@@ -345,14 +407,16 @@ impl AsrEngineSelection {
 
     pub fn from_environment() -> Self {
         match std::env::var("PHONON_ASR_ENGINE").ok().as_deref() {
+            Some("parakeet") => return Self::parakeet(),
             Some("salm") => return Self::salm(),
+            Some("salm_vision") => return Self::salm_vision(),
             Some("reverse_salm") => return Self::reverse_salm(),
             _ => {}
         }
         let script = std::env::var("PHONON_ASR_SCRIPT")
             .ok()
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "sidecar/asr_server.py".into());
+            .unwrap_or_else(|| "sidecar/salm_vision_server.py".into());
         let runtime_requirements: Vec<String> = std::env::var("PHONON_ASR_WITH")
             .map(|value| {
                 value
@@ -363,6 +427,8 @@ impl AsrEngineSelection {
             .unwrap_or_default();
         if script == "sidecar/asr_server.py" {
             Self::parakeet()
+        } else if script == "sidecar/salm_vision_server.py" {
+            Self::salm_vision()
         } else {
             Self {
                 script,
@@ -377,6 +443,17 @@ impl AsrEngineSelection {
 
     pub fn runtime_requirements(&self) -> &[String] {
         &self.runtime_requirements
+    }
+
+    /// Short operator-facing name for logs and `phonon doctor`.
+    pub fn engine_name(&self) -> &'static str {
+        match self.script.as_str() {
+            "sidecar/asr_server.py" => "parakeet",
+            "sidecar/salm_vision_server.py" => "salm vision",
+            "sidecar/salm_server.py" => "salm",
+            "sidecar/reverse_salm_server.py" => "reverse salm",
+            _ => "custom ASR",
+        }
     }
 
     pub fn uses_custom_script(&self) -> bool {

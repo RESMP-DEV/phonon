@@ -30,7 +30,7 @@ pub(crate) fn resolve_runtime_tool(name: &str) -> Option<PathBuf> {
 #[command(
     name = "phonon",
     version,
-    about = "Personal dictation: Parakeet + fluid-1 + MTP (auto-polish, floating bar)",
+    about = "Personal dictation: fused SALM vision + local correction",
     long_about = None
 )]
 struct Cli {

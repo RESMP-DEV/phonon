@@ -12,11 +12,12 @@ brew install --cask infatoshi/phonon/phonon
 phonon
 ```
 
-The cask installs the Developer ID-signed and notarized app. On first launch
-Phonon downloads the open Parakeet and Gemma weights, both pinned to exact
-revisions, which is about 5.6 GB and the one slow start. Everything after that
-is local and offline. Tagged releases also include the DMG for direct
-installation. To build locally instead, use
+The cask installs the Developer ID-signed and notarized app. Release packaging
+still fetches the open correction weights locally; the active development
+default additionally requires the private fused SALM vision artifact under
+`~/.local/share/phonon/salm-vision/` and is not yet a packaged first-run
+download. Tagged releases also include the DMG for direct installation. To
+build locally instead, use
 `brew install --formula infatoshi/phonon/phonon`.
 
 ## Windows beta
@@ -57,37 +58,38 @@ Everything lives in `%LOCALAPPDATA%\Phonon`. Delete that folder to start over.
 ## Pipeline
 
 ```
-mic → Parakeet ASR → dictionary retrieval → Gemma correction → clipboard / type
+mic → fused SALM vision ASR → dictionary retrieval → Gemma correction → clipboard / type
 ```
 
 The runtime requires and loads two weight streams in parallel:
-**asr ∥ llm**. The single startup loader reaches 100% only after Parakeet
-transcribes the bundled fixture through batch and streaming ASR, that transcript
-survives a round trip through the correction model, and a representative
-technical correction succeeds. Phonon does not expose an ASR-only mode.
+**asr ∥ llm**. The single startup loader reaches 100% only after the fused SALM
+vision engine transcribes the bundled fixture through both whole-utterance
+startup requests, that transcript survives a round trip through the correction
+model, and a representative technical correction succeeds. Phonon does not
+expose an ASR-only mode.
 
 The correction stage is `sidecar/polish_server.py`: `mlx-community/gemma-4-e2b-it-4bit`
 on `mlx-lm`, run locally through `uv`. It is a pipeline stage, not a provider
 setting, and there is no way to point it at a remote model.
 
-### SALM engine (single-stage dictation, experimental)
+### Fused SALM vision engine (development default)
 
-`sidecar/salm_server.py` is a drop-in replacement for the ASR sidecar that
-transcribes *and* corrects in one pass: LFM2.5-Audio-1.5B with a LoRA adapter
-trained on dictation audio → intended text. Because the output is already
-corrected, the dictionary-retrieval and correction stages add nothing when
-this engine is selected. It speaks the same JSONL protocol; streaming
-partials are unsupported (whole-utterance transcription only).
+`sidecar/salm_vision_server.py` is the default macOS ASR process. It loads the
+fused audio-native language checkpoint directly, attaches the transplanted
+SigLIP2 vision lane, and supports both audio transcription and consent-gated
+image inference. Image requests require `capability=screen_image_model`,
+`consent=true`, and no persistence; the Swift UI does not send screenshots to
+this lane yet. Streaming partials are unsupported (whole-utterance
+transcription only). `PHONON_ASR_ENGINE=parakeet` remains an explicit
+compatibility override for the legacy MLX path.
 
 ```bash
-export PHONON_ASR_SCRIPT=sidecar/salm_server.py
-export PHONON_ASR_WITH="liquid-audio==1.3.0 peft soundfile"
-export PHONON_SALM_ADAPTER=~/.local/share/phonon/salm/lora_adapter.safetensors
-phonon bench --wav <utterance.wav>   # streams 2+ unchanged
+phonon doctor                         # verifies the local fused artifacts
+phonon bench --wav <utterance.wav>    # whole-utterance inference
 ```
 
-The adapter is user-data-derived and stays local; the loader requires it
-(`--no-adapter` runs the stock model for comparison only).
+The fused checkpoint is user-data-derived and stays local. It is not uploaded or
+packaged as a first-run public artifact.
 
 ## Build from source
 
@@ -232,7 +234,7 @@ by Auto.
 
 ```
 crates/phonon-audio/   recording and audio file ownership
-crates/phonon-asr/     Parakeet sidecar lifecycle + protocol
+crates/phonon-asr/     fused SALM vision sidecar lifecycle + protocol
 crates/phonon-llm/     correction sidecar lifecycle + benchmark client
 crates/phonon-profile/ literal Metal dispatch, LLM phase, and E2E profilers
 crates/phonon-core/    pipeline coordination + engine events
@@ -240,6 +242,7 @@ crates/phonon-cli/     commands, doctor, bench, bar launcher
 crates/phonon-hotkey/  hold, tap, and double-tap latch, shared by both platforms
 crates/phonon-win/     Windows tray app, keyboard hook, WASAPI capture, insertion
 bar/                   SwiftPM native Home/History/Dictionary/Settings app + floating pill
+sidecar/salm_vision_server.py
 sidecar/asr_server.py
 sidecar/polish_server.py
 assets/english_words.txt

@@ -35,7 +35,17 @@ def test_protocol_ready_is_outside_request_loop(tmp_path):
 def test_protocol_transcribe_and_shutdown(tmp_path):
     events = run_requests(
         tmp_path,
-        ['{"cmd":"ping"}', json.dumps({"cmd": "transcribe", "path": str(tmp_path / "utterance.wav"), "id": "1"}), '{"cmd":"shutdown"}'],
+        [
+            '{"cmd":"ping"}',
+            json.dumps(
+                {
+                    "cmd": "transcribe",
+                    "path": str(tmp_path / "utterance.wav"),
+                    "id": "1",
+                }
+            ),
+            '{"cmd":"shutdown"}',
+        ],
     )
     assert events[0] == {"type": "pong"}
     assert events[1]["type"] == "result"
@@ -74,9 +84,17 @@ def test_protocol_reports_bad_json_and_unknown_commands(tmp_path):
 
 
 def test_protocol_reports_transcription_failure(tmp_path):
-    events = run_requests(
+    run_requests(
         tmp_path,
-        [json.dumps({"cmd": "warmup_stream", "path": str(tmp_path / "utterance.wav"), "id": "e"})],
+        [
+            json.dumps(
+                {
+                    "cmd": "warmup_stream",
+                    "path": str(tmp_path / "utterance.wav"),
+                    "id": "e",
+                }
+            )
+        ],
     )
     # The helper's transcriber succeeds; exercise failure through a direct call.
     module = __import__("sidecar.salm_server", fromlist=["handle_requests"])

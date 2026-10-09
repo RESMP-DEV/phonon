@@ -1,8 +1,9 @@
-//! Shared warm engines: Parakeet ASR + local correction model over JSONL.
+//! Shared warm engines: fused vision-capable SALM + local correction over JSONL.
 //!
 //! Protocol (stdin/stdout, one JSON object per line):
 //!   {"cmd":"status"}
 //!   {"cmd":"transcribe","path":"/tmp/x.wav","id":"..."}
+//!   {"cmd":"caption","path":"/tmp/x.png","capability":"screen_image_model","consent":true,"id":"..."}
 //!   {"cmd":"polish","text":"...","id":"..."}
 //!   {"cmd":"reload_dictionary"}
 //!   {"cmd":"shutdown"}
@@ -53,6 +54,13 @@ pub enum EngineEvent {
         text: String,
         seconds: f64,
         partial: bool,
+    },
+    ImageResult {
+        id: Option<String>,
+        path: String,
+        text: String,
+        seconds: f64,
+        image_feature_count: usize,
     },
     PolishResult {
         id: Option<String>,
@@ -238,6 +246,19 @@ impl Engine {
                         });
                     }
                 }
+                AsrEvent::ImageResult {
+                    id,
+                    path,
+                    text,
+                    seconds,
+                    image_feature_count,
+                } => out.push(EngineEvent::ImageResult {
+                    id,
+                    path,
+                    text,
+                    seconds,
+                    image_feature_count,
+                }),
                 AsrEvent::Error { msg } => out.push(EngineEvent::Error { id: None, msg }),
             }
         }
@@ -454,6 +475,13 @@ impl Engine {
         self.transcribe_with_source(path, id, "terminal")
     }
 
+    /// Send an already-consented local screenshot to the fused vision lane.
+    /// The JSON protocol enforces consent again; this method deliberately has no
+    /// persistence or corpus-registration side effect.
+    pub fn caption(&mut self, path: &Path, id: Option<&str>) -> Result<()> {
+        self.asr.caption(path, id)
+    }
+
     pub fn transcribe_with_source(
         &mut self,
         path: &Path,
@@ -532,6 +560,14 @@ impl Engine {
             polisher.shutdown();
         }
     }
+}
+
+fn image_request_allowed(
+    capability: Option<&str>,
+    consented: bool,
+    persistence_requested: bool,
+) -> bool {
+    capability == Some("screen_image_model") && consented && !persistence_requested
 }
 
 fn update_recording_raw(recording_id: &str, raw_text: &str) -> Result<()> {
@@ -643,7 +679,7 @@ pub fn run_engine_serve() -> Result<()> {
         "name": "asr",
         "state": "loading",
         "pct": 0.05,
-        "msg": "starting parakeet"
+        "msg": "starting the fused SALM vision engine"
     }));
     emit(&json!({
         "type": "stream",
@@ -704,6 +740,29 @@ pub fn run_engine_serve() -> Result<()> {
                         let id = v.get("id").and_then(|x| x.as_str());
                         let source = v.get("source").and_then(|x| x.as_str()).unwrap_or("bar");
                         if let Err(e) = eng.transcribe_with_source(Path::new(path), id, source) {
+                            emit(&json!({"type":"error","id":id,"msg":format!("{e:#}")}));
+                        }
+                    }
+                    "caption" => {
+                        let path = v.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                        let id = v.get("id").and_then(|x| x.as_str());
+                        let capability = v.get("capability").and_then(|x| x.as_str());
+                        let consented = v.get("consent").and_then(|x| x.as_bool()) == Some(true);
+                        let persistence_requested =
+                            v.get("persist").and_then(|x| x.as_bool()).unwrap_or(false);
+                        if !image_request_allowed(capability, consented, persistence_requested) {
+                            emit(&json!({
+                                "type":"error",
+                                "id":id,
+                                "msg":"image inference requires capability=screen_image_model and consent=true"
+                            }));
+                        } else if persistence_requested {
+                            emit(&json!({
+                                "type":"error",
+                                "id":id,
+                                "msg":"the vision inference protocol is non-persistent"
+                            }));
+                        } else if let Err(e) = eng.caption(Path::new(path), id) {
                             emit(&json!({"type":"error","id":id,"msg":format!("{e:#}")}));
                         }
                     }
@@ -803,6 +862,21 @@ fn emit_engine_event(ev: &EngineEvent) {
             "seconds": seconds,
             "partial": partial,
         })),
+        EngineEvent::ImageResult {
+            id,
+            path,
+            text,
+            seconds,
+            image_feature_count,
+        } => emit(&json!({
+            "type": "result",
+            "kind": "image",
+            "id": id,
+            "path": path,
+            "text": text,
+            "seconds": seconds,
+            "image_feature_count": image_feature_count,
+        })),
         EngineEvent::PolishResult {
             id,
             text,
@@ -829,8 +903,8 @@ fn emit_engine_event(ev: &EngineEvent) {
 #[cfg(test)]
 mod tests {
     use super::{
-        asr_smoke_passed, llm_audio_smoke_passed, llm_prime_passed, llm_smoke_passed,
-        safe_polish_output,
+        asr_smoke_passed, image_request_allowed, llm_audio_smoke_passed, llm_prime_passed,
+        llm_smoke_passed, safe_polish_output,
     };
     use crate::data::{DictionaryEntry, DictionaryFile};
 
@@ -862,6 +936,26 @@ mod tests {
         assert!(!llm_smoke_passed("Test."));
         assert!(llm_prime_passed("Hello Fluid Voice startup prime."));
         assert!(!llm_prime_passed("Hello."));
+    }
+
+    #[test]
+    fn image_requests_require_capability_consent_and_no_persistence() {
+        assert!(image_request_allowed(
+            Some("screen_image_model"),
+            true,
+            false
+        ));
+        assert!(!image_request_allowed(
+            Some("screen_image_model"),
+            false,
+            false
+        ));
+        assert!(!image_request_allowed(Some("ocr"), true, false));
+        assert!(!image_request_allowed(
+            Some("screen_image_model"),
+            true,
+            true
+        ));
     }
 
     #[test]

@@ -2077,6 +2077,18 @@ uploaded. The private Hugging Face repository continues to carry adapter
 artifacts and metadata. Receipt:
 `evidence/2026-10-08-history-training-epoch-audit.md`.
 
+### 2026-10-09: SFT continuation audit and existing deployment verification
+
+The stage-two history SFT control provides concrete evidence against continuing
+the same recipe: training loss fell while selection fair/strict WER and vision
+WER all worsened. The selected 2,000-step fused model remains the best
+vision-capable artifact. The existing explicit SALM product path was separately
+verified on macOS with `PHONON_ASR_ENGINE=salm`: the native audio GRPO adapter
+loaded, transcribed real audio, passed warmup, and reached full engine readiness
+alongside the correction model. The hardcoded startup label still says
+“parakeet,” but the LiquidAudio and adapter events prove the selected engine.
+Receipt: `evidence/2026-10-09-sft-overfit-audit-and-deployment.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

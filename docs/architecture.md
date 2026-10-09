@@ -2048,6 +2048,19 @@ remains `0.0024` behind the audio-only GRPO adapter. The fused weights were not
 scored standalone and the future split was not scored. Receipt:
 `evidence/2026-10-07-phonon-history-sft-2000-study.md`.
 
+### 2026-10-08: stage-two history SFT control
+
+A second Optuna round initialized from the best 2,000-step history adapter, ran
+1,000 additional mixed SFT steps, fused every trial, and scored the standalone
+fused model. The best stage-two trial used learning rate
+`6.0245784940505935e-05` and scored 0.08669669149489001 fair WER,
+0.11565059144676978 strict WER, 0.368 exact, and 0.03445664521014767 vision WER.
+It did not improve the existing fused checkpoint, which remains at 0.08548415035510133
+fair WER, 0.11474067333939945 strict WER, 0.374 exact, and 0.025369178341537298
+vision WER. Stage two is retained as a negative control and the existing fused
+2,000-step artifact remains the selected vision-capable model. Receipt:
+`evidence/2026-10-08-phonon-history-sft-stage2.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

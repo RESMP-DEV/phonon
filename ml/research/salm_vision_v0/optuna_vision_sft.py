@@ -21,10 +21,11 @@ REPO = Path("/home/kearm/phonon")
 SALM = Path("/home/kearm/salm-lora")
 PY = Path("/home/kearm/envs/salm-lora/bin/python")
 TRAINER = REPO / "ml/research/salm_vision_v0/train_salm_vision_cpt.py"
-TRANSCRIBER = SALM / "transcribe_lfm25audio.py"
 SCORER = REPO / "ml/research/final_sweep/score_fair_wer.py"
-VISION_EVAL = SALM / "eval_vision_cpt.py"
-INIT_ADAPTER = SALM / "salm-vision-cpt-v1/cpt_adapter.safetensors"
+FUSE = REPO / "ml/research/salm_vision_v0/fuse_salm_vision.py"
+FUSED_AUDIO_EVAL = REPO / "ml/research/salm_vision_v0/eval_fused_salm.py"
+FUSED_VISION_EVAL = REPO / "ml/research/salm_vision_v0/eval_fused_vision.py"
+DEFAULT_INIT_ADAPTER = SALM / "salm-vision-cpt-v1/cpt_adapter.safetensors"
 AUDIO_ROOT = Path("/home/kearm/aqua-training-data")
 ENV_MANIFEST = REPO / "ml/research/salm_vision_v0/environment-b550.json"
 
@@ -89,42 +90,61 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         "--lr", repr(lr),
         "--rank", "16", "--warmup", "50",
         "--init-variant", "omp",
-        "--init-adapter", str(INIT_ADAPTER),
+        "--init-adapter", str(args.init_adapter),
         "--transplant-dir", str(SALM / "vision-transplant"),
         "--audio-context", "768", "--text-context", "768", "--vision-context", "1024",
         "--out", str(train), "--device", "cuda", "--ckpt-every", "200", "--keep-ckpts", "1",
     ]
     trial.set_user_attr("training_command", training_command)
-    trial.set_user_attr("init_adapter_sha256", sha256(INIT_ADAPTER))
+    trial.set_user_attr("init_adapter_sha256", sha256(args.init_adapter))
+    trial.set_user_attr("init_adapter", str(args.init_adapter))
     trial.set_user_attr("environment_manifest", str(ENV_MANIFEST))
     trial.set_user_attr("source_revision", subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip())
     trial.set_user_attr("kernel_mode", kernel_mode())
     run(training_command, root / "train.log")
 
+    fused = root / "fused"
+    fuse_command = [
+        str(PY), str(FUSE),
+        "--adapter", str(train / "cpt_adapter.safetensors"),
+        "--out", str(fused),
+        "--vision-rows", str(SALM / "vision-transplant/rows_omp.safetensors"),
+        "--init-variant", "omp", "--rank", "16", "--device", "cuda",
+    ]
+    trial.set_user_attr("fuse_command", fuse_command)
+    run(fuse_command, root / "fuse.log")
+
     hyps = root / "hyps.jsonl"
     audio_command = [
-        str(PY), str(TRANSCRIBER),
+        str(PY), str(FUSED_AUDIO_EVAL),
+        "--merged", str(fused / "merged_lfm.safetensors"),
         "--slice", str(SALM / "slice-eval-500.jsonl"),
-        "--out", str(hyps), "--mode", "seq",
-        "--adapter", str(train / "cpt_adapter.safetensors"),
-        "--lora-rank", "16", "--device", "cuda",
-        "--aqua-root", str(AUDIO_ROOT),
+        "--out", str(hyps),
+        "--history-manifest", str(args.history_manifest),
+        "--prompt-id", str(args.prompt_id),
+        "--device", "cuda",
     ]
     trial.set_user_attr("audio_command", audio_command)
     run(audio_command, root / "audio-eval.log")
     score_path = root / "audio-score.json"
     with score_path.open("w") as sink:
-        subprocess.run([str(PY), str(SCORER), str(hyps)], stdout=sink, stderr=subprocess.STDOUT, check=True, text=True)
+        subprocess.run(
+            [str(PY), str(SCORER), str(hyps)],
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            check=True,
+            text=True,
+        )
     audio = load_json(score_path)
 
     vision_command = [
-        str(PY), str(VISION_EVAL),
-        "--adapter", str(train / "cpt_adapter.safetensors"),
-        "--pack", str(SALM / "aqua-vision-dataset-v1-eval"),
-        "--limit", str(args.vision_limit), "--out", str(root / "vision-eval.json"),
+        str(PY), str(FUSED_VISION_EVAL),
+        "--merged", str(fused / "merged_lfm.safetensors"),
+        "--limit", str(args.vision_limit),
+        "--out", str(root / "vision-eval.json"),
     ]
     trial.set_user_attr("vision_command", vision_command)
-    run(vision_command, root / "vision-eval.log", cwd=SALM)
+    run(vision_command, root / "vision-eval.log")
     vision = load_json(root / "vision-eval.json")["summary"]["real"]
     # Penalize catastrophic forgetting without making a small vision delta dominate ASR.
     vision_penalty = max(0.0, vision["wer"] - args.vision_wer_ceiling)
@@ -151,12 +171,36 @@ def main() -> None:
     parser.add_argument("--vision-penalty-weight", type=float, default=2.0)
     parser.add_argument("--study-root", type=Path, default=SALM / "build/optuna/vision-on-audio-asr-sft-lr-v1")
     parser.add_argument("--audio-pack", type=Path, default=SALM / "aqua-sft-dataset-v3")
+    parser.add_argument(
+        "--init-adapter",
+        type=Path,
+        default=DEFAULT_INIT_ADAPTER,
+        help=(
+            "adapter each trial starts from; point this at the best prior stage "
+            "to continue optimizing from that point instead of the CPT baseline"
+        ),
+    )
+    parser.add_argument("--history-manifest", type=Path, default=None)
+    parser.add_argument("--prompt-id", default=None)
+    parser.add_argument("--history-count", type=int, default=2)
     args = parser.parse_args()
     args.study_root.mkdir(parents=True, exist_ok=True)
     storage = f"sqlite:///{args.study_root / 'study.db'}"
     study = optuna.create_study(direction="minimize", study_name=args.study, storage=storage, load_if_exists=True)
     study.set_user_attr("environment", load_json(ENV_MANIFEST))
-    study.set_user_attr("fixed_contract", {"rank": 16, "ratio": "4:1:1", "steps": args.steps, "contexts": [768, 768, 1024]})
+    study.set_user_attr(
+        "fixed_contract",
+        {
+            "rank": 16,
+            "ratio": "4:1:1",
+            "steps": args.steps,
+            "contexts": [768, 768, 1024],
+            "init_adapter": str(args.init_adapter),
+            "init_adapter_sha256": sha256(args.init_adapter),
+            "audio_pack": str(args.audio_pack),
+            "audio_pack_meta": str(args.audio_pack / "pack_meta.json"),
+        },
+    )
     study.optimize(lambda trial: objective(trial, args), n_trials=args.trials)
     complete = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
     if not complete:

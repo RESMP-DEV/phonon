@@ -2061,6 +2061,22 @@ vision WER. Stage two is retained as a negative control and the existing fused
 2,000-step artifact remains the selected vision-capable model. Receipt:
 `evidence/2026-10-08-phonon-history-sft-stage2.md`.
 
+### 2026-10-08: history-training epoch audit and upload boundary
+
+The history-prompt runs were audited by lane rather than by global step count.
+The selected 2,000-step run plus the rejected 1,000-step stage-two control
+exposed 2,002 history-audio rows of 12,855, 499 corrector rows of 17,496, and
+499 vision rows of 8,000. The new history-prompt contract therefore consumed
+only 15.6 percent of its audio lane, 2.9 percent of corrector, and 6.2 percent
+of vision. The older 24,000-step CPT exceeded one vision epoch but did not
+complete audio or corrector epochs and used a different audio pack.
+
+Accordingly, the 2.3 GiB fused language file
+`e15bc9059d70f05341a3c83b82cee477f1307e82bfc1a16ca4617f452b821ae7` was not
+uploaded. The private Hugging Face repository continues to carry adapter
+artifacts and metadata. Receipt:
+`evidence/2026-10-08-history-training-epoch-audit.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

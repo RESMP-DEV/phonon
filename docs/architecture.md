@@ -2128,6 +2128,29 @@ metrics are unchanged, Swift does not yet dispatch captured screenshots to the
 new request, and release packaging, real-distribution latency, and dogfood
 acceptance remain open.
 
+### 2026-10-17: fused release audit and next-build order
+
+A live private-Hugging-Face audit confirmed that `RESMP-DEV/phonon-reverse-salm`
+still contains only the native audio and reverse-graft adapters; the selected
+fused vision checkpoint is not uploaded. The local fused artifact and vision-row
+hashes remain intact. The earlier upload boundary still applies because lane
+exhaustion was not reached.
+
+The product-sidecar branch remains `ml/portable-harness@5eb2e9a`, with no open
+PR. A merge preview against current main found overlapping changes in 12 paths,
+including the consent/retention core. Integration is therefore the first build
+task, before a collaborator release or further UI work branches from a split
+mainline.
+
+The ranked follow-ons are: reconcile the branch with main; add separate Swift
+image-model consent and non-persistent screenshot dispatch; measure OCR-only,
+vision-only, and combined context on real consented captures; and pin an offline
+distribution. A clean private fused repository is preferred over mixing the
+vision artifact into the reverse-SALM repository, while adapter-only release is
+smaller but no longer matches the direct-fused product path. Continuing the same
+SFT recipe remains rejected by the stage-two negative control. Receipt:
+`evidence/2026-10-17-fused-checkpoint-release-audit.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

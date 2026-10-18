@@ -2182,6 +2182,14 @@ generalization are the highest-value later architecture lanes, but they require
 the consented capture boundary first. Receipt:
 `evidence/2026-10-18-continual-improvement-options.md`.
 
+### 2026-10-18: review approval advances
+
+The local label review UI now saves the edited canonical transcript and moves to
+the next clip immediately on approval. Rebuilding the same queue reuses its
+review identity, preserving browser-local decisions. This supports the private
+Aqua/Cohere deviation review without committing transcript content. Receipt:
+`evidence/2026-10-18-review-approve-advance.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

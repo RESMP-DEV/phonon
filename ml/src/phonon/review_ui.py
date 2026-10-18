@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
@@ -10,7 +11,6 @@ from typing import Any
 
 from phonon.audio import local_audio_path_for_row
 from phonon.schema import now_iso, read_parquet_rows
-
 
 DEFAULT_REVIEW_TITLE = "Phonon Label Review"
 
@@ -728,6 +728,9 @@ function setVerdict(verdict) {{
   const state = stateFor(row);
   state.verdict = verdict;
   saveCurrent();
+  if (verdict === 'approved' && current < rows.length - 1) {{
+    current += 1;
+  }}
   renderAll();
 }}
 function exportJsonl() {{
@@ -814,6 +817,7 @@ def build_review_ui(
 ) -> dict[str, Any]:
     rows = load_jsonl(queue_file)
     input_row_count = len(rows)
+    resolved_queue = str(queue_file.resolve())
     rows.sort(
         key=lambda row: (
             float(row.get("review_score") or 0),
@@ -843,7 +847,26 @@ def build_review_ui(
     ]
     missing_audio = [row["id"] for row in prepared if not row["audio_url"]]
     created_at = now_iso()
-    review_id = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{queue_file}:{limit or 'all'}:{created_at}")
+    # Regenerating the same queue must retain browser-local review decisions. If
+    # an existing JSON payload points at the same queue and row IDs, reuse its
+    # identity; otherwise derive a stable identity from the queue path.
+    previous_review_id = None
+    if json_out and json_out.is_file():
+        try:
+            previous_payload = json.loads(json_out.read_text())
+            previous_rows = previous_payload.get("rows", [])
+            same_rows = [str(row.get("id") or "") for row in previous_rows] == [
+                str(row.get("id") or "") for row in prepared
+            ]
+            if previous_payload.get("queue_file") == str(queue_file) and same_rows:
+                previous_review_id = previous_payload.get("review_id")
+        except (OSError, ValueError, TypeError):
+            previous_review_id = None
+    review_id = previous_review_id or re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "_",
+        f"queue-{hashlib.sha256(resolved_queue.encode()).hexdigest()[:20]}",
+    )
     payload = {
         "title": title,
         "created_at": created_at,

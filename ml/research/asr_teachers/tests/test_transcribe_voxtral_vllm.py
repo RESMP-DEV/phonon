@@ -15,13 +15,16 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 
-def test_resume_ignores_rows_without_hypothesis(tmp_path: Path) -> None:
+def test_resume_preserves_legitimate_empty_results(tmp_path: Path) -> None:
     output = tmp_path / "hyps.jsonl"
     output.write_text(
-        json.dumps({"audio": "one.flac", "hyp": "complete"}) + "\n"
-        + json.dumps({"audio": "two.flac", "hyp": ""}) + "\n"
+        json.dumps({"audio": "one.flac", "hyp": "complete"})
+        + "\n"
+        + json.dumps({"audio": "two.flac", "hyp": ""})
+        + "\n"
     )
-    assert module.completed_keys(output) == {"one.flac"}
+    assert module.completed_keys(output) == {"one.flac", "two.flac"}
+    assert module.empty_result_keys(output) == {"two.flac"}
 
 
 def test_only_loopback_http_is_allowed() -> None:

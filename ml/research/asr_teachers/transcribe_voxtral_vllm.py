@@ -12,7 +12,9 @@ from urllib.parse import urlparse
 
 
 def read_slice(path: Path) -> list[dict[str, Any]]:
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     if not rows:
         raise RuntimeError(f"empty audio slice: {path}")
     return rows
@@ -26,7 +28,21 @@ def completed_keys(output: Path) -> set[str]:
         if not line.strip():
             continue
         row = json.loads(line)
-        if str(row.get("hyp", "")).strip():
+        if "audio" in row and "hyp" in row:
+            keys.add(str(row["audio"]))
+    return keys
+
+
+def empty_result_keys(output: Path) -> set[str]:
+    """Rows that were transcribed but decoded to empty text."""
+    if not output.exists():
+        return set()
+    keys: set[str] = set()
+    for line in output.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if "audio" in row and "hyp" in row and not str(row.get("hyp", "")).strip():
             keys.add(str(row["audio"]))
     return keys
 
@@ -104,8 +120,6 @@ def main() -> None:
             response.raise_for_status()
             payload = response.json()
             hyp = str(payload.get("text", "")).strip()
-            if not hyp:
-                raise RuntimeError(f"empty transcription response for {audio_key}")
             elapsed = time.perf_counter() - request_started
             result = {
                 "audio": audio_key,
@@ -127,6 +141,7 @@ def main() -> None:
                     {
                         **base_metadata,
                         "completed_rows": len(completed_keys(args.out)),
+                        "empty_rows": len(empty_result_keys(args.out)),
                         "generated_rows": generated,
                     },
                 )
@@ -142,6 +157,7 @@ def main() -> None:
             **base_metadata,
             "status": "complete",
             "completed_rows": len(final_done),
+            "empty_rows": len(empty_result_keys(args.out)),
             "generated_rows": generated,
             "wall_s": round(time.perf_counter() - started, 3),
             "finished_at_unix": time.time(),

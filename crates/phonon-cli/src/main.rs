@@ -11,6 +11,7 @@
 mod bench;
 mod data_cmd;
 mod doctor;
+mod parallel_capture;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -75,6 +76,32 @@ enum Commands {
     Dictionary {
         #[command(subcommand)]
         command: DictionaryCommands,
+    },
+    /// Record a consent-gated 48 kHz local sidecar alongside another dictation app.
+    CaptureParallel {
+        /// AVFoundation audio device index (MacBook Pro Microphone is 0 here).
+        #[arg(long, default_value_t = 0)]
+        device: u32,
+        /// Stop after N seconds; omit for Ctrl+C/phonon-capture-stop.
+        #[arg(long)]
+        duration_seconds: Option<u64>,
+        /// Explicit session id; omit for timestamp-based.
+        #[arg(long)]
+        session_id: Option<String>,
+    },
+    /// Stop a running parallel capture session.
+    CaptureStop {
+        /// Session id; defaults to the latest.
+        #[arg(long)]
+        session_id: Option<String>,
+    },
+    /// Show parallel capture state.
+    CaptureStatus {
+        /// Session id; defaults to the latest.
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     /// Inspect the paired WAV + metadata corpus and set intended transcripts.
     Corpus {
@@ -283,6 +310,15 @@ fn main() -> Result<()> {
         Commands::Profile { command } => run_profile(command),
         Commands::Dictionary { command } => run_dictionary(command),
         Commands::Corpus { command } => run_corpus(command),
+        Commands::CaptureParallel {
+            device,
+            duration_seconds,
+            session_id,
+        } => parallel_capture::start(device, duration_seconds, "ffmpeg", session_id.as_deref()),
+        Commands::CaptureStop { session_id } => parallel_capture::stop(session_id.as_deref()),
+        Commands::CaptureStatus { session_id, json } => {
+            parallel_capture::status(session_id.as_deref(), json)
+        }
         Commands::Stats { json } => data_cmd::print_stats(json),
     }
 }

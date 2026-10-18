@@ -2190,6 +2190,19 @@ review identity, preserving browser-local decisions. This supports the private
 Aqua/Cohere deviation review without committing transcript content. Receipt:
 `evidence/2026-10-18-review-approve-advance.md`.
 
+### 2026-10-18: Aqua review-audio quality audit
+
+All 100 private review clips are byte-identical to Aqua's cached mono PCM16 WAVs
+at 16 kHz; the review page applies no normalization or EQ. Median RMS is about
+-26.4 dBFS, so muffling is not primarily low gain. The source spectrum is much
+narrower than a healthy 16 kHz capture: about 57% of mean energy is below 300 Hz,
+95% of median power falls below about 1.4 kHz, and 99.9% below about 5.1 kHz.
+The likely loss is upstream in Aqua's native built-in-microphone/voice-processing
+chain. The immediate quality options are an explicit external microphone and a
+native-versus-JS Aqua A/B. Future Phonon consented capture should preserve a
+hardware-rate sidecar before the required 16 kHz training conversion. Receipt:
+`evidence/2026-10-18-aqua-audio-quality-audit.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

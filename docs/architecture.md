@@ -23,6 +23,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Final-training Optuna sweep | `ml/research/final_sweep` | Prompt-baked, context-keyed packs; live study running on B550 |
 | ML correction and research | `ml/` | Canonical text-refiner research pipeline |
 | Profile and vocabulary mining | `tools/profile-miner` | Local consent-gated personal context lane |
+| Technical-lexicon difficulty benchmark | `tools/lexicon-benchmark` | Measured TTS-to-ASR risk ranking over public and local-inventory terms; aggregate-only receipts |
 | Synthetic persona evaluation | `tools/persona-gym` | Synthetic-user regression tool for mining |
 | Distribution | `DISTRIBUTION.md`, `scripts/`, platform crates | Packaging, signatures, and pinned runtime assets |
 | Public site | `website/` | Separate web surface; consumes stable claims only |
@@ -42,6 +43,7 @@ Phonon's non-negotiable priority order is privacy and user sovereignty first, th
 | Screenshot resolution | Capture is requested in logical display points | Live measurement of the backing scale returned on a Retina display, plus a small-text fidelity check |
 | Audio normalization | No automatic gain; UI meter only; linear-interpolation resampling | A shared streaming and final front end with an explicit resampler, measured without fair-WER regression |
 | Training data curation | Aqua accepted text remains the ground truth; API reconciliation has not beaten Aqua raw on the full slice | A teacher or reconciliation lane that improves the full 500-clip slice rather than a 25-row pilot |
+| Technical-lexicon benchmark scope | Shipped public lexicon plus local toolbelt, command, man-page, tap, and registry-name terms are ranked by measured two-voice diff class; ranked term exports stay local | A benchmark slice whose composition is measured on the owner's real dictation distribution rather than only synthesized speech, with per-term risk recorded as aggregate class counts in the repository |
 | Aqua baseline receipts | `tools/aqua_baseline.py` scores explicit local JSONL inputs with redaction | Registration of the actual frozen slice and live candidate/baseline comparison receipts |
 
 ## Product planes
@@ -937,6 +939,43 @@ loading, real dictation, keyboard accessibility, VoiceOver navigation, drag
 performance, or end-to-end latency. Those require their own live macOS gates.
 
 ## Work-log
+
+### 2026-10-18: technical-lexicon difficulty benchmark
+
+`tools/lexicon-benchmark` is the term-triage seam between vocabulary mining and
+model evaluation. Its baseline scores the public profile-miner lexicon with the
+existing two-voice Kokoro-to-Parakeet oracle. The local collector adds the
+actual command surface without reading personal text: toolbelt manifest
+commands, executable command names, macOS manual-page command/concept names,
+Homebrew taps, CLI extensions, and package locks only when they identify the
+exact public crates.io, npmjs.org, or PyPI registry. Editable/path packages,
+private registries, linked workspaces, npm publisher scopes, generic English
+words, script filenames, and already-shipped terms are excluded. Candidate
+rows, spoken forms, and stratified review slices remain local; published
+receipts contain aggregate counts and projected manifest fields only.
+
+The reporter records origin as well as category and ASR class and emits a
+deterministic origin-balanced slice, then stratifies each origin across
+`same`, `case`, `format`, and `phonetic`. That prevents an alphabetical
+package list from masquerading as a balanced evaluation set. Category totals
+are multi-label assignments rather than a term partition. The baseline's high
+format/phonetic share justifies targeted dictionary and correction tests, but
+collection and synthesized oracle risk do not by themselves prove product
+impact.
+
+The first complete local extension measured all 5,025 candidates with two
+non-null voices: 47 same, 523 case, 1,700 format, and 2,755 phonetic. Its
+risky subset is 4,455 terms (88.66%). Merged with the shipped baseline, the
+measured set is 46,973 terms with 41,179 format/phonetic terms (87.67%). The
+local 200-row review half is balanced to 100 local terms, while the full
+stratified slice covers 100 shipped and 100 local terms across all four ASR
+classes. Term rows and spoken forms remain in the local research share.
+
+Non-claims: the collector does not read Aqua settings, user dictation, chat
+logs, source text, or the Phonon corpus. A term being installed on this machine
+does not make it worth retaining, and TTS is not the owner's microphone. No
+candidate becomes training data without the separate corpus consent and export
+gates.
 
 ### 2026-10-03: Phonon-owned Voxtral MXFP4 W4A16 harness
 

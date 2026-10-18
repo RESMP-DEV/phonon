@@ -2244,6 +2244,23 @@ personal dictation audio and intended text to unknown third parties. Receipts:
 `evidence/2026-10-18-native-capture-voice-isolation-triage.md` and
 `evidence/2026-10-18-label-crowdwork-boundary.md`.
 
+### 2026-10-18: three-teacher external-rating gate
+
+The native capture was rerun through a third pinned teacher, Voxtral Small 24B
+MXFP4 under vLLM 0.30.0, adding 27 complete rows per arm. Raw-audio teacher
+agreement remains far from an oracle: normalized exact agreement is 4/27 for
+Cohere/Qwen, 9/27 for Cohere/Voxtral, and 5/27 for Qwen/Voxtral. RNNoise changes
+12-14 outputs per teacher and DeepFilterNet at 6 dB changes 14-19, confirming
+that neither is transparent enough to promote without human labels.
+
+Combining mean pairwise raw-audio disagreement with maximum variant change
+selects 12 of 27 segments containing 120.233 seconds of audio. A sanitized
+external-rater package with relative audio URLs and export-only results is
+prepared locally but unpublished. Live Prolific pricing for a 15-minute task at
+$20/hour equivalent is $21 all-in for three raters or $36 for five; no Prolific
+account or result collector is configured yet. Receipt:
+`evidence/2026-10-18-three-teacher-triage-and-crowd-pricing.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

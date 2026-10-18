@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +26,16 @@ PYTHON_LINT_PATHS = (
     "sidecar",
     "tests",
     "tools/aqua_baseline.py",
+    "tools/lexicon-benchmark",
     "tools/tests",
 )
-PYTHON_FORMAT_PATHS = ("sidecar", "tests", "tools/tests")
+PYTHON_FORMAT_PATHS = (
+    "scripts",
+    "sidecar",
+    "tests",
+    "tools/lexicon-benchmark",
+    "tools/tests",
+)
 REVISION_LENGTH = 40
 
 
@@ -246,7 +253,11 @@ def quality_checks(
     ]
     python_environment = {
         **dict(os.environ),
-        "PYTHONPATH": f"{root}{os.pathsep}{root / 'tools'}",
+        # The benchmark tests import their tool modules as top-level modules.
+        "PYTHONPATH": (
+            f"{root}{os.pathsep}{root / 'tools'}"
+            f"{os.pathsep}{root / 'tools' / 'lexicon-benchmark'}"
+        ),
     }
     shell_paths = [str(path) for path in script_paths]
     checks = [
@@ -284,6 +295,7 @@ def quality_checks(
                 "pytest",
                 "tests",
                 "tools/tests",
+                "tools/lexicon-benchmark/tests",
                 "scripts/tests",
                 "-q",
                 "-p",
@@ -334,7 +346,7 @@ def write_receipt(
     """Atomically publish the aggregate receipt with explicit non-claims."""
     receipt = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "platform": platform.system(),
         "source_revision": source_revision,
         "source_dirty": source_dirty,

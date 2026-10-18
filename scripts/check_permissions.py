@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +193,7 @@ def write_receipt(
 ) -> dict[str, Any]:
     receipt = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "platform": platform.system(),
         "source_revision": source_revision,
         "source_dirty": source_dirty,

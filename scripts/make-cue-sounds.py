@@ -75,7 +75,9 @@ def one_pole_lowpass(x: np.ndarray, cutoff: float) -> np.ndarray:
     return out
 
 
-def reverb(x: np.ndarray, decay: float, cutoff: float, wet: float, seed: int) -> np.ndarray:
+def reverb(
+    x: np.ndarray, decay: float, cutoff: float, wet: float, seed: int
+) -> np.ndarray:
     """Dark exponential-noise tail. Cheap, and it is the whole ambience budget."""
     n = int(RATE * decay)
     rng = np.random.default_rng(seed)
@@ -84,7 +86,9 @@ def reverb(x: np.ndarray, decay: float, cutoff: float, wet: float, seed: int) ->
     ir[0] = 0.0  # the dry signal carries the transient; the tail must not double it
     ir /= np.abs(ir).max()
     size = 1 << int(np.ceil(np.log2(len(x) + n)))
-    tail = np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(ir, size), size)[: len(x) + n]
+    tail = np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(ir, size), size)[
+        : len(x) + n
+    ]
     tail /= np.abs(tail).max()
     dry = np.pad(x / np.abs(x).max(), (0, n))
     return (1.0 - wet) * dry + wet * tail
@@ -144,7 +148,9 @@ def main() -> int:
     for name, samples in build().items():
         path = out_dir / name
         write_wav(path, samples)
-        print(f"{path.name}  {len(samples) / RATE * 1000:.0f}ms  {path.stat().st_size} bytes")
+        print(
+            f"{path.name}  {len(samples) / RATE * 1000:.0f}ms  {path.stat().st_size} bytes"
+        )
     return 0
 
 

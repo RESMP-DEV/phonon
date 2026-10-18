@@ -2225,6 +2225,25 @@ and promotion requires both human-approved labels and fused-SALM improvement on
 native capture without band narrowing. Receipt:
 `evidence/2026-10-18-voice-isolation-evaluation.md`.
 
+### 2026-10-18: native-capture isolation triage and local labeling boundary
+
+A consented 265.92-second 48 kHz parallel capture was split into 27 ten-second
+segments. The new derivation utility produced pinned RNNoise and DeepFilterNet
+sidecars while verifying that the raw source hash did not change. Cohere
+Transcribe and Qwen3-ASR each transcribed raw, RNNoise `mp`, RNNoise `bd`, and
+DeepFilterNet at 6 dB attenuation. RNNoise changed 13-15 of 27 outputs per
+teacher, so it is not a transparent preprocessing stage; DeepFilterNet at 6 dB
+was less invasive for Cohere but dropped 65 words in Qwen. No accepted transcript
+existed, so these are disagreement measurements rather than WER claims.
+
+The owner-facing queue now sorts segments by cross-teacher, cross-variant
+divergence and exposes the twelve highest-information segments with all teacher
+hypotheses and local audio. This is the preferred alternative to crowd labeling:
+Amazon Mechanical Turk closed on 2026-09-30, and other crowd pools would disclose
+personal dictation audio and intended text to unknown third parties. Receipts:
+`evidence/2026-10-18-native-capture-voice-isolation-triage.md` and
+`evidence/2026-10-18-label-crowdwork-boundary.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

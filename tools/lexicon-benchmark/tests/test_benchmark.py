@@ -15,6 +15,7 @@ from benchmark import (
     summarize,
     worst_class,
 )
+from collect_local import REPO_ROOT
 
 
 def test_diff_class_orders_format_before_phonetic() -> None:
@@ -258,6 +259,40 @@ def test_report_merges_local_inventory_and_writes_balanced_slice(
     assert "secret-local-term" not in out.read_text(encoding="utf-8")
     assert '"term"' not in out.read_text(encoding="utf-8")
     assert len(stratified.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_negative_counts_and_unsafe_term_exports_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for arguments in (
+        ["--out", str(tmp_path / "report.json"), "--limit", "-1"],
+        ["--out", str(tmp_path / "report.json"), "--top", "-1"],
+        [
+            "--out",
+            str(tmp_path / "report.json"),
+            "--emit-stratified",
+            str(tmp_path / "slice.jsonl"),
+            "--stratified-size",
+            "-1",
+        ],
+    ):
+        with pytest.raises(SystemExit):
+            main(arguments)
+
+    unsafe = REPO_ROOT / "tools" / "lexicon-benchmark" / "terms.jsonl"
+    with pytest.raises(ValueError, match="term exports"):
+        main(["--out", str(tmp_path / "report.json"), "--emit-terms", str(unsafe)])
+
+    duplicate = tmp_path / "same.json"
+    with pytest.raises(ValueError, match="distinct"):
+        main(
+            [
+                "--out",
+                str(duplicate),
+                "--emit-terms",
+                str(duplicate),
+            ]
+        )
 
 
 def test_missing_lexicon_directory_is_a_clean_error(

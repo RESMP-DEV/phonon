@@ -43,39 +43,40 @@ Top category assignments by risky share (multi-label):
 
 The shipped-only v3 aggregate report is local at
 `~/.local/share/phonon-research/lexicon-benchmark/aggregate-report-v3.json`.
-The final merged v4 report and term exports remain under
-`~/.local/share/phonon-research/lexicon-benchmark/local/`.
+The final reviewed v5 report and term exports remain under
+`~/.local/share/phonon-research/lexicon-benchmark/local-fixed/`.
 
 ## Local inventory collection
 
-The final collector run produced 5,025 unique local candidates:
+The reviewed collector run produced 5,382 unique local candidates:
 
 | Source | Kept | Seen |
 | --- | ---: | ---: |
-| toolbelt | 12 | 22 |
+| toolbelt | 13 | 28 |
 | path-command | 2,677 | 3,375 |
-| manpage | 3,503 | 7,151 |
+| manpage | 4,006 | 7,151 |
 | npm-local | 269 | 1,079 |
 | brew-tap | 5 | 14 |
+| pypi-local | 0 | 44 |
 
-Terms can belong to multiple sources. `collection_failures` was empty. The local terms SHA-256 is `744786a83858a1100620e6c50f978a291e43b263c083cbcaa5e8ff0d180f3aef`. Candidate, lexicon, oracle, and ranked outputs remain under `~/.local/share/phonon-research/lexicon-benchmark/local/`.
+Terms can belong to multiple sources. `collection_failures` was empty. The 44 public PyPI observations were all already present in the shipped lexicon. The local terms SHA-256 is `89814380d487634e67d486b0e960b7f4b7a6cbbcaf0bb3e1137fd6feb24144ff`. Candidate, lexicon, oracle, and ranked outputs remain under `~/.local/share/phonon-research/lexicon-benchmark/local-fixed/`.
 
-The completed two-voice oracle classified those 5,025 local terms as:
+The completed two-voice oracle classified those 5,382 local terms as:
 
 | Worst diff class | Local terms |
 | --- | ---: |
-| same | 47 |
-| case | 523 |
-| format | 1,700 |
-| phonetic | 2,755 |
+| same | 50 |
+| case | 535 |
+| format | 1,771 |
+| phonetic | 3,026 |
 
-The local risky subset is 4,455 terms (88.66%). By multi-label source:
+The local risky subset is 4,797 terms (89.13%). By multi-label source:
 
 | Source | Assignments | Risky share |
 | --- | ---: | ---: |
 | npm-local | 269 | 94.05% |
-| toolbelt | 12 | 91.67% |
-| manpage | 3,503 | 88.58% |
+| toolbelt | 13 | 92.31% |
+| manpage | 4,006 | 88.44% |
 | path-command | 2,677 | 84.76% |
 | brew-tap | 5 | 80.00% |
 
@@ -88,29 +89,29 @@ The first xet model transfer degraded to roughly 66 KiB/s. Direct HTTP also deca
 - Kokoro 82M `kokoro-v1_0.pth`: 327,212,226 bytes, SHA-256 `496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4`.
 - Parakeet TDT `parakeet-tdt-0.6b-v2.nemo`: 2,472,222,720 bytes, SHA-256 `d99e39955c9d3d0350d8fb7c75e40c64a2b2eaeb003883d7c941fd2e8747b28c`.
 
-Offline smoke checks loaded Kokoro on CUDA and restored Parakeet from the exact cached NeMo snapshot on CUDA. The measured 5,025-term run was pinned to GPU 1 with `HF_HUB_OFFLINE=1` and checkpointed as JSONL.
+Offline smoke checks loaded Kokoro on CUDA and restored Parakeet from the exact cached NeMo snapshot on CUDA. The initial 5,025-term run was pinned to GPU 1 with `HF_HUB_OFFLINE=1` and checkpointed as JSONL. Review recovered multi-name manual rows and inline uv registry metadata; the resulting 360 supplemental terms ran on B550 CPU with the same models after unrelated H3 and training work occupied both GPUs.
 
-Post-run validation reported 5,025 input terms, 5,025 unique rows, zero missing terms, zero extra terms, and 5,025 two-voice rows. The oracle cache SHA-256 is `105ec54e815fa143752c22415daa767b7d3bdc02adb288aa66ce07244bb38ca1`.
+Post-run validation reported 5,382 required terms, zero missing required terms, 5,382 two-voice rows, and three obsolete cached rows from terms removed by the reviewed collector. The final required-term cache SHA-256 is `2580de99d70bc6df63e7f21680e4ee19389394c87153e3c307e03eeb804693b1`.
 
-The merged v4 report contains 46,973 complete two-voice rows: 41,948 shipped and 5,025 local. Its diff classes are 1,086 same, 4,708 case, 12,721 format, and 28,458 phonetic; 41,179 rows (87.67%) are format/phonetic-risk. All 2416 multi-label rows are counted once per label in category tables. The 200-row stratified export has 100 shipped and 100 local unique terms, with class coverage of 56 phonetic, 53 format, 49 case, and 42 same.
+The merged v5 report contains 47,330 complete two-voice rows: 41,948 shipped and 5,382 local. Its diff classes are 1,089 same, 4,720 case, 12,792 format, and 28,729 phonetic; 41,521 rows (87.73%) are format/phonetic-risk. All 2,562 multi-label rows are counted once per label in category tables. The 200-row stratified export has 100 shipped and 100 local unique terms, with class coverage of 56 phonetic, 53 format, 49 case, and 42 same.
 
 ## Verification
 
-- `PYTHONPATH=tools/lexicon-benchmark uv run --no-project --python 3.12 --with pytest pytest -q tools/lexicon-benchmark/tests`: 23 passed.
+- `PYTHONPATH=tools/lexicon-benchmark uv run --no-project --python 3.12 --with pytest pytest -q tools/lexicon-benchmark/tests`: 27 passed.
 - `uvx ruff check scripts tools/lexicon-benchmark`: pass.
 - `uvx ruff format --check scripts tools/lexicon-benchmark tests sidecar tools/tests`: pass.
-- `just quality`: pass; aggregate Python suite 76 passed.
+- `just quality`: pass; aggregate Python suite 80 passed.
 - `shellcheck tools/profile-miner/lexicon/oracle_linux_setup.sh`: pass.
 - `shfmt --diff tools/profile-miner/lexicon/oracle_linux_setup.sh`: pass.
 - `git diff --check`: pass.
-- Final collector rerun reproduced the same 5,025-term SHA-256 with no collection failures.
-- Final benchmark merge produced 46,973 ranked rows, 46,973 complete two-voice rows, and a 200-row unique stratified slice.
-- Read-only CCR review completed; its blocking findings were repaired: private registry leakage, missing quality-runner integration, pre-ranking `--limit`, all-null voice evidence, origin-balanced stratification, scoped npm handling, exact toolbelt parsing, and aggregate-manifest projection.
+- Final reviewed collector run produced 5,382 terms with no collection failures.
+- Final benchmark merge produced 47,330 ranked rows, 47,330 complete two-voice rows, and a 200-row unique stratified slice.
+- Read-only CCR review completed; all findings were repaired: private registry leakage, missing quality-runner integration, pre-ranking `--limit`, all-null voice evidence, origin-balanced stratification, scoped npm filtering, exact toolbelt parsing, aggregate-manifest projection, multi-name manual rows, inline uv registry metadata, empty PATH components, negative counts, and colliding/unsafe outputs.
 
 ## Non-claims
 
 - This does not read user dictation, Aqua history/settings, or the local Phonon corpus.
 - Two-voice synthesized TTS risk is triage, not product WER.
 - A high-risk term can still be corrected successfully by a dictionary.
-- The 5,025 local candidates are not claimed as training data or product vocabulary.
+- The 5,382 local candidates are not claimed as training data or product vocabulary.
 - No correction model, adapter, or daily-driver capability is qualified by this receipt.

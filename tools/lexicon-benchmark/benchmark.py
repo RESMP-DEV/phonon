@@ -22,6 +22,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from collect_local import is_safe_output_path, non_negative
+
 DIFF_ORDER = ("same", "case", "format", "phonetic")
 DIFF_WEIGHT = {"same": 0.0, "case": 0.2, "format": 0.6, "phonetic": 1.0}
 LEXICON_DIR = Path(__file__).resolve().parent.parent / "profile-miner" / "lexicon"
@@ -243,15 +245,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--emit-terms", type=Path, default=None)
     parser.add_argument("--emit-stratified", type=Path, default=None)
-    parser.add_argument("--stratified-size", type=int, default=200)
+    parser.add_argument("--stratified-size", type=non_negative, default=200)
     parser.add_argument("--extra-lexicon", type=Path, default=None)
     parser.add_argument("--extra-spoken", type=Path, default=None)
     parser.add_argument("--extra-manifest", type=Path, default=None)
     parser.add_argument(
-        "--top", type=int, default=0, help="0 means every term in the term export"
+        "--top",
+        type=non_negative,
+        default=0,
+        help="0 means every term in the term export",
     )
-    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--limit", type=non_negative, default=0)
     arguments = parser.parse_args(argv)
+
+    for export in (arguments.emit_terms, arguments.emit_stratified):
+        if export is not None and not is_safe_output_path(export):
+            raise ValueError(
+                "term exports carry local inventory rows and spoken forms; they must "
+                f"stay outside the repository or under ignored build/: {export}"
+            )
+    output_paths = [
+        arguments.out,
+        *(path for path in (arguments.emit_terms, arguments.emit_stratified) if path),
+    ]
+    if len({path.resolve() for path in output_paths}) != len(output_paths):
+        raise ValueError("benchmark output paths must be distinct")
 
     rows = build_rows(load_lexicon(), load_spoken())
     sources = ["shipped public lexicon"]

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 
+import pytest
 from collect_local import (
     REPO_ROOT,
     CandidateStore,
+    collect_path_commands,
     is_safe_output_path,
+    non_negative,
     normalize_scoped_term,
     normalize_term,
     parse_cargo_lock,
@@ -14,6 +18,7 @@ from collect_local import (
     parse_npm_lock,
     parse_toolbelt,
     parse_uv_lock,
+    validate_output_paths,
     workspace_files,
 )
 
@@ -32,11 +37,13 @@ def test_normalize_keeps_technical_identifiers_only() -> None:
 
 def test_scoped_npm_names_keep_only_the_bare_package() -> None:
     """A scope names the publisher, so only the package half may become a term."""
-    assert normalize_scoped_term("@babel/core") == "core"
+    assert normalize_scoped_term("@babel/core") is None
+    assert normalize_scoped_term("@scope/obscure-core") == "obscure-core"
     assert normalize_scoped_term("@private/invalid name") is None
     assert normalize_scoped_term("no-scope-here") is None
     candidate = store()
-    assert candidate.add("@babel/core", "npm-local") is True
+    assert candidate.add("@babel/core", "npm-local") is False
+    assert candidate.add("@scope/obscure-core", "npm-local") is True
     assert normalize_term("computer") == "computer"
 
 
@@ -58,11 +65,13 @@ def test_toolbelt_and_manpage_parsers() -> None:
         candidate,
     )
     parse_manpages(
-        "io_uring(7) - Linux entry point\nSSL_free(3ssl) - library\nbad page - no section\n",
+        "io_uring(7) - Linux entry point\n"
+        "git(1), git-foo(1) - multi-name manual entry\n"
+        "SSL_free(3ssl) - library\nbad page - no section\n",
         candidate,
     )
     terms = {row["term"] for row in candidate.ranked()}
-    assert {"modelctl", "exq", "io_uring"}.issubset(terms)
+    assert {"modelctl", "exq", "io_uring", "git", "git-foo"}.issubset(terms)
     assert "SSL_free" not in terms
 
 
@@ -101,7 +110,10 @@ def test_registry_lock_parsers_skip_local_packages() -> None:
     }
     uv = {
         "package": [
-            {"name": "obscure-pypi", "source": "registry+https://pypi.org/simple"},
+            {
+                "name": "obscure-pypi",
+                "source": {"registry": "https://pypi.org/simple"},
+            },
             {"name": "local-package", "source": "editable+file:///tmp/private"},
             {
                 "name": "private-registry-pypi",
@@ -170,6 +182,43 @@ def test_output_guard_and_worktree_skipping(tmp_path) -> None:
     assert [path.parent.name for path in workspace_files(tmp_path)] == ["project"]
 
 
+def test_output_paths_must_be_distinct(tmp_path) -> None:
+    first = tmp_path / "report"
+    second = tmp_path / "report.manifest.json"
+    validate_output_paths([first, tmp_path / "terms.json"])
+    with pytest.raises(ValueError, match="distinct"):
+        validate_output_paths(
+            [
+                first,
+                second,
+                tmp_path / "lexicon.json",
+                first.with_suffix(".manifest.json"),
+            ]
+        )
+
+
+def test_non_negative_count_arguments() -> None:
+    assert non_negative("0") == 0
+    assert non_negative("12") == 12
+    with pytest.raises(Exception, match=">= 0"):
+        non_negative("-1")
+
+
+def test_empty_path_components_do_not_scan_the_working_directory(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local_tool = tmp_path / "private-local-tool"
+    local_tool.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    local_tool.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", f":{os.pathsep}")
+
+    candidate = store()
+    collect_path_commands(candidate)
+
+    assert candidate.ranked() == []
+
+
 def test_public_source_constants_are_exact_registries() -> None:
     """Registry gating must be exact, not a prefix or truthiness check."""
     from collect_local import (
@@ -181,5 +230,6 @@ def test_public_source_constants_are_exact_registries() -> None:
     assert PUBLIC_CARGO_SOURCE.startswith("registry+https://github.com/rust-lang/")
     assert PUBLIC_NPM_SOURCE == "https://registry.npmjs.org/"
     assert all(
-        source.startswith("registry+https://pypi.org") for source in PUBLIC_PYPI_SOURCES
+        source in {"https://pypi.org/simple", "https://pypi.org/simple/"}
+        for source in PUBLIC_PYPI_SOURCES
     )

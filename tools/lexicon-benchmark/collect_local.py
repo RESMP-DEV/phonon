@@ -76,9 +76,34 @@ CLEAN_RE = re.compile(r"(?:\x1b\[[0-9;]*m|\\f[BIPR]|\*)")
 PUBLIC_CARGO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
 PUBLIC_NPM_SOURCE = "https://registry.npmjs.org/"
 PUBLIC_PYPI_SOURCES = {
-    "registry+https://pypi.org/simple",
-    "registry+https://pypi.org/simple/",
+    "https://pypi.org/simple",
+    "https://pypi.org/simple/",
 }
+
+
+def validate_output_paths(paths: list[Path]) -> None:
+    """Reject unsafe and colliding outputs before the collector writes anything."""
+    resolved = [path.resolve() for path in paths]
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("collector output paths must be distinct")
+    unsafe = [path for path in paths if not is_safe_output_path(path)]
+    if unsafe:
+        raise ValueError(
+            "local inventory outputs must stay outside the repository "
+            f"or under ignored build/: {', '.join(str(path) for path in unsafe)}"
+        )
+
+
+def non_negative(value: str) -> int:
+    """Parse a count argument that must be zero or greater.
+
+    A negative count is silently truthy, so ``rows[:-1]`` would drop the last
+    row instead of failing. Reject it at the argument boundary instead.
+    """
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return number
 
 
 def load_english() -> set[str]:
@@ -121,13 +146,17 @@ def normalize_scoped_term(raw: str) -> str | None:
 
     Scopes are dropped rather than kept: they identify the publisher, not the
     package, and a private scope would leak an organization name into a term
-    list that is meant to hold public package identifiers only.
+    list that is meant to hold public package identifiers only. The bare half
+    still goes through normalize_term so a scoped name cannot bypass the
+    generic, script-suffix, and digit-prefix filters.
     """
     term = CLEAN_RE.sub("", raw).strip().strip("`\"'")
-    if "/" not in term:
+    if not term.startswith("@") or term.count("/") != 1:
         return None
     _, _, bare = term.rpartition("/")
-    return bare if BARE_TERM_RE.fullmatch(bare) else None
+    if not BARE_TERM_RE.fullmatch(bare):
+        return None
+    return normalize_term(bare)
 
 
 def is_technical(term: str, english: set[str]) -> bool:
@@ -199,7 +228,7 @@ def parse_manpages(text: str, store: CandidateStore) -> int:
         if not match or not re.match(r"^[145678](?:[a-z]+)?$", match["section"]):
             continue
         for name in match["names"].split(","):
-            store.add(name, "manpage")
+            store.add(re.sub(r"\s*\([^)]*\)\s*$", "", name), "manpage")
     return len(store.entries) - before
 
 
@@ -241,7 +270,12 @@ def parse_npm_lock(data: dict[str, Any], store: CandidateStore) -> int:
 def parse_uv_lock(data: dict[str, Any], store: CandidateStore) -> int:
     before = len(store.entries)
     for package in data.get("package", []):
-        source = str(package.get("source", ""))
+        source = package.get("source")
+        if isinstance(source, dict):
+            source = source.get("registry")
+        elif isinstance(source, str) and source.startswith("registry+"):
+            source = source.removeprefix("registry+")
+        source = str(source or "")
         if source in PUBLIC_PYPI_SOURCES:
             store.add(str(package.get("name", "")), "pypi-local")
     return len(store.entries) - before
@@ -262,6 +296,8 @@ def run_collector(command: list[str]) -> tuple[str, str | None]:
 def collect_path_commands(store: CandidateStore) -> None:
     seen_paths: set[Path] = set()
     for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
         path = Path(directory)
         if path in seen_paths or not path.is_dir():
             continue
@@ -373,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lexicon", type=Path, required=True)
     parser.add_argument("--workspace-root", action="append", type=Path, default=[])
     parser.add_argument("--min-priority", type=float, default=0.0)
-    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--limit", type=non_negative, default=0)
     arguments = parser.parse_args(argv)
 
     output_paths = [
@@ -382,12 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         arguments.lexicon,
         arguments.out.with_suffix(".manifest.json"),
     ]
-    unsafe_paths = [path for path in output_paths if not is_safe_output_path(path)]
-    if unsafe_paths:
-        raise ValueError(
-            "local inventory outputs must stay outside the repository "
-            f"or under ignored build/: {', '.join(str(path) for path in unsafe_paths)}"
-        )
+    validate_output_paths(output_paths)
 
     store = CandidateStore()
     failures: dict[str, str] = {}

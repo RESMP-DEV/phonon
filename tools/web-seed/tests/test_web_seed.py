@@ -31,7 +31,7 @@ def test_official_results_outrank_non_official(monkeypatch) -> None:
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(payload), ""),
     )
-    args = argparse.Namespace(limit=5, domain=[], web_retrieval="web-retrieval")
+    args = argparse.Namespace(limit=5, domain=[], exq="exq")
     record = web_seed.search("RTX 6000 Pro Blackwell", args)
     assert record["results"][0]["official"] is True
     assert (
@@ -42,7 +42,7 @@ def test_official_results_outrank_non_official(monkeypatch) -> None:
 
 def test_payload_excludes_zcode() -> None:
     payload = {
-        "providers": ["exa", "jina_or_lm_studio_local"],
+        "providers": ["exa"],
         "excluded_providers": ["zcode"],
         "records": [],
     }

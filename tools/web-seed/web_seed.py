@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve likely-hardware ASR terms using Exa/Jina retrieval only.
+"""Resolve likely-hardware ASR terms using Exa retrieval only.
 
 This tool never calls ZCode, an LLM route, or any personal-data source. It sends
-only the caller-supplied technical phrase to the local `web-retrieval` wrapper
-(Exa search plus optional local Jina/LM Studio rerank embeddings) and returns a
-reviewable JSON evidence file the owner can approve into the dictionary.
+only the caller-supplied technical phrase to native `exq` (Exa search) and
+returns a reviewable JSON evidence file the owner can approve into the dictionary.
 """
 
 from __future__ import annotations
@@ -38,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--domain", action="append", default=[])
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--web-retrieval", default="web-retrieval")
+    parser.add_argument("--exq", default="exq")
     return parser.parse_args()
 
 
@@ -54,7 +53,7 @@ def candidate_from_result(result: dict[str, Any]) -> str:
 
 def search(phrase: str, args: argparse.Namespace) -> dict[str, Any]:
     command = [
-        args.web_retrieval,
+        args.exq,
         "search",
         phrase,
         "-n",
@@ -107,17 +106,15 @@ def search(phrase: str, args: argparse.Namespace) -> dict[str, Any]:
         "query": phrase,
         "status": "complete",
         "provider": "exa",
-        "rerank_provider": "jina_or_lm_studio_local",
+        "rerank_provider": None,
         "results": scored,
     }
 
 
 def main() -> None:
     args = parse_args()
-    if not shutil.which(args.web_retrieval):
-        raise SystemExit(
-            f"missing {args.web_retrieval}; install the native Exa/Jina wrapper"
-        )
+    if not shutil.which(args.exq):
+        raise SystemExit(f"missing {args.exq}; install the native Exa CLI")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     records = []
     for phrase in args.phrase:
@@ -131,7 +128,7 @@ def main() -> None:
         records.append(record)
     payload = {
         "schema_version": 1,
-        "providers": ["exa", "jina_or_lm_studio_local"],
+        "providers": ["exa"],
         "excluded_providers": ["zcode", "openrouter", "glm"],
         "records": records,
     }

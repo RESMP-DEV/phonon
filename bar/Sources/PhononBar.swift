@@ -1303,7 +1303,7 @@ final class MicRecorder {
 
 enum Typer {
     @MainActor
-    static func emit(_ text: String, target: NSRunningApplication?) throws {
+    static func emit(_ text: String, target: InsertionTargetSnapshot?) throws {
         guard !text.isEmpty else { return }
         guard AXIsProcessTrusted() else {
             throw NSError(
@@ -1311,29 +1311,54 @@ enum Typer {
                 userInfo: [NSLocalizedDescriptionKey: "Grant Accessibility to PhononBar"])
         }
 
+        guard let target else {
+            throw NSError(
+                domain: "PhononBar", code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "No active insertion target was captured",
+                    "validation": "missingExpectedTarget",
+                ])
+        }
+
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID,
+            let targetProcess = NSRunningApplication(processIdentifier: target.processID),
+            !targetProcess.isTerminated
+        {
+            targetProcess.activate()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        let currentTarget = InsertionTargetSnapshot.captureFrontmost()
+        let validation = InsertionTargetValidation.validate(
+            expected: target, current: currentTarget)
+        guard validation.isValid else {
+            throw NSError(
+                domain: "PhononBar", code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Insertion target changed before paste",
+                    "validation": String(describing: validation),
+                ])
+        }
+
         let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
+        guard let transaction = PasteboardPrivacy.prepare(text, on: pasteboard) else {
             throw NSError(
                 domain: "PhononBar", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Could not copy dictation to the pasteboard"])
         }
 
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID,
-            let target, !target.isTerminated
-        {
-            target.activate()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-
         guard let (down, up) = makePasteEvents() else {
+            transaction.restoreIfCurrent(on: pasteboard)
             throw NSError(
                 domain: "PhononBar", code: 3,
                 userInfo: [NSLocalizedDescriptionKey: "Could not create paste keyboard events"])
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            transaction.restoreIfCurrent(on: pasteboard)
+        }
     }
 
     static func makePasteEvents() -> (CGEvent, CGEvent)? {
@@ -1559,6 +1584,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var pendingTranscribe: (path: String, id: String)?
     private var submittedTranscribe: (path: String, id: String)?
     private var processing = false
+    private var lastExternalInsertionTarget: InsertionTargetSnapshot?
     private var streamActive = false
     private var previewPolishInput: String?
     private var pendingPreviewText: String?
@@ -1573,12 +1599,27 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var engineRestartWork: DispatchWorkItem?
     private var terminating = false
     private var activeWavPath: String?
-    private var insertionTarget: NSRunningApplication?
+    private var insertionTarget: InsertionTargetSnapshot?
     private lazy var competitors = CompetitorCoordinator(store: appStore)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         setupMainMenu()
+        NotificationCenter.default.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: NSWorkspace.shared,
+            queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let application = note.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication,
+                  application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            else { return }
+            let snapshot = InsertionTargetSnapshot.capture(application)
+            Task { @MainActor in
+                self.lastExternalInsertionTarget = snapshot
+            }
+        }
         appStore.onDictionaryChanged = { [weak self] in
             self?.engine.send(["cmd": "reload_dictionary"])
         }
@@ -2188,12 +2229,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         guard !isRecording else { return }
         let ownPID = ProcessInfo.processInfo.processIdentifier
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-            frontmost.processIdentifier != ownPID
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != ownPID,
+            let target = InsertionTargetSnapshot.captureFrontmost()
         {
-            insertionTarget = frontmost
+            insertionTarget = target
+            lastExternalInsertionTarget = target
         } else {
-            insertionTarget = nil
+            insertionTarget = lastExternalInsertionTarget
         }
         activeWavPath = nil
         pass += 1

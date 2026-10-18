@@ -7,8 +7,10 @@ label coverage, teacher coverage, and duplicate/cross-dataset identities.
 
 The output is aggregate-only. It never contains row IDs, transcripts, teacher
 transcripts, terms, notes, speaker identities, source URLs, or original source
-paths. Keep reports in the local research share or under ignored `build/`.
-Never place the aggregate itself in tracked repository evidence.
+paths. Dataset and Parquet filenames are replaced with opaque ordinal
+identifiers because directory names can themselves carry identities. Keep
+reports in the local research share or under ignored `build/`. Never place the
+aggregate itself in tracked repository evidence.
 
 Run it with PyArrow available:
 

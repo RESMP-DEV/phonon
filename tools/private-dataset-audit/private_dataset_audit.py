@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import sys
 import wave
 from collections import Counter
@@ -21,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 REPORT_SCHEMA_VERSION = 1
 SELECTED_COLUMNS = (
     "id",
@@ -48,6 +49,7 @@ SELECTED_COLUMNS = (
     "notes",
 )
 LABEL_FIELDS = ("verbatim_text", "insert_text", "normalized_text")
+PROVENANCE_FIELDS = frozenset({"repo_id", "revision"})
 NEVER_REPORT_COLUMNS = (
     "id",
     "source_id",
@@ -92,6 +94,10 @@ def _text_present(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, int | float) and math.isfinite(float(value))
+
+
 def _decode_wav(data: bytes) -> tuple[str, float] | None:
     try:
         with wave.open(io.BytesIO(data), "rb") as audio:
@@ -125,6 +131,7 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
         "teacher_count_distribution": Counter(),
         "missing_required_counts": Counter(),
         "hash_mismatches": 0,
+        "sample_rate_mismatches": 0,
         "invalid_wav_rows": 0,
         "duration_mismatches": 0,
         "clip_interval_mismatches": 0,
@@ -149,6 +156,8 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
     domain_tags: set[str] = set()
     usable_rows: set[str] = set()
     duplicate_ids: set[str] = set()
+    duplicate_hashes: set[str] = set()
+    first_row_id_by_hash: dict[str, str] = {}
 
     for row in rows:
         report["rows"] += 1
@@ -170,12 +179,15 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
         data = audio.get("bytes") if isinstance(audio, dict) else None
         expected_hash = row.get("sha256_audio")
         row_usable = valid_id and row_id not in duplicate_ids
+        decoded: tuple[str, float] | None = None
         if not isinstance(data, (bytes, bytearray)) or not data:
             report["missing_required_counts"]["audio_bytes"] += 1
             row_usable = False
         else:
             assert isinstance(data, bytes | bytearray)
             actual_hash = hashlib.sha256(data).hexdigest()
+            if actual_hash in duplicate_hashes:
+                row_usable = False
             if not isinstance(expected_hash, str) or not expected_hash:
                 report["missing_required_counts"]["sha256_audio"] += 1
                 row_usable = False
@@ -184,7 +196,16 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
                 row_usable = False
             if actual_hash in audio_hashes:
                 report["duplicate_audio_rows"] += 1
+                duplicate_hashes.add(actual_hash)
+                previous_id = first_row_id_by_hash.get(actual_hash)
+                if previous_id is not None:
+                    usable_rows.discard(previous_id)
+            if actual_hash in duplicate_hashes:
+                row_usable = False
             audio_hashes.add(actual_hash)
+            if valid_id and actual_hash not in duplicate_hashes:
+                assert isinstance(row_id, str)
+                first_row_id_by_hash.setdefault(actual_hash, row_id)
             report["audio_bytes"] += len(data)
             decoded = _decode_wav(bytes(data))
             if decoded is None:
@@ -198,7 +219,7 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
                     row_usable = False
                 duration = row.get("duration_seconds")
                 if (
-                    not isinstance(duration, int | float)
+                    not _finite_number(duration)
                     or abs(float(duration) - observed_duration) > 0.051
                 ):
                     report["duration_mismatches"] += 1
@@ -208,16 +229,22 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
 
         sample_rate = row.get("sample_rate")
         report["sample_rate_column_counts"][str(sample_rate)] += 1
-        if sample_rate != 16000:
+        decoded_rate = (
+            None
+            if decoded is None
+            else int(decoded[0].removesuffix("hz").rsplit("_", 1)[-1])
+        )
+        if sample_rate != 16000 or sample_rate != decoded_rate:
+            report["sample_rate_mismatches"] += 1
             row_usable = False
 
         start = row.get("clip_start")
         end = row.get("clip_end")
         duration = row.get("duration_seconds")
         if (
-            not isinstance(start, int | float)
-            or not isinstance(end, int | float)
-            or not isinstance(duration, int | float)
+            not _finite_number(start)
+            or not _finite_number(end)
+            or not _finite_number(duration)
             or float(end) - float(start) <= 0
             or abs((float(end) - float(start)) - float(duration)) > 0.101
         ):
@@ -287,6 +314,7 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
     integrity_checks = (
         report["missing_required_counts"],
         report["hash_mismatches"],
+        report["sample_rate_mismatches"],
         report["invalid_wav_rows"],
         report["duration_mismatches"],
         report["clip_interval_mismatches"],
@@ -370,10 +398,9 @@ def audit_datasets(
 ) -> dict[str, Any]:
     """Audit local mirrors while tracking only aggregate cross-dataset overlap."""
     provenance = provenance or {}
-    global_ids: set[str] = set()
-    global_hashes: set[str] = set()
     datasets: list[dict[str, Any]] = []
-    for root in roots:
+    identities: dict[str, tuple[set[str], set[str]]] = {}
+    for dataset_index, root in enumerate(roots, start=1):
         if not root.is_dir():
             raise AuditError(f"dataset directory does not exist: {root}")
         local_ids: set[str] = set()
@@ -381,17 +408,15 @@ def audit_datasets(
 
         report = summarize_rows(
             observed_rows(iter_parquet_rows(root), local_ids, local_hashes),
-            root.name,
-        )
-        report["cross_dataset_duplicate_ids"] = len(local_ids & global_ids)
-        report["cross_dataset_duplicate_audio_hashes"] = len(
-            local_hashes & global_hashes
+            f"dataset_{dataset_index}",
         )
         files = []
-        for path in sorted((root / "data").glob("*.parquet")):
+        for file_index, path in enumerate(
+            sorted((root / "data").glob("*.parquet")), start=1
+        ):
             files.append(
                 {
-                    "file": path.name,
+                    "file": f"file_{file_index}",
                     "bytes": path.stat().st_size,
                     "sha256": file_sha256(path),
                     "row_groups": parquet_row_groups(path),
@@ -400,14 +425,34 @@ def audit_datasets(
         report["files"] = files
         report["provenance"] = provenance.get(root.name)
         datasets.append(report)
-        global_ids.update(local_ids)
-        global_hashes.update(local_hashes)
+        identities[report["dataset"]] = (local_ids, local_hashes)
+    for report in datasets:
+        dataset = report["dataset"]
+        local_ids, local_hashes = identities[dataset]
+        other_ids: set[str] = set()
+        other_hashes: set[str] = set()
+        for other_name, (row_ids, audio_hashes) in identities.items():
+            if other_name == dataset:
+                continue
+            other_ids.update(row_ids)
+            other_hashes.update(audio_hashes)
+        report["cross_dataset_duplicate_ids"] = len(local_ids & other_ids)
+        report["cross_dataset_duplicate_audio_hashes"] = len(
+            local_hashes & other_hashes
+        )
+        if (
+            report["cross_dataset_duplicate_ids"]
+            or report["cross_dataset_duplicate_audio_hashes"]
+        ):
+            report["usable_train_rows"] = 0
+            report["usage_verdict"] = "blocked_by_cross_dataset_duplicate_identity"
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "recorded_at": datetime.now(UTC).isoformat(),
         "privacy": {
             "emits_transcripts": False,
             "emits_row_ids": False,
+            "emits_dataset_or_file_names": False,
             "emits_source_urls_or_original_paths": False,
             "never_reported_columns": list(NEVER_REPORT_COLUMNS),
         },
@@ -437,6 +482,24 @@ def safe_output_path(path: Path) -> Path:
     raise AuditError("report output must be outside the repository or under build/")
 
 
+def validate_output_aliases(
+    output: Path, dataset_roots: Iterable[Path], provenance: Path | None
+) -> None:
+    """Prevent report invalidation from deleting a private input path."""
+    resolved_output = output.resolve()
+    protected = [*dataset_roots]
+    if provenance is not None:
+        protected.append(provenance)
+    for candidate in protected:
+        resolved_candidate = candidate.resolve()
+        if (
+            resolved_output == resolved_candidate
+            or resolved_candidate in resolved_output.parents
+            or resolved_output in resolved_candidate.parents
+        ):
+            raise AuditError("report output must not overwrite an input path")
+
+
 def invalidate_output(path: Path) -> None:
     """Remove an earlier report before a rerun can leave a stale PASS."""
     path.unlink(missing_ok=True)
@@ -451,10 +514,33 @@ def load_provenance(path: Path | None) -> dict[str, Any]:
         raise AuditError(f"cannot read provenance {path}: {error}") from error
     if not isinstance(value, dict):
         raise AuditError("provenance must be a JSON object keyed by directory name")
-    return value
+    normalized: dict[str, dict[str, str]] = {}
+    for dataset, entry in value.items():
+        if not isinstance(dataset, str) or not dataset:
+            raise AuditError("provenance dataset keys must be nonempty strings")
+        if not isinstance(entry, dict) or set(entry) != PROVENANCE_FIELDS:
+            raise AuditError(
+                "each provenance entry must contain exactly repo_id and revision"
+            )
+        if any(
+            not isinstance(entry[field], str) or not entry[field].strip()
+            for field in PROVENANCE_FIELDS
+        ):
+            raise AuditError("provenance repo_id and revision must be nonempty strings")
+        revision = entry["revision"]
+        if len(revision) != 40 or any(
+            character not in "0123456789abcdef" for character in revision.lower()
+        ):
+            raise AuditError("provenance revision must be a 40-hex commit SHA")
+        normalized[dataset] = {
+            "repo_id": entry["repo_id"],
+            "revision": revision.lower(),
+        }
+    return normalized
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
+    """Parse the local private-dataset audit invocation."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, action="append", required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -462,11 +548,36 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def write_failure_report(path: Path, failure: str) -> None:
+    """Publish an exception-class-only failure marker after invalidation."""
+    payload = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "passed": False,
+        "failure": failure,
+        "non_claims": [
+            "This failure marker does not identify the failing private row or path.",
+            "No integrity or training-eligibility claim is made.",
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Write one sanitized aggregate report and enforce audio integrity."""
+    output: Path | None = None
     try:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
-        output = safe_output_path(arguments.out)
+        candidate_output = safe_output_path(arguments.out)
+        validate_output_aliases(
+            candidate_output, arguments.dataset, arguments.provenance
+        )
+        output = candidate_output
         invalidate_output(output)
         report = audit_datasets(
             arguments.dataset, load_provenance(arguments.provenance)
@@ -477,7 +588,15 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         temporary.replace(output)
-    except (AuditError, OSError) as error:
+    except Exception as error:  # noqa: BLE001 - private-input CLI failure boundary
+        if output is not None:
+            try:
+                write_failure_report(output, type(error).__name__)
+            except Exception as report_error:  # noqa: BLE001 - report boundary
+                print(
+                    f"FAIL private-dataset-audit report: {report_error}",
+                    file=sys.stderr,
+                )
         print(f"FAIL private-dataset-audit: {error}", file=sys.stderr)
         return 2
     integrity_passed = all(

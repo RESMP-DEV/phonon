@@ -25,6 +25,7 @@ The new privacy-safe CLI verified every embedded byte:
 - Unique row IDs: 4,452
 - Focused-set cross-dataset duplicate IDs or audio hashes: 0
 - Audio hash mismatches: 0
+- Metadata-versus-container sample-rate mismatches: 0
 - Invalid WAVs: 0
 - Duration mismatches: 0
 - Clip-interval mismatches: 0
@@ -69,12 +70,18 @@ not an integrity claim.
 
 ## Verification
 
-At dirty working-tree revision `f670b0a0a1707f3c5c6703697e9bee3d7b0497e0`,
-the focused tool test command passed with five tests, and the aggregate command
-returned `PASS` after checking 4,710 embedded audio rows. The final common gate
-then passed `just quality`: repository contracts, diff hygiene, Ruff
-lint/format, 89 Python tests, and shell checks at dirty revision
-`f670b0a0a1707f3c5c6703697e9bee3d7b0497e0`; receipt:
+The first implementation round passed five focused tests and the aggregate
+audio audit at the then-current dirty tree. Review probes then found and repaired
+the repository-root miscalculation, metadata/container sample-rate disagreement,
+duplicate-audio eligibility, arbitrary provenance fields, dataset/file basename
+disclosure, output/input aliasing, non-finite durations, and corrupt-Parquet
+failure handling. The repaired focused tool suite has ten tests, and the
+aggregate command again returned `PASS` over all 4,710 embedded audio rows.
+The corrupt-Parquet probe returned exit code 2 and wrote only an
+`ArrowInvalid` failure marker, not a traceback or private path. The final common
+gate passed `just quality`: repository contracts, diff hygiene,
+Ruff lint/format, all repository Python tests, and shell checks at a clean
+branch head. The machine receipt records the exact validated head at
 `build/reports/quality/receipt.json`.
 
 ## Non-claims

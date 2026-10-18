@@ -28,18 +28,29 @@ def completed_keys(output: Path) -> set[str]:
         if not line.strip():
             continue
         row = json.loads(line)
-        key = str(row["audio"])
-        if str(row.get("hyp", "")).strip():
-            keys.add(key)
+        if "audio" in row and "hyp" in row:
+            keys.add(str(row["audio"]))
+    return keys
+
+
+def empty_result_keys(output: Path) -> set[str]:
+    """Rows that were transcribed but decoded to empty text."""
+    if not output.exists():
+        return set()
+    keys: set[str] = set()
+    for line in output.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if "audio" in row and "hyp" in row and not str(row.get("hyp", "")).strip():
+            keys.add(str(row["audio"]))
     return keys
 
 
 def decode_transcription(value: str | list[str]) -> str:
     if isinstance(value, list):
         if len(value) != 1:
-            raise RuntimeError(
-                f"expected one transcription, got {len(value)}"
-            )
+            raise RuntimeError(f"expected one transcription, got {len(value)}")
         value = value[0]
     return value.strip()
 
@@ -50,9 +61,7 @@ def write_metadata(path: Path, payload: dict[str, Any]) -> None:
             return sorted(value)
         raise TypeError(f"unsupported metadata value: {type(value).__name__}")
 
-    path.write_text(
-        json.dumps(payload, indent=1, sort_keys=True, default=serialize_set) + "\n"
-    )
+    path.write_text(json.dumps(payload, indent=1, sort_keys=True, default=serialize_set) + "\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,7 +86,10 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     if args.force and args.out.exists():
         args.out.unlink()
+    # A segment the model decodes as silence is a legitimate result, so completion
+    # is keyed on the presence of a record rather than on non-empty text.
     done = completed_keys(args.out)
+    empty = empty_result_keys(args.out)
     metadata_path = args.out.with_suffix(".meta.json")
     write_metadata(
         metadata_path,
@@ -90,6 +102,7 @@ def main() -> None:
             "output": str(args.out),
             "selected_rows": len(rows),
             "completed_rows": len(done),
+            "empty_rows": len(empty),
             "language_mode": "auto",
             "started_at_unix": time.time(),
         },
@@ -101,9 +114,7 @@ def main() -> None:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("Qwen3-ASR teacher requires CUDA for the frozen-slice run")
     device = torch.device(args.device)
-    processor = transformers.AutoProcessor.from_pretrained(
-        args.model, revision=args.revision
-    )
+    processor = transformers.AutoProcessor.from_pretrained(args.model, revision=args.revision)
     model = transformers.AutoModelForMultimodalLM.from_pretrained(
         args.model,
         revision=args.revision,
@@ -133,9 +144,7 @@ def main() -> None:
                 )
                 continuation = output[:, inputs["input_ids"].shape[1] :]
                 hyp = decode_transcription(
-                    processor.decode(
-                        continuation, return_format="transcription_only"
-                    )
+                    processor.decode(continuation, return_format="transcription_only")
                 )
             elapsed = time.perf_counter() - request_started
             result = {
@@ -168,7 +177,8 @@ def main() -> None:
                         "audio_root": str(args.audio_root),
                         "output": str(args.out),
                         "selected_rows": len(rows),
-                        "completed_rows": sorted(completed_keys(args.out)),
+                        "completed_rows": len(completed_keys(args.out)),
+                        "empty_rows": len(empty_result_keys(args.out)),
                         "language_mode": "auto",
                         "started_at_unix": time.time(),
                     },
@@ -189,6 +199,7 @@ def main() -> None:
             "output": str(args.out),
             "selected_rows": len(rows),
             "completed_rows": len(final_done),
+            "empty_rows": len(empty_result_keys(args.out)),
             "generated_rows": generated_rows,
             "language_mode": "auto",
             "wall_s": round(time.perf_counter() - started, 3),

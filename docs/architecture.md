@@ -2261,6 +2261,23 @@ $20/hour equivalent is $21 all-in for three raters or $36 for five; no Prolific
 account or result collector is configured yet. Receipt:
 `evidence/2026-10-18-three-teacher-triage-and-crowd-pricing.md`.
 
+### 2026-10-18: three-teacher dataset structuring
+
+The three raw-audio teachers now feed a durable tiered-manifest builder rather
+than an ad-hoc review queue. Corrected mean pairwise WER filtering admits 13
+rows at the strict 0.075 cut or 18 rows at the broad 0.150 cut. The broad lane
+resolves 24 of 27 rows automatically, leaves three for review, and excludes six
+high-disagreement or silent rows; it also emits 54 derived-audio augmentation
+rows separately from the raw lane.
+
+Three Liquid Audio packs were built on B550 with the unchanged training contract
+(`prose_dictation_v1`, prompt SHA `3ccd2ade…`, context 768): strict raw with 13
+rows, broad raw with 18 rows, and broad derived augmentation with 54 rows. All
+packs skipped zero rows and passed a live `LFM2DataLoader` probe. Their consensus
+targets are weak teacher labels, not human ground truth, and the derived pack is
+not a promotion of denoising. Receipt:
+`evidence/2026-10-18-three-teacher-dataset-structuring.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

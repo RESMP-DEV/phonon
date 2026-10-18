@@ -2280,6 +2280,27 @@ permissive raw with 21 rows. All packs skipped zero rows and passed a live
 human ground truth, and the derived pack is not a promotion of denoising. Receipt:
 `evidence/2026-10-18-three-teacher-dataset-structuring.md`.
 
+### 2026-10-18: Aqua 0.21.2 integration and old-data policy
+
+The installed Aqua Voice 0.21.2 bundle was audited without changing settings or
+processes. Its persisted history is always mono PCM16 at 16 kHz; the JavaScript
+provider requests echo cancellation and noise suppression, while the current
+installation selects the native bridge provider. Older Aqua data therefore
+remains useful for correction/history supervision and degraded-capture
+regularization, but it is not high-fidelity acoustic ground truth and must carry
+capture-profile provenance rather than silently mixing with native Phonon 48 kHz
+capture.
+
+Aqua runs a signed Swift bridge over a local Unix socket for CGEvent hotkeys,
+AudioQueue capture, accessibility context, pasteboard insertion, keyboard
+simulation, system-audio muting, and supervised restarts. Phonon already has the
+key hotkey and microphone-prewarm ideas natively. The priority parity gaps are
+clipboard-history avoidance metadata, frontmost/AX target validation before
+paste, app-specific submit behavior, and capture provenance. Aqua’s larger
+translation/camera/computer-control surfaces remain outside Phonon’s dictation
+scope. Receipt:
+`evidence/2026-10-18-aqua-0.21.2-macos-integration-audit.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

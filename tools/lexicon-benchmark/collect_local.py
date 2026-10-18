@@ -364,7 +364,7 @@ def collect_workspace(root: Path, store: CandidateStore) -> None:
     for path in workspace_files(root):
         parser = parsers[path.name]
         try:
-            if path.name == "uv.lock":
+            if path.name in {"Cargo.lock", "uv.lock"}:
                 with path.open("rb") as handle:
                     data = tomllib.load(handle)
             else:

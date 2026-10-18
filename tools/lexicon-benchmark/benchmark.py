@@ -59,7 +59,9 @@ def worst_class(term: str, voices: dict[str, Any]) -> str:
 
 def load_lexicon(path: Path | None = None) -> dict[str, dict[str, Any]]:
     if path is None:
-        with gzip.open(LEXICON_DIR / "lexicon.json.gz", "rt") as handle:
+        with gzip.open(
+            LEXICON_DIR / "lexicon.json.gz", "rt", encoding="utf-8"
+        ) as handle:
             return json.load(handle)
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
@@ -69,9 +71,11 @@ def load_spoken(path: Path | None = None) -> dict[str, dict[str, Any]]:
     spoken: dict[str, dict[str, Any]] = {}
     spoken_path = path or LEXICON_DIR / "spoken.jsonl.gz"
     if not spoken_path.exists():
+        if path is not None:
+            raise FileNotFoundError(f"spoken results not found: {path}")
         return spoken
     if path is None:
-        with gzip.open(spoken_path, "rt") as handle:
+        with gzip.open(spoken_path, "rt", encoding="utf-8") as handle:
             lines = handle.readlines()
     else:
         with spoken_path.open(encoding="utf-8") as handle:
@@ -221,7 +225,8 @@ def stratified_slice(rows: list[dict[str, Any]], size: int) -> list[dict[str, An
                 selected.append(row)
                 seen.add(row["term"])
     if len(selected) < size:
-        for row in stratify(rows, size - len(selected)):
+        remaining_rows = [row for row in rows if row["term"] not in seen]
+        for row in stratify(remaining_rows, size - len(selected)):
             if row["term"] not in seen:
                 selected.append(row)
                 seen.add(row["term"])
@@ -271,10 +276,18 @@ def main(argv: list[str] | None = None) -> int:
     if len({path.resolve() for path in output_paths}) != len(output_paths):
         raise ValueError("benchmark output paths must be distinct")
 
+    extension_flags = (
+        arguments.extra_lexicon,
+        arguments.extra_spoken,
+        arguments.extra_manifest,
+    )
+    if any(extension_flags) != all(extension_flags):
+        raise ValueError(
+            "--extra-lexicon, --extra-spoken, and --extra-manifest must be used together"
+        )
+
     rows = build_rows(load_lexicon(), load_spoken())
     sources = ["shipped public lexicon"]
-    if bool(arguments.extra_lexicon) != bool(arguments.extra_spoken):
-        raise ValueError("--extra-lexicon and --extra-spoken must be used together")
     if arguments.extra_lexicon and arguments.extra_spoken:
         rows.extend(
             build_rows(

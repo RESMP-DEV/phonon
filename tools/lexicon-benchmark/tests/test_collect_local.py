@@ -8,6 +8,7 @@ from collect_local import (
     REPO_ROOT,
     CandidateStore,
     collect_path_commands,
+    collect_workspace,
     is_safe_output_path,
     non_negative,
     normalize_scoped_term,
@@ -132,6 +133,20 @@ def test_registry_lock_parsers_skip_local_packages() -> None:
         "obscure-pypi",
     }
     assert not any("@" in term for term in terms)
+
+
+def test_collect_workspace_parses_cargo_toml_locks(tmp_path) -> None:
+    lock = tmp_path / "Cargo.lock"
+    lock.write_text(
+        '[[package]]\nname = "obscure-crate-toml"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        encoding="utf-8",
+    )
+    candidate = store()
+
+    collect_workspace(tmp_path, candidate)
+
+    assert {row["term"] for row in candidate.ranked()} == {"obscure-crate-toml"}
 
 
 def test_ranked_rows_are_serializable_and_sorted() -> None:

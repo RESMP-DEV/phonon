@@ -9,6 +9,7 @@ import pytest
 from benchmark import (
     build_rows,
     diff_class,
+    load_spoken,
     main,
     public_manifest,
     stratified_slice,
@@ -189,6 +190,47 @@ def test_stratified_slice_balances_classes_and_origins() -> None:
     }
 
 
+def test_stratified_slice_fallback_fills_remaining_quota() -> None:
+    rows = [
+        {
+            "term": "only-local",
+            "cats": ["toolbelt"],
+            "diff_class": "phonetic",
+            "risk": 1.0,
+            "origin": "local-inventory",
+            "priority": 1.0,
+            "voice_count": 2,
+            "spoken_forms": [],
+        }
+    ]
+    for index in range(5):
+        rows.append(
+            {
+                "term": f"shipped-{index}",
+                "cats": ["gpu"],
+                "diff_class": "same",
+                "risk": 0.0,
+                "origin": "shipped",
+                "priority": 0.5,
+                "voice_count": 2,
+                "spoken_forms": [],
+            }
+        )
+
+    selected = stratified_slice(rows, 4)
+
+    assert len(selected) == 4
+    assert collections.Counter(row["origin"] for row in selected) == {
+        "local-inventory": 1,
+        "shipped": 3,
+    }
+
+
+def test_explicit_missing_spoken_results_fail() -> None:
+    with pytest.raises(FileNotFoundError, match="spoken results not found"):
+        load_spoken(Path("/definitely/missing/spoken.jsonl"))
+
+
 def test_report_merges_local_inventory_and_writes_balanced_slice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -259,6 +301,29 @@ def test_report_merges_local_inventory_and_writes_balanced_slice(
     assert "secret-local-term" not in out.read_text(encoding="utf-8")
     assert '"term"' not in out.read_text(encoding="utf-8")
     assert len(stratified.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_extension_provenance_flags_must_form_one_triple(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("benchmark.LEXICON_DIR", tmp_path)
+    out = tmp_path / "report.json"
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"summary": {"terms": 1}}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be used together"):
+        main(["--out", str(out), "--extra-manifest", str(manifest)])
+    with pytest.raises(ValueError, match="must be used together"):
+        main(
+            [
+                "--out",
+                str(out),
+                "--extra-lexicon",
+                str(tmp_path / "lexicon.json"),
+                "--extra-spoken",
+                str(tmp_path / "spoken.jsonl"),
+            ]
+        )
 
 
 def test_negative_counts_and_unsafe_term_exports_are_rejected(

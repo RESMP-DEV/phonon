@@ -963,10 +963,10 @@ format/phonetic share justifies targeted dictionary and correction tests, but
 collection and synthesized oracle risk do not by themselves prove product
 impact.
 
-The reviewed local extension measured all 5,382 candidates with two non-null
-voices: 50 same, 535 case, 1,771 format, and 3,026 phonetic. Its risky subset
-is 4,797 terms (89.13%). Merged with the shipped baseline, the measured set is
-47,330 terms with 41,521 format/phonetic terms (87.73%). The
+The reviewed local extension measured all 6,170 candidates with two non-null
+voices: 63 same, 588 case, 2,046 format, and 3,473 phonetic. Its risky subset
+is 5,519 terms (89.45%). Merged with the shipped baseline, the measured set is
+48,118 terms with 42,243 format/phonetic terms (87.79%). The
 local 200-row review half is balanced to 100 local terms, while the full
 stratified slice covers 100 shipped and 100 local terms across all four ASR
 classes. Term rows and spoken forms remain in the local research share.

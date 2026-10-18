@@ -2203,6 +2203,28 @@ native-versus-JS Aqua A/B. Future Phonon consented capture should preserve a
 hardware-rate sidecar before the required 16 kHz training conversion. Receipt:
 `evidence/2026-10-18-aqua-audio-quality-audit.md`.
 
+### 2026-10-18: optional voice-isolation lane
+
+Free isolation was evaluated as a general dictation preprocessing option, not as
+repair for the already bandwidth-starved Aqua cache. On the real 100-clip Aqua
+lane, RNNoise `mp` and `bd` narrowly improved the same Cohere teacher’s fair
+WER (0.066099 and 0.065693 versus 0.068938 untreated), while DeepFilterNet3
+with its post-filter regressed to 0.084347. These are agreement scores against
+Aqua final text, not human ground truth, so they cannot promote a default.
+
+A native 48 kHz derived-sidecar smoke then rejected the most aggressive
+settings: RNNoise `mp` preserved the raw 99.9% rolloff, while RNNoise `bd` and
+DeepFilterNet+PF narrowed it to 8.5 kHz and 3.7 kHz respectively. DeepFilterNet
+recovered most bandwidth only when limited to 6 dB attenuation, showing that
+its default post-filter strength, not the model alone, is the hazard. RNNoise
+ran at roughly 50x realtime; DeepFilterNet at roughly 17x realtime.
+
+The current position is therefore an explicit candidate gate, not runtime
+behavior: raw capture stays canonical, any denoising is derived and optional,
+and promotion requires both human-approved labels and fused-SALM improvement on
+native capture without band narrowing. Receipt:
+`evidence/2026-10-18-voice-isolation-evaluation.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

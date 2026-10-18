@@ -28,8 +28,34 @@ def test_approving_advances_to_the_next_clip_in_rendered_html() -> None:
         }
     )
 
-    assert "if (verdict === 'approved' && current < rows.length - 1)" in html
+    assert "function nextPendingIndex()" in html
+    assert "const next = nextPendingIndex();" in html
     assert "setVerdict('approved')" in html
+    assert "setVerdict('needs_elliot')" in html
+    assert "setVerdict('skip')" in html
+
+
+def test_review_ui_uses_focused_workspace_and_drawer() -> None:
+    html = render_review_ui(
+        {
+            "title": "test",
+            "created_at": "now",
+            "review_id": "test-review",
+            "export_name": "test.jsonl",
+            "row_count": 0,
+            "dedupe_removed": 0,
+            "rows": [],
+        }
+    )
+
+    assert 'class="workspace"' in html
+    assert 'id="drawer"' in html
+    assert 'id="progressBar"' in html
+    assert 'id="canonical"' in html
+    assert 'id="teachers"' in html
+    assert 'class="sidebar"' not in html
+    assert "row.teacher_transcript_groups || []" in html
+    assert "groups[digit - 1]" in html
 
 
 def test_regeneration_reuses_the_previous_review_identity(tmp_path: Path) -> None:

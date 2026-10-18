@@ -221,17 +221,17 @@ def render_review_ui(payload: dict[str, Any]) -> str:
     style = """
     :root {
       color-scheme: light;
-      --bg: #f6f7f8;
+      --bg: #f8f9fa;
       --panel: #ffffff;
       --ink: #172026;
-      --muted: #64727b;
+      --muted: #576269;
       --line: #d9e0e4;
-      --accent: #126b74;
+      --accent: #0e5f67;
       --accent-soft: #d8eef0;
-      --warn: #9a5b11;
-      --warn-soft: #f4e4c8;
+      --warn: #865000;
+      --warn-soft: #fef3e0;
       --bad: #9c2f38;
-      --bad-soft: #f2d8dc;
+      --bad-soft: #fce8ec;
       --extra: #7a4a07;
       --extra-soft: #ffe8bc;
       --miss: #8f2632;
@@ -257,86 +257,166 @@ def render_review_ui(payload: dict[str, Any]) -> str:
     }
     button:hover { border-color: var(--accent); }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary.active-verdict { box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
     button.warn { background: var(--warn-soft); border-color: #dfbd80; }
+    button.warn.active-verdict { box-shadow: inset 0 2px 4px rgba(0,0,0,0.15); }
     button.bad { background: var(--bad-soft); border-color: #e2a7ad; }
+    button.bad.active-verdict { box-shadow: inset 0 2px 4px rgba(0,0,0,0.15); }
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .app {
       display: grid;
-      grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+      grid-template-rows: 48px minmax(0, 1fr) 28px;
       min-height: 100vh;
     }
-    .sidebar {
-      border-right: 1px solid var(--line);
-      background: #fff;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
-      min-width: 0;
-    }
-    .brand { padding: 16px; border-bottom: 1px solid var(--line); }
-    .brand h1 { font-size: 18px; line-height: 1.2; margin: 0 0 6px; }
-    .brand .meta { color: var(--muted); font-size: 12px; line-height: 1.35; }
-    .filters { padding: 10px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
-    .search { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
-    .status-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-    .status-tabs button { padding: 5px 8px; font-size: 12px; }
-    .status-tabs button.active { background: var(--accent-soft); border-color: var(--accent); }
-    .row-list { overflow: auto; }
-    .row-button {
-      width: 100%;
-      border: 0;
-      border-bottom: 1px solid var(--line);
-      border-radius: 0;
-      text-align: left;
-      padding: 10px 12px;
-      display: grid;
-      gap: 5px;
-    }
-    .row-button.active { background: var(--accent-soft); }
-    .row-id { font-weight: 700; font-size: 12px; overflow-wrap: anywhere; }
-    .row-sub { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .status-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #aeb9bf; }
-    .status-approved { background: #2f7d55; }
-    .status-needs_elliot { background: #c48126; }
-    .status-skip { background: #9c2f38; }
-    main { min-width: 0; }
-    .topbar {
+    /* --- Command bar --- */
+    .cmdbar {
       position: sticky;
       top: 0;
-      z-index: 2;
-      background: rgba(246,247,248,0.96);
-      border-bottom: 1px solid var(--line);
-      padding: 12px 18px;
+      z-index: 10;
       display: flex;
-      gap: 10px;
       align-items: center;
-      justify-content: space-between;
+      gap: 12px;
+      padding: 0 16px;
+      height: 48px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
     }
-    .topbar-left, .topbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
-    .counter { color: var(--muted); font-size: 13px; }
-    .content {
+    .cmdbar-nav { display: flex; gap: 4px; align-items: center; }
+    .cmdbar-nav button { padding: 4px 8px; font-size: 13px; }
+    .cmdbar-counter {
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+    .cmdbar-id {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cmdbar-status {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .cmdbar-spacer { flex: 1; min-width: 8px; }
+    .cmdbar-throughput {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .cmdbar label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    /* --- Progress bar --- */
+    .progress {
+      flex: 1;
+      height: 4px;
+      display: flex;
+      border-radius: 2px;
+      overflow: hidden;
+      background: var(--line);
+      min-width: 60px;
+    }
+    .progress-seg { height: 100%; }
+    .progress-seg.seg-approved { background: #2f7d55; }
+    .progress-seg.seg-needs_elliot { background: #c48126; }
+    .progress-seg.seg-skip { background: #9c2f38; }
+    .progress-seg.seg-pending { background: var(--line); }
+    .progress-seg.seg-current { outline: 1px solid #fff; outline-offset: -1px; }
+    /* --- Workspace two-column --- */
+    .workspace {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
-      gap: 16px;
-      padding: 16px 18px 28px;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      min-height: 0;
     }
-    .panel {
-      background: var(--panel);
+    .editor-col {
+      padding: 16px 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .diffs-col {
+      border-left: 1px solid var(--line);
+      padding: 16px 20px;
+      overflow-y: auto;
+    }
+    .diffs-col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    /* --- Audio & speed --- */
+    audio { width: 100%; display: block; }
+    .speed-row {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .speed-row button {
+      padding: 3px 8px;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .speed-row button.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+    /* --- Canonical editor --- */
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
       border: 1px solid var(--line);
       border-radius: 8px;
-      min-width: 0;
+      padding: 10px;
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--ink);
+      background: #fff;
     }
-    .panel-header {
-      border-bottom: 1px solid var(--line);
-      padding: 11px 12px;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
+    #notes {
+      min-height: 56px;
+      font-size: 13px;
+    }
+    /* --- Collapsed metadata --- */
+    .meta-details {
+      font-size: 13px;
       color: var(--muted);
-      font-size: 12px;
     }
-    .panel-body { padding: 12px; }
-    audio { width: 100%; display: block; }
-    .clip-title { font-weight: 800; overflow-wrap: anywhere; }
+    .meta-details summary {
+      cursor: pointer;
+      user-select: none;
+    }
+    .meta-details .kv {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 100px minmax(0,1fr);
+      gap: 4px 10px;
+      font-size: 13px;
+    }
+    .meta-details .kv div:nth-child(odd) { color: var(--muted); }
+    /* --- Term pills --- */
     .pills { display: flex; flex-wrap: wrap; gap: 6px; }
     .pill {
       display: inline-flex;
@@ -349,28 +429,41 @@ def render_review_ui(payload: dict[str, Any]) -> str:
       max-width: 100%;
       overflow-wrap: anywhere;
     }
-    textarea {
-      width: 100%;
-      min-height: 190px;
-      resize: vertical;
+    /* --- Verdict row --- */
+    .verdict-row {
+      display: flex;
+      gap: 8px;
+      padding-top: 4px;
+    }
+    .verdict-row button { flex: 1; }
+    /* --- Teacher diff cards --- */
+    .teacher-card {
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
-      line-height: 1.45;
-      color: var(--ink);
-      background: #fff;
+      padding: 10px 12px;
+      margin-bottom: 10px;
     }
-    #notes { min-height: 84px; }
-    .teacher {
-      border-top: 1px solid var(--line);
-      padding: 10px 0;
-      display: grid;
-      gap: 6px;
+    .teacher-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
     }
-    .teacher:first-child { border-top: 0; padding-top: 0; }
-    .teacher-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-    .teacher-name { font-weight: 700; font-size: 13px; }
-    .teacher-text { font-size: 13px; line-height: 1.45; color: #253139; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .teacher-card-head .teacher-name { font-weight: 700; font-size: 13px; }
+    .teacher-card-head kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      background: #f6f7f8;
+      color: var(--muted);
+    }
     .teacher-diff {
       font-size: 13px;
       line-height: 1.7;
@@ -391,26 +484,132 @@ def render_review_ui(payload: dict[str, Any]) -> str:
       text-decoration: line-through;
       text-decoration-thickness: 1px;
     }
+    .diff-stat { color: var(--muted); font-size: 12px; }
     .diff-legend {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       color: var(--muted);
       font-size: 12px;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
-    .diff-stat { color: var(--muted); font-size: 12px; }
-    details.raw { font-size: 12px; color: var(--muted); }
-    details.raw summary { cursor: pointer; }
-    details.raw .teacher-text { margin-top: 6px; color: #253139; }
-    .kv { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 6px 10px; font-size: 13px; }
-    .kv div:nth-child(odd) { color: var(--muted); }
+    /* --- Status dots --- */
+    .status-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #aeb9bf; }
+    .status-approved { background: #2f7d55; }
+    .status-needs_elliot { background: #c48126; }
+    .status-skip { background: #9c2f38; }
+    /* --- Clip-list drawer --- */
+    .drawer {
+      position: fixed;
+      top: 48px;
+      right: 0;
+      bottom: 28px;
+      width: 360px;
+      background: #fff;
+      border-left: 1px solid var(--line);
+      box-shadow: -4px 0 12px rgba(0,0,0,0.08);
+      z-index: 20;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+    .drawer[hidden] { display: none; }
+    .drawer-header {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drawer-header span { font-size: 13px; font-weight: 700; }
+    .drawer-search {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .drawer-tabs {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .drawer-tabs button { padding: 5px 8px; font-size: 12px; }
+    .drawer-tabs button.active { background: var(--accent-soft); border-color: var(--accent); }
+    .drawer-list { overflow-y: auto; }
+    .row-button {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      text-align: left;
+      padding: 10px 12px;
+      display: grid;
+      gap: 5px;
+    }
+    .row-button.active { background: var(--accent-soft); }
+    .row-id { font-weight: 700; font-size: 12px; overflow-wrap: anywhere; }
+    .row-sub { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
     a { color: var(--accent); text-decoration-thickness: 1px; }
-    @media (max-width: 980px) {
-      .app { grid-template-columns: 1fr; }
-      .sidebar { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--line); }
-      .content { grid-template-columns: 1fr; }
-      .topbar { position: static; }
+    /* --- Toast --- */
+    .toast {
+      position: fixed;
+      bottom: 44px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--ink);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      z-index: 30;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    .toast.visible { opacity: 1; }
+    /* --- Shortcut hints bar --- */
+    .hints {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      background: #fff;
+      border-top: 1px solid var(--line);
+    }
+    .hints[hidden] { display: none; }
+    .hints kbd {
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 11px;
+      background: #f0f2f4;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 1px 4px;
+    }
+    .hints button {
+      padding: 0 6px;
+      font-size: 11px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    /* --- Reduced motion --- */
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+    /* --- Responsive --- */
+    @media (max-width: 1079px) {
+      .workspace { grid-template-columns: 1fr; }
+      .diffs-col { border-left: none; border-top: 1px solid var(--line); }
+      .drawer { width: 100%; }
     }
     """
     return f"""<!doctype html>
@@ -423,61 +622,75 @@ def render_review_ui(payload: dict[str, Any]) -> str:
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar">
-    <div class="brand">
-      <h1>{html.escape(str(payload["title"]))}</h1>
-      <div class="meta">{payload["row_count"]} clips · {payload["dedupe_removed"]} duplicates hidden · generated {html.escape(str(payload["created_at"]))}</div>
+  <header class="cmdbar" role="banner">
+    <div class="cmdbar-nav">
+      <button id="prevBtn" aria-label="Previous clip">&#9664;</button>
+      <button id="nextBtn" aria-label="Next clip">&#9654;</button>
     </div>
-    <div class="filters">
-      <input id="search" class="search" type="search" placeholder="Filter clips">
-      <div class="status-tabs" id="tabs"></div>
-    </div>
-    <div class="row-list" id="rowList"></div>
-  </aside>
-  <main>
-    <div class="topbar">
-      <div class="topbar-left">
-        <button id="prevBtn">Prev</button>
-        <button id="replayBtn">Replay</button>
-        <button id="nextBtn">Next</button>
-        <span class="counter" id="counter"></span>
+    <span class="cmdbar-counter" id="counter"></span>
+    <span class="cmdbar-id" id="clipId"></span>
+    <span class="cmdbar-status" id="verdictStatus"></span>
+    <div class="progress" id="progressBar" role="progressbar" aria-label="Review progress" aria-valuenow="0" aria-valuemax="{payload["row_count"]}"></div>
+    <span class="cmdbar-throughput" id="throughput"></span>
+    <label><input type="checkbox" id="autoplay" checked> Auto-play</label>
+    <button id="drawerToggle" aria-label="Open clip list">&#8984;L</button>
+    <button id="exportBtn">Export</button>
+  </header>
+  <div class="workspace">
+    <main class="editor-col" role="main">
+      <audio id="audio" controls preload="auto"></audio>
+      <div class="speed-row">
+        <button class="speed-btn active" data-rate="1">1&times;</button>
+        <button class="speed-btn" data-rate="1.5">1.5&times;</button>
+        <button class="speed-btn" data-rate="2">2&times;</button>
       </div>
-      <div class="topbar-right">
-        <button class="primary" id="approveBtn">Approve</button>
-        <button class="warn" id="uncertainBtn">Uncertain</button>
-        <button class="bad" id="skipBtn">Skip</button>
-        <button id="exportBtn">Export JSONL</button>
+      <textarea id="canonical" aria-label="Canonical transcript"></textarea>
+      <details class="meta-details" id="metaDetails">
+        <summary id="metaSummary">Details</summary>
+        <div class="kv" id="metadata"></div>
+      </details>
+      <textarea id="notes" placeholder="Notes" aria-label="Review notes"></textarea>
+      <div class="pills" id="terms"></div>
+      <div class="verdict-row">
+        <button class="primary" id="approveBtn"><kbd>A</kbd> Approve</button>
+        <button class="warn" id="uncertainBtn"><kbd>U</kbd> Uncertain</button>
+        <button class="bad" id="skipBtn"><kbd>S</kbd> Skip</button>
       </div>
-    </div>
-    <div class="content">
-      <section class="panel">
-        <div class="panel-header">
-          <span class="clip-title" id="clipTitle"></span>
-          <span id="scoreLine"></span>
-        </div>
-        <div class="panel-body">
-          <audio id="audio" controls preload="metadata"></audio>
-          <div style="height: 12px"></div>
-          <textarea id="canonical"></textarea>
-          <div style="height: 10px"></div>
-          <textarea id="notes" placeholder="Notes"></textarea>
-          <div style="height: 12px"></div>
-          <div class="pills" id="terms"></div>
-        </div>
-      </section>
-      <aside class="panel">
-        <div class="panel-header"><span>Clip</span><span id="statusText"></span></div>
-        <div class="panel-body">
-          <div class="kv" id="metadata"></div>
-        </div>
-      </aside>
-      <section class="panel" style="grid-column: 1 / -1">
-        <div class="panel-header"><span>Teacher Diffs</span><span id="teacherCount"></span></div>
-        <div class="panel-body" id="teachers"></div>
-      </section>
-    </div>
-  </main>
+    </main>
+    <aside class="diffs-col" role="complementary">
+      <div class="diffs-col-header">
+        <span id="teacherCount"></span>
+      </div>
+      <div class="diff-legend">
+        <span><span class="diff-word missing">red</span> missing from teacher</span>
+        <span><span class="diff-word extra">amber</span> extra in teacher</span>
+      </div>
+      <div id="teachers"></div>
+    </aside>
+  </div>
+  <footer class="hints" id="hints" role="contentinfo">
+    <span><kbd>&#9664;</kbd><kbd>&#9654;</kbd> navigate</span>
+    <span><kbd>Space</kbd> play/pause</span>
+    <span><kbd>Esc</kbd> blur</span>
+    <span><kbd>A</kbd>/<kbd>U</kbd>/<kbd>S</kbd> verdict</span>
+    <span><kbd>1</kbd>&ndash;<kbd>9</kbd> use teacher</span>
+    <span><kbd>E</kbd> edit</span>
+    <span><kbd>[</kbd><kbd>]</kbd> speed</span>
+    <button id="dismissHints" aria-label="Dismiss keyboard shortcuts">&times;</button>
+  </footer>
 </div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Clip list" hidden>
+  <div class="drawer-header">
+    <span>Clips</span>
+    <button id="drawerClose" aria-label="Close clip list">&times;</button>
+  </div>
+  <div style="padding: 8px 12px; border-bottom: 1px solid var(--line);">
+    <input id="search" class="drawer-search" type="search" placeholder="Filter clips" aria-label="Filter clips">
+    <div class="drawer-tabs" id="tabs" style="margin-top: 8px;"></div>
+  </div>
+  <div class="drawer-list" id="rowList"></div>
+</div>
+<div class="toast" id="toast" aria-live="polite"></div>
 <script id="review-data" type="application/json">{_json_script(payload)}</script>
 <script>
 const payload = JSON.parse(document.getElementById('review-data').textContent);
@@ -487,6 +700,11 @@ let edits = JSON.parse(localStorage.getItem(storageKey) || '{{}}');
 let filter = 'all';
 let query = '';
 let current = 0;
+let drawerOpen = false;
+let currentSpeed = 1;
+let sessionStart = null;
+let verdictCount = 0;
+let userInteracted = false;
 
 function defaultState(row) {{
   return {{ verdict: 'pending', canonical_text: row.draft_text || '', notes: '', updated_at: '' }};
@@ -528,6 +746,83 @@ function fmt(value, digits = 2) {{
 function statusClass(verdict) {{
   return 'status-dot status-' + verdict;
 }}
+/* --- Toast --- */
+let toastTimer = null;
+function showToast(msg) {{
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3000);
+}}
+/* --- Progress bar --- */
+function renderProgress() {{
+  const bar = document.getElementById('progressBar');
+  bar.innerHTML = '';
+  let done = 0;
+  const pct = rows.length ? (100 / rows.length) : 0;
+  rows.forEach((row, i) => {{
+    const v = stateFor(row).verdict;
+    if (v !== 'pending') done += 1;
+    const seg = document.createElement('div');
+    seg.className = 'progress-seg seg-' + v + (i === current ? ' seg-current' : '');
+    seg.style.width = pct + '%';
+    bar.appendChild(seg);
+  }});
+  bar.setAttribute('aria-valuenow', String(done));
+}}
+/* --- Throughput --- */
+function updateThroughput() {{
+  let done = 0;
+  rows.forEach(row => {{ if (stateFor(row).verdict !== 'pending') done += 1; }});
+  verdictCount = done;
+  const el = document.getElementById('throughput');
+  if (!sessionStart || done === 0) {{
+    el.textContent = done + ' done';
+    return;
+  }}
+  const mins = (Date.now() - sessionStart) / 60000;
+  const rate = mins > 0.1 ? (done / mins).toFixed(1) : '—';
+  el.textContent = done + ' done · ' + rate + '/min';
+}}
+setInterval(updateThroughput, 10000);
+/* --- Speed control --- */
+function setSpeed(rate) {{
+  currentSpeed = rate;
+  const audio = document.getElementById('audio');
+  audio.playbackRate = rate;
+  document.querySelectorAll('.speed-btn').forEach(btn => {{
+    btn.classList.toggle('active', Number(btn.dataset.rate) === rate);
+  }});
+}}
+document.querySelectorAll('.speed-btn').forEach(btn => {{
+  btn.onclick = () => setSpeed(Number(btn.dataset.rate));
+}});
+/* --- Auto-play --- */
+function tryAutoPlay() {{
+  if (!userInteracted) return;
+  const cb = document.getElementById('autoplay');
+  if (!cb.checked) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const audio = document.getElementById('audio');
+  audio.playbackRate = currentSpeed;
+  audio.play().catch(() => {{}});
+}}
+/* --- Drawer --- */
+function toggleDrawer(forceState) {{
+  drawerOpen = forceState !== undefined ? forceState : !drawerOpen;
+  const el = document.getElementById('drawer');
+  el.hidden = !drawerOpen;
+  if (drawerOpen) {{
+    renderDrawer();
+    const search = document.getElementById('search');
+    search.focus();
+  }}
+}}
+function renderDrawer() {{
+  renderTabs();
+  renderList();
+}}
 function renderTabs() {{
   const statuses = [
     ['all', 'All'],
@@ -543,7 +838,7 @@ function renderTabs() {{
     const btn = document.createElement('button');
     btn.className = filter === key ? 'active' : '';
     btn.textContent = `${{label}} ${{count}}`;
-    btn.onclick = () => {{ saveCurrent(); filter = key; renderAll(false); }};
+    btn.onclick = () => {{ saveCurrent(); filter = key; renderDrawer(); }};
     tabs.appendChild(btn);
   }}
 }}
@@ -558,14 +853,18 @@ function renderList() {{
       <div class="row-id"><span class="${{statusClass(state.verdict)}}"></span> ${{row.id}}</div>
       <div class="row-sub">
         <span>score ${{fmt(row.review_score, 1)}}</span>
-        <span>disagree ${{fmt(row.teacher_disagreement, 3)}}</span>
-        <span>terms ${{row.technical_term_hits || 0}}</span>
-        <span>dupes ${{row.duplicate_count || 1}}</span>
+        <span>teachers ${{row.teacher_count || 0}}</span>
       </div>`;
-    btn.onclick = () => {{ saveCurrent(); current = index; renderAll(); }};
+    btn.onclick = () => {{
+      saveCurrent();
+      current = index;
+      toggleDrawer(false);
+      renderAll();
+    }};
     list.appendChild(btn);
   }}
 }}
+/* --- Metadata link helper --- */
 function metadataLink(row) {{
   return row.source_url ? `<a href="${{row.source_url}}" target="_blank" rel="noreferrer">${{row.source_id || row.source_url}}</a>` : (row.source_id || '');
 }}
@@ -577,6 +876,7 @@ function escapeHtml(value) {{
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }}
+/* --- Diff engine (unchanged) --- */
 function diffTokens(text) {{
   return String(text || '').match(/\\S+/g) || [];
 }}
@@ -650,17 +950,37 @@ function renderTeacherDiffs() {{
     if (stat) stat.textContent = rendered.stats;
   }}
 }}
-function renderMain() {{
+/* --- Render editor column --- */
+function renderEditor() {{
   const row = rows[current];
+  if (!row) return;
   const state = stateFor(row);
-  document.getElementById('counter').textContent = `${{current + 1}} / ${{rows.length}}`;
-  document.getElementById('clipTitle').textContent = row.id;
-  document.getElementById('scoreLine').textContent = `score ${{fmt(row.review_score, 2)}} · disagreement ${{fmt(row.teacher_disagreement, 3)}}`;
-  document.getElementById('statusText').textContent = state.verdict.replace('_', ' ');
+  document.getElementById('counter').textContent = `${{current + 1}}/${{rows.length}}`;
+  document.getElementById('clipId').textContent = row.id;
+  const statusEl = document.getElementById('verdictStatus');
+  statusEl.textContent = state.verdict === 'pending' ? '' : state.verdict.replace('_', ' ');
   const audio = document.getElementById('audio');
   audio.src = row.audio_url || '';
+  audio.playbackRate = currentSpeed;
   document.getElementById('canonical').value = state.canonical_text;
   document.getElementById('notes').value = state.notes;
+  /* Metadata summary line */
+  const dur = fmt(row.duration_seconds, 1);
+  document.getElementById('metaSummary').textContent = `Details · ${{dur}}s · ${{row.draft_source || 'unknown'}}`;
+  document.getElementById('metadata').innerHTML = `
+    <div>source</div><div>${{metadataLink(row)}}</div>
+    <div>clip</div><div>${{fmt(row.clip_start, 1)}}s to ${{fmt(row.clip_end, 1)}}s</div>
+    <div>duration</div><div>${{dur}}s</div>
+    <div>draft</div><div>${{row.draft_source || ''}}</div>
+    <div>score</div><div>${{fmt(row.review_score, 2)}}</div>
+    <div>disagreement</div><div>${{fmt(row.teacher_disagreement, 3)}}</div>
+    <div>consensus</div><div>${{row.consensus_teacher || 'n/a'}} · ${{fmt(row.consensus_confidence, 3)}}</div>
+    <div>commands</div><div>${{row.command_path_package_hits || 0}}</div>
+    <div>duplicates</div><div>${{row.duplicate_count || 1}}${{(row.duplicate_ids || []).length ? ' hidden: ' + row.duplicate_ids.slice(0, 5).join(', ') : ''}}</div>
+    <div>note</div><div>${{escapeHtml(row.curator_note || '')}}</div>
+    <div>sha256</div><div style="overflow-wrap:anywhere">${{row.sha256_audio || ''}}</div>
+  `;
+  /* Terms */
   const terms = document.getElementById('terms');
   terms.innerHTML = '';
   for (const term of row.technical_terms || []) {{
@@ -675,64 +995,77 @@ function renderMain() {{
     pill.textContent = 'no extracted terms';
     terms.appendChild(pill);
   }}
-  document.getElementById('metadata').innerHTML = `
-    <div>source</div><div>${{metadataLink(row)}}</div>
-    <div>clip</div><div>${{fmt(row.clip_start, 1)}}s to ${{fmt(row.clip_end, 1)}}s</div>
-    <div>duration</div><div>${{fmt(row.duration_seconds, 1)}}s</div>
-    <div>draft</div><div>${{row.draft_source || ''}}</div>
-    <div>consensus</div><div>${{row.consensus_teacher || 'n/a'}} · ${{fmt(row.consensus_confidence, 3)}}</div>
-    <div>commands</div><div>${{row.command_path_package_hits || 0}}</div>
-    <div>duplicates</div><div>${{row.duplicate_count || 1}}${{(row.duplicate_ids || []).length ? ' hidden: ' + row.duplicate_ids.slice(0, 5).join(', ') : ''}}</div>
-    <div>note</div><div>${{escapeHtml(row.curator_note || '')}}</div>
-    <div>sha256</div><div style="overflow-wrap:anywhere">${{row.sha256_audio || ''}}</div>
-  `;
+  /* Verdict button active states */
+  document.getElementById('approveBtn').classList.toggle('active-verdict', state.verdict === 'approved');
+  document.getElementById('uncertainBtn').classList.toggle('active-verdict', state.verdict === 'needs_elliot');
+  document.getElementById('skipBtn').classList.toggle('active-verdict', state.verdict === 'skip');
+}}
+/* --- Render diffs column --- */
+function renderDiffs() {{
+  const row = rows[current];
+  if (!row) return;
   const teachers = document.getElementById('teachers');
   teachers.innerHTML = '';
   const groups = row.teacher_transcript_groups || Object.entries(row.teacher_transcripts || {{}}).sort().map(([name, text]) => ({{ names: [name], text, count: 1 }}));
-  document.getElementById('teacherCount').textContent = `${{row.teacher_count || groups.length}} teachers · ${{groups.length}} unique transcripts`;
-  const legend = document.createElement('div');
-  legend.className = 'diff-legend';
-  legend.innerHTML = '<span><span class="diff-word missing">red</span> missing from teacher</span><span><span class="diff-word extra">amber</span> extra in teacher</span>';
-  teachers.appendChild(legend);
+  document.getElementById('teacherCount').textContent = `${{row.teacher_count || groups.length}} teachers · ${{groups.length}} unique`;
   groups.forEach((group, groupIndex) => {{
     const text = group.text || '';
     const names = group.names || [];
-    const item = document.createElement('div');
-    item.className = 'teacher';
-    item.innerHTML = `
-      <div class="teacher-head">
+    const card = document.createElement('div');
+    card.className = 'teacher-card';
+    card.innerHTML = `
+      <div class="teacher-card-head">
         <span class="teacher-name">${{escapeHtml(names.join(' + '))}}${{group.count > 1 ? ' (' + group.count + ')' : ''}}</span>
         <span class="diff-stat" data-diff-stat-index="${{groupIndex}}"></span>
         <button data-group-index="${{groupIndex}}">Use</button>
+        <kbd>${{groupIndex + 1}}</kbd>
       </div>
       <div class="teacher-diff" data-diff-index="${{groupIndex}}"></div>
-      <details class="raw"><summary>raw transcript</summary><div class="teacher-text"></div></details>
     `;
-    item.querySelector('.teacher-text').textContent = text;
-    item.querySelector('button').onclick = () => {{
+    card.querySelector('button').onclick = () => {{
       document.getElementById('canonical').value = text;
       saveCurrent();
       renderTeacherDiffs();
     }};
-    teachers.appendChild(item);
+    teachers.appendChild(card);
   }});
   renderTeacherDiffs();
 }}
-function renderAll(includeMain = true) {{
-  renderTabs();
-  renderList();
-  if (includeMain) renderMain();
+/* --- Render all --- */
+function renderAll() {{
+  renderProgress();
+  renderEditor();
+  renderDiffs();
+  updateThroughput();
+  if (drawerOpen) renderDrawer();
 }}
+/* --- Find next pending --- */
+function nextPendingIndex() {{
+  for (let i = current + 1; i < rows.length; i++) {{
+    if (stateFor(rows[i]).verdict === 'pending') return i;
+  }}
+  for (let i = 0; i < current; i++) {{
+    if (stateFor(rows[i]).verdict === 'pending') return i;
+  }}
+  return -1;
+}}
+/* --- Set verdict with auto-advance --- */
 function setVerdict(verdict) {{
   const row = rows[current];
   const state = stateFor(row);
   state.verdict = verdict;
+  if (!sessionStart) sessionStart = Date.now();
   saveCurrent();
-  if (verdict === 'approved' && current < rows.length - 1) {{
-    current += 1;
+  const next = nextPendingIndex();
+  if (next >= 0) {{
+    current = next;
+  }} else {{
+    showToast('All clips reviewed in current set');
   }}
   renderAll();
+  tryAutoPlay();
 }}
+/* --- Export (schema unchanged) --- */
 function exportJsonl() {{
   saveCurrent();
   const reviewedAt = new Date().toISOString();
@@ -769,32 +1102,112 @@ function exportJsonl() {{
   a.click();
   URL.revokeObjectURL(url);
 }}
-document.getElementById('search').oninput = event => {{
-  saveCurrent();
-  query = event.target.value;
-  renderAll(false);
-}};
-document.getElementById('prevBtn').onclick = () => {{ saveCurrent(); current = Math.max(0, current - 1); renderAll(); }};
-document.getElementById('nextBtn').onclick = () => {{ saveCurrent(); current = Math.min(rows.length - 1, current + 1); renderAll(); }};
-document.getElementById('replayBtn').onclick = () => {{
-  const audio = document.getElementById('audio');
-  audio.currentTime = 0;
-  audio.play();
-}};
+/* --- Wiring --- */
+document.getElementById('prevBtn').onclick = () => {{ saveCurrent(); current = Math.max(0, current - 1); renderAll(); tryAutoPlay(); }};
+document.getElementById('nextBtn').onclick = () => {{ saveCurrent(); current = Math.min(rows.length - 1, current + 1); renderAll(); tryAutoPlay(); }};
 document.getElementById('approveBtn').onclick = () => setVerdict('approved');
 document.getElementById('uncertainBtn').onclick = () => setVerdict('needs_elliot');
 document.getElementById('skipBtn').onclick = () => setVerdict('skip');
 document.getElementById('exportBtn').onclick = exportJsonl;
 document.getElementById('canonical').oninput = () => {{ saveCurrent(); renderTeacherDiffs(); }};
 document.getElementById('notes').oninput = saveCurrent;
+document.getElementById('drawerToggle').onclick = () => toggleDrawer();
+document.getElementById('drawerClose').onclick = () => toggleDrawer(false);
+document.getElementById('search').oninput = event => {{
+  query = event.target.value;
+  renderDrawer();
+}};
+/* Dismiss hints */
+const hintsKey = storageKey + ':hints-dismissed';
+if (localStorage.getItem(hintsKey)) document.getElementById('hints').hidden = true;
+document.getElementById('dismissHints').onclick = () => {{
+  document.getElementById('hints').hidden = true;
+  localStorage.setItem(hintsKey, '1');
+}};
+/* Mark user interaction for autoplay */
+document.addEventListener('click', () => {{ userInteracted = true; }}, {{ once: true }});
+document.addEventListener('keydown', () => {{ userInteracted = true; }}, {{ once: true }});
+/* --- Keyboard handler --- */
 document.addEventListener('keydown', event => {{
-  if (event.target && ['TEXTAREA', 'INPUT'].includes(event.target.tagName)) return;
-  if (event.key === 'ArrowLeft') document.getElementById('prevBtn').click();
-  if (event.key === 'ArrowRight') document.getElementById('nextBtn').click();
-  if (event.key === ' ') {{ event.preventDefault(); document.getElementById('replayBtn').click(); }}
-  if (event.key === 'a') document.getElementById('approveBtn').click();
-  if (event.key === 'u') document.getElementById('uncertainBtn').click();
-  if (event.key === 's') document.getElementById('skipBtn').click();
+  const tag = event.target ? event.target.tagName : '';
+  const inInput = ['TEXTAREA', 'INPUT'].includes(tag);
+  const isMeta = event.ctrlKey || event.metaKey;
+  /* Drawer toggle: Ctrl/Cmd+L */
+  if (isMeta && event.key === 'l') {{
+    event.preventDefault();
+    toggleDrawer();
+    return;
+  }}
+  /* Ctrl/Cmd+E: export */
+  if (isMeta && event.key === 'e') {{
+    event.preventDefault();
+    exportJsonl();
+    return;
+  }}
+  /* Shift+Arrow: seek audio ±2s (works in both modes) */
+  if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {{
+    event.preventDefault();
+    const audio = document.getElementById('audio');
+    audio.currentTime = Math.max(0, audio.currentTime + (event.key === 'ArrowLeft' ? -2 : 2));
+    return;
+  }}
+  /* Escape: close drawer or blur active element */
+  if (event.key === 'Escape') {{
+    if (drawerOpen) {{ toggleDrawer(false); return; }}
+    if (document.activeElement) document.activeElement.blur();
+    return;
+  }}
+  /* Everything below is command-mode only (not in input/textarea) */
+  if (inInput) return;
+  if (event.key === ' ') {{
+    event.preventDefault();
+    const audio = document.getElementById('audio');
+    if (audio.paused) {{ audio.playbackRate = currentSpeed; audio.play().catch(() => {{}}); }}
+    else audio.pause();
+    return;
+  }}
+  if (event.key === 'ArrowLeft') {{ document.getElementById('prevBtn').click(); return; }}
+  if (event.key === 'ArrowRight') {{ document.getElementById('nextBtn').click(); return; }}
+  if (event.key === 'r' || event.key === 'R') {{
+    const audio = document.getElementById('audio');
+    audio.currentTime = 0;
+    audio.playbackRate = currentSpeed;
+    audio.play().catch(() => {{}});
+    return;
+  }}
+  if (event.key === '[') {{
+    const rates = [1, 1.5, 2];
+    const idx = rates.indexOf(currentSpeed);
+    setSpeed(rates[Math.max(0, idx - 1)]);
+    return;
+  }}
+  if (event.key === ']') {{
+    const rates = [1, 1.5, 2];
+    const idx = rates.indexOf(currentSpeed);
+    setSpeed(rates[(idx + 1) % rates.length]);
+    return;
+  }}
+  if (event.key === 'a') {{ document.getElementById('approveBtn').click(); return; }}
+  if (event.key === 'u') {{ document.getElementById('uncertainBtn').click(); return; }}
+  if (event.key === 's') {{ document.getElementById('skipBtn').click(); return; }}
+  if (event.key === 'e' || event.key === 'Enter') {{
+    event.preventDefault();
+    document.getElementById('canonical').focus();
+    return;
+  }}
+  /* Digit keys 1-9: use teacher group */
+  const digit = Number(event.key);
+  if (digit >= 1 && digit <= 9) {{
+    const row = rows[current];
+    const groups = row.teacher_transcript_groups || [];
+    const group = groups[digit - 1];
+    if (group) {{
+      document.getElementById('canonical').value = group.text || '';
+      saveCurrent();
+      renderTeacherDiffs();
+    }}
+    return;
+  }}
 }});
 renderAll();
 </script>

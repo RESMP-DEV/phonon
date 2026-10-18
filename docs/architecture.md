@@ -2074,13 +2074,44 @@ persistence slice. This work does not qualify OCR text extraction, model
 quality, Windows dictation, or a clean-machine TCC transition, and no owner
 screen content or real Aqua data was used for tests.
 
-Verification of the implementation slice at commit
+Verification of the consent-retention slice at commit
 `8dc9c39d0f54b4bb4a9713c7615eefb512c09c67` passed `just quality` (53 Python
 tests plus repository contracts), `just rust` (including 42 phonon-core tests
 and 43 portable Windows tests), `just swift` (89 tests), the ten-render
 synthetic UI set, and the signed non-prompting permission gate. The integrating
 review repairs are revalidated at the final pull-request head, and the
 parent receipt is `build/reports/consent-retention/parent-receipt.json`.
+
+### 2026-10-18: private technical-audio inventory and permission gate
+
+Phonon now has a dedicated privacy-safe private-dataset audit CLI. It consumes
+local canonical Parquet mirrors, verifies embedded audio SHA-256, mono PCM16
+16 kHz WAV structure, duration, clip intervals, labels, teacher coverage, and
+duplicate/cross-dataset identity, and emits aggregate-only reports. The report
+cannot contain row IDs, transcripts, teacher transcripts, terms, notes, speaker
+identities, source URLs, or original source paths. Its output path must stay in
+the local research share or ignored `build/`; sanitized human receipts go in
+tracked evidence.
+
+The first live audit pinned two private non-owner, non-Aqua YouTube technical
+sets. It checked all 4,710 embedded streams successfully: hashes, WAV metadata,
+durations, and clip intervals matched, and every stream was mono PCM16 at 16
+kHz. The latest GPU Mode snapshot contributes 3,010 unique rows / 25.03 hours
+but has no labels or teachers. The consensus snapshot exposes 1,700 observations
+over 1,442 unique IDs / 12.01 unique hours, with complete labels and seven
+teacher transcripts; its 258 extra observations are exact duplicate identity and
+audio rows across overlapping selection splits. A metadata-only remote probe of
+four broader private sets found another 37,690 rows / 313.3 hours, all in draft
+or teacher-snapshot states.
+
+The operative result is negative for immediate CPT/SFT use but positive for the
+next teacher-mining lane: every audited row has
+`train_allowed=false,eval_allowed=false`. These mirrors also include
+evaluation-recovery material. No row may be promoted into a training pack until
+permissions are deliberately revised and leakage groups are checked against the
+relevant frozen evaluation manifests. The sanitized receipt is
+`evidence/2026-10-18-private-youtube-audio-audit.md`; the aggregate-only machine
+reports remain under the local research share.
 
 ## Contracts to preserve
 

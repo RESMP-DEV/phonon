@@ -144,8 +144,27 @@ def test_permission_or_label_gap_blocks_usability_without_failing_integrity() ->
 def test_teacher_parser_accepts_json_and_raw_string() -> None:
     """Teacher hypotheses are parsed only for aggregate coverage counts."""
     assert audit.parse_teachers('{"a":"one"}') == {"a": "one"}
+    assert audit.parse_teachers({"a": {"text": "one"}}) == {"a": "one"}
     assert audit.parse_teachers("raw transcript") == {"raw": "raw transcript"}
     assert audit.parse_teachers({"a": "one", "b": "  "}) == {"a": "one"}
+
+
+def test_nullable_clip_interval_is_valid_only_when_both_bounds_are_null() -> None:
+    """Canonical whole-file rows may omit both clip bounds."""
+    whole_file = row("synthetic:a")
+    whole_file["clip_start"] = None
+    whole_file["clip_end"] = None
+    report = audit.summarize_rows([whole_file], "synthetic")
+
+    assert report["clip_interval_mismatches"] == 0
+    assert report["integrity_passed"] is True
+    assert report["usable_train_rows"] == 1
+
+    partial = row("synthetic:b")
+    partial["clip_start"] = 0.0
+    partial["clip_end"] = None
+    partial_report = audit.summarize_rows([partial], "synthetic")
+    assert partial_report["clip_interval_mismatches"] == 1
 
 
 def test_output_path_must_stay_outside_git_or_under_build(tmp_path: Path) -> None:

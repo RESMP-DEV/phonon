@@ -75,7 +75,9 @@ audio audit at the then-current dirty tree. Review probes then found and repaire
 the repository-root miscalculation, metadata/container sample-rate disagreement,
 duplicate-audio eligibility, arbitrary provenance fields, dataset/file basename
 disclosure, output/input aliasing, non-finite durations, and corrupt-Parquet
-failure handling. The repaired focused tool suite has ten tests, and the
+failure handling. Follow-up reviews added coverage for nested teacher records
+and canonical nullable whole-file clip intervals. The repaired focused tool suite has
+eleven tests, and the
 aggregate command again returned `PASS` over all 4,710 embedded audio rows.
 The corrupt-Parquet probe returned exit code 2 and wrote only an
 `ArrowInvalid` failure marker, not a traceback or private path. The final common

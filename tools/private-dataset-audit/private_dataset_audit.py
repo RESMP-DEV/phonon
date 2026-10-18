@@ -81,24 +81,29 @@ def parse_teachers(value: Any) -> dict[str, str]:
         return {}
     result: dict[str, str] = {}
     for name, transcript in parsed.items():
-        if isinstance(transcript, str) and transcript.strip():
-            result[str(name)] = transcript
+        text = transcript.get("text") if isinstance(transcript, dict) else transcript
+        if isinstance(text, str) and text.strip():
+            result[str(name)] = text
     return result
 
 
 def _as_bool(value: Any) -> bool:
+    """Accept only a literal Parquet boolean True."""
     return value is True
 
 
 def _text_present(value: Any) -> bool:
+    """Return whether a string field has non-whitespace content."""
     return isinstance(value, str) and bool(value.strip())
 
 
 def _finite_number(value: Any) -> bool:
+    """Reject NaN and infinities in addition to nonnumeric metadata."""
     return isinstance(value, int | float) and math.isfinite(float(value))
 
 
 def _decode_wav(data: bytes) -> tuple[str, float] | None:
+    """Decode only the WAV properties needed for aggregate validation."""
     try:
         with wave.open(io.BytesIO(data), "rb") as audio:
             channels = audio.getnchannels()
@@ -241,7 +246,7 @@ def summarize_rows(rows: Iterable[dict[str, Any]], dataset: str) -> dict[str, An
         start = row.get("clip_start")
         end = row.get("clip_end")
         duration = row.get("duration_seconds")
-        if (
+        if (start is not None or end is not None) and (
             not _finite_number(start)
             or not _finite_number(end)
             or not _finite_number(duration)

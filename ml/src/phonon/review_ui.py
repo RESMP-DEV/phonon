@@ -382,6 +382,17 @@ def render_review_ui(payload: dict[str, Any]) -> str:
       background: var(--accent-soft);
       border-color: var(--accent);
     }
+    /* Playback-only clarity chain. The source WAV is never rewritten. */
+    .boost-btn {
+      margin-left: 8px;
+      padding: 3px 10px;
+      font-size: 12px;
+    }
+    .boost-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--ink);
+    }
     /* --- Canonical editor --- */
     textarea {
       width: 100%;
@@ -643,6 +654,8 @@ def render_review_ui(payload: dict[str, Any]) -> str:
         <button class="speed-btn active" data-rate="1">1&times;</button>
         <button class="speed-btn" data-rate="1.5">1.5&times;</button>
         <button class="speed-btn" data-rate="2">2&times;</button>
+        <button class="boost-btn" id="boostBtn" aria-pressed="false"
+                aria-label="Toggle playback clarity boost">Boost</button>
       </div>
       <textarea id="canonical" aria-label="Canonical transcript"></textarea>
       <details class="meta-details" id="metaDetails">
@@ -676,6 +689,7 @@ def render_review_ui(payload: dict[str, Any]) -> str:
     <span><kbd>1</kbd>&ndash;<kbd>9</kbd> use teacher</span>
     <span><kbd>E</kbd> edit</span>
     <span><kbd>[</kbd><kbd>]</kbd> speed</span>
+    <span><kbd>B</kbd> boost</span>
     <button id="dismissHints" aria-label="Dismiss keyboard shortcuts">&times;</button>
   </footer>
 </div>
@@ -705,6 +719,11 @@ let currentSpeed = 1;
 let sessionStart = null;
 let verdictCount = 0;
 let userInteracted = false;
+// Playback-only clarity chain for band-limited 16 kHz sources. The WAV on disk
+// and every exported label are untouched; this only affects what you hear.
+let audioCtx = null;
+let boostSource = null;
+let boostEnabled = false;
 
 function defaultState(row) {{
   return {{ verdict: 'pending', canonical_text: row.draft_text || '', notes: '', updated_at: '' }};
@@ -795,6 +814,72 @@ function setSpeed(rate) {{
     btn.classList.toggle('active', Number(btn.dataset.rate) === rate);
   }});
 }}
+/* --- Playback clarity boost (never touches source audio) --- */
+function audioElement() {{ return document.getElementById('audio'); }}
+let boostWet = null;
+let boostDry = null;
+function ensureBoostGraph() {{
+  if (audioCtx) return audioCtx;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  const audio = audioElement();
+  audioCtx = new Ctx();
+  boostSource = audioCtx.createMediaElementSource(audio);
+  // Dry bypass path, so toggling is instant and lossless.
+  boostDry = audioCtx.createGain();
+  boostDry.gain.value = 1;
+  boostDry.connect(audioCtx.destination);
+  // Wet clarity chain: cut the ~57% of Aqua energy below 300 Hz, then lift the
+  // consonant band that the 16 kHz path attenuates.
+  const highpass = audioCtx.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 90;
+  highpass.Q.value = 0.7;
+  const lowCut = audioCtx.createBiquadFilter();
+  lowCut.type = 'lowshelf';
+  lowCut.frequency.value = 220;
+  lowCut.gain.value = -4;
+  const presence = audioCtx.createBiquadFilter();
+  presence.type = 'highshelf';
+  presence.frequency.value = 3200;
+  presence.gain.value = 7;
+  const air = audioCtx.createBiquadFilter();
+  air.type = 'highshelf';
+  air.frequency.value = 5200;
+  air.gain.value = 5;
+  boostWet = audioCtx.createGain();
+  boostWet.gain.value = 0;
+  boostSource.connect(boostDry);
+  boostSource
+    .connect(highpass)
+    .connect(lowCut)
+    .connect(presence)
+    .connect(air)
+    .connect(boostWet)
+    .connect(audioCtx.destination);
+  return audioCtx;
+}}
+function setBoost(enabled) {{
+  boostEnabled = enabled;
+  const btn = document.getElementById('boostBtn');
+  btn.classList.toggle('active', enabled);
+  btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  btn.textContent = enabled ? 'Boost on' : 'Boost';
+  if (!enabled) return;
+  const ctx = ensureBoostGraph();
+  if (!ctx) {{
+    showToast('Playback boost needs Web Audio support');
+    boostEnabled = false;
+    btn.classList.remove('active');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = 'Boost';
+    return;
+  }}
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {{}});
+  if (boostWet) boostWet.gain.value = 1;
+  if (boostDry) boostDry.gain.value = 0;
+}}
+function toggleBoost() {{ setBoost(!boostEnabled); }}
 document.querySelectorAll('.speed-btn').forEach(btn => {{
   btn.onclick = () => setSpeed(Number(btn.dataset.rate));
 }});
@@ -1109,6 +1194,7 @@ document.getElementById('approveBtn').onclick = () => setVerdict('approved');
 document.getElementById('uncertainBtn').onclick = () => setVerdict('needs_elliot');
 document.getElementById('skipBtn').onclick = () => setVerdict('skip');
 document.getElementById('exportBtn').onclick = exportJsonl;
+document.getElementById('boostBtn').onclick = toggleBoost;
 document.getElementById('canonical').oninput = () => {{ saveCurrent(); renderTeacherDiffs(); }};
 document.getElementById('notes').oninput = saveCurrent;
 document.getElementById('drawerToggle').onclick = () => toggleDrawer();
@@ -1187,6 +1273,7 @@ document.addEventListener('keydown', event => {{
     setSpeed(rates[(idx + 1) % rates.length]);
     return;
   }}
+  if (event.key === 'b' || event.key === 'B') {{ toggleBoost(); return; }}
   if (event.key === 'a') {{ document.getElementById('approveBtn').click(); return; }}
   if (event.key === 'u') {{ document.getElementById('uncertainBtn').click(); return; }}
   if (event.key === 's') {{ document.getElementById('skipBtn').click(); return; }}

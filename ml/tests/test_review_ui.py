@@ -86,3 +86,23 @@ def test_regeneration_reuses_the_previous_review_identity(tmp_path: Path) -> Non
     assert first["rows"] == 2
     assert second["rows"] == 2
     assert first_payload["review_id"] == second_payload["review_id"]
+
+
+def test_playback_boost_is_opt_in_and_never_rewrites_source() -> None:
+    html = render_review_ui(
+        {
+            "title": "test",
+            "created_at": "now",
+            "review_id": "test-review",
+            "export_name": "test.jsonl",
+            "row_count": 0,
+            "dedupe_removed": 0,
+            "rows": [],
+        }
+    )
+    # The control is a playback chain, not a re-encode of the clip.
+    assert 'id="boostBtn"' in html
+    assert 'aria-pressed="false"' in html
+    assert "createMediaElementSource" in html
+    assert "boostWet.gain.value = 1" in html
+    assert "boostDry.gain.value = 0" in html

@@ -68,3 +68,25 @@ so the live state is honest.
   yet produce consented screenshot attachments.
 - Boosting or equalizing the existing 16 kHz Aqua WAVs cannot restore missing
   frequencies; capture-path improvement is the durable fix.
+
+## Playback clarity boost
+
+The regenerated review page gained an opt-in `Boost` control (also keyboard `B`)
+that routes clip playback through a Web Audio chain: a 90 Hz high-pass, a -4 dB
+low shelf at 220 Hz, and +7 dB / +5 dB high shelves at 3.2 kHz and 5.2 kHz. This
+compensates for the measured Aqua spectral tilt without altering the WAV on disk,
+the exported labels, or the training source. The dry path stays connected so the
+toggle is instant, and the boost is off by default.
+
+Also fixed during this pass: regenerating the private review queue had dropped
+the audio links because the copied assets are keyed by the review directory, not
+the original Aqua path. The queue now resolves to the copied local assets, and the
+regenerated page reports 100 rows with 0 missing audio.
+
+## Commands and results
+
+- `uvx ruff check ml/src/phonon/review_ui.py ml/tests/test_review_ui.py`: pass
+- `uvx ruff format --check ...`: pass
+- `PYTHONPATH=ml/src uv run --project ml --frozen pytest ml/tests/test_review_ui.py -q`: 4 passed
+- `node --check` on the regenerated private review JavaScript: pass
+- `phonon report review-ui`: 100 rows, 0 missing audio, page reopened

@@ -2151,6 +2151,37 @@ smaller but no longer matches the direct-fused product path. Continuing the same
 SFT recipe remains rejected by the stage-two negative control. Receipt:
 `evidence/2026-10-17-fused-checkpoint-release-audit.md`.
 
+### 2026-10-18: continual-improvement option audit
+
+B550 and Strix were both reachable and idle. B550 is the preferred 24 GiB
+training host; Strix's 8 GiB SM120 Laptop GPU is useful for lightweight probes
+but needs a live batch-one fit test before model execution is claimed feasible.
+
+Aggregate-only residual analysis showed that the selected model is already exact
+on 187 of 500 selection rows and 171 of 750 future rows. Substitutions dominate
+the remaining error, and exactness falls from 58.4% at 5–10 words to 21.0% at
+21+ words on selection. Digit mismatches are rare and cannot explain the main
+gap. The best stage-two continuation was better on only 46 rows and worse on 52,
+confirming that the failed run was optimization overfitting rather than a broad
+selection problem.
+
+Existing teacher outputs are complementary: the selected SALM uniquely beats
+Aqua on 42 rows, while Aqua remains the strongest aggregate teacher. A
+reference-only oracle reaches 0.024944 fair WER, but every simple reference-free
+teacher gate remains behind Aqua raw. This justifies active data selection and
+single-model distillation, not a runtime ensemble.
+
+The next model wave is therefore data-first: score deployable history retrieval
+versus the current raw-query control; run the selected checkpoint across the
+full 12,855-row private pack; and build a fresh active/replay pack weighted to
+long utterances, substitutions, disagreement, and retention lanes. Train from
+the CPT initialization rather than continuing the selected adapter, select on
+the untouched 1,458-row development split, and score future only after
+development selection. Joint audio-plus-image conditioning and real screenshot
+generalization are the highest-value later architecture lanes, but they require
+the consented capture boundary first. Receipt:
+`evidence/2026-10-18-continual-improvement-options.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

@@ -50,6 +50,7 @@ The selected operating points are:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Strict | 0.075 | 13 rows / 129.792 s | 8 rows / 76.137 s | 6 rows / 59.989 s | 39 rows |
 | Broad | 0.150 | 18 rows / 175.807 s | 3 rows / 30.122 s | 6 rows / 59.989 s | 54 rows |
+| Permissive weak | 0.400 | 21 rows / 205.929 s | 0 rows | 6 rows / 59.989 s | 63 rows |
 
 The broad lane implements the requested data-first posture: 24 of 27 rows are
 resolved automatically, only three clips remain for review, and the six clear
@@ -61,6 +62,7 @@ Local private manifests:
 ```text
 ~/.local/share/phonon-research/parallel-isolation-v2/structured-strict-v1/
 ~/.local/share/phonon-research/parallel-isolation-v2/structured-broad-v1/
+~/.local/share/phonon-research/parallel-isolation-v2/structured-permissive-v1/
 ~/.local/share/phonon-research/parallel-isolation-v2/filter-yield-curve.json
 ```
 
@@ -82,9 +84,12 @@ context length 768, duration bounds 2-20 seconds, and the existing
 | `strict-raw-v1` | 13 | 0 | `abb0b0b0c554169a724217ed8cf071d88ed334c71d807cb08a3369da9156649f` | 6.4 MiB |
 | `broad-raw-v1` | 18 | 0 | `2ad18a89a7c923fb9a7ecd69c4e843a357c483af6f438aec3be804fc7bdd0ea0` | 8.7 MiB |
 | `broad-derived-v1` | 54 | 0 | `6692857f42d2a2649e2e22b5b46c5310178e297e29c43d3eb4c2d0363fb1a3c8` | 26 MiB |
+| `permissive-raw-v1` | 21 | 0 | `beb14031273c2271dfcd8c532473856df6d8343cc3c04ec2c87f953f388e992b` | 11 MiB |
 
 `broad-derived-v1` is separate because RNNoise and DeepFilterNet remain
 unpromoted candidates; it must not be interpreted as the default training lane.
+`permissive-raw-v1` is a capacity-experiment lane only; its three additional
+weak labels beyond broad must not replace the strict or broad controls.
 
 ## Live verification
 
@@ -92,11 +97,12 @@ unpromoted candidates; it must not be interpreted as the default training lane.
 - `uvx ruff check tools/teacher-filter`: pass
 - `uvx ruff format --check tools/teacher-filter`: pass
 - `git diff --check`: pass
-- Pack builds: all three complete with zero skipped rows
+- Pack builds: all four complete with zero skipped rows
 - Loader probes with `LFM2DataLoader(..., context_length=768)`:
   - strict raw: 13 rows, one collated `LFM2AudioModelInput`
   - broad raw: 18 rows, one collated `LFM2AudioModelInput`
   - broad derived: 54 rows, one collated `LFM2AudioModelInput`
+  - permissive raw: 21 rows
 
 ## Non-claims
 

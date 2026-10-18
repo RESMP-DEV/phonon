@@ -105,8 +105,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="root containing <arm>/audio/<arm>-NNNN.wav",
     )
     args = parser.parse_args(argv)
-    if not 0 <= args.auto_max_mean_wer < args.review_max_mean_wer:
-        parser.error("require 0 <= auto threshold < review threshold")
+    if not 0 <= args.auto_max_mean_wer <= args.review_max_mean_wer:
+        parser.error("require 0 <= auto threshold <= review threshold")
     if args.derived_arm and not args.derived_audio_root:
         parser.error("--derived-arm requires --derived-audio-root")
     return args

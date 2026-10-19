@@ -55,9 +55,19 @@ counting conventions differ; both are recorded rather than reconciled by guess.
 
 ## Public benchmark evidence
 
-Model-card benchmark figures were extracted from the released images with a
-vision model after downscaling; values were not copied from a machine-readable
-table. Treat them as vendor self-evaluation until independently reproduced.
+Model-card figures were extracted from the released images with the native
+`alt-vision` 0.1.0 and `zai-vision` 0.1.0 CLIs after downscaling. The source
+images were public and content-hashed, but the terminal model responses were not
+retained verbatim. Treat the consolidated values below as provisional
+vendor-self-evaluation plus vision extraction, not acceptance data.
+
+| Source image at the pinned model revision | SHA-256 |
+| --- | --- |
+| `Ming-3.0-asr-tiny@b610298…/figures/asr.png` | `624d98d65546e12b1763eb157690e51e388f3db6de05ec1980ea457f4122e56d` |
+| `Ming-3.0-asr-tiny@b610298…/figures/开源asr.png` | `e05cf1897bd7eb80d64146613e18f3fb83e1e46f763443f42525ee3eddddd795` |
+| `Ming-3.0-asr-tiny@b610298…/figures/自建asr.png` | `31ade60fefc3a90aab51439be9d52518775710f262a5a7e5371e89ff56667a40` |
+| `Ming-3.0-asr-tiny@b610298…/figures/contextasr.png` | `6924bd1057aa68ef194912995c92d8ca998ef68b15ec55053f5b168da087cd32` |
+| `Ming-3.0-audio-flash@e3f257a…/assets/benchmark-asr.png` | `f7558ab421fac9bf78cdc1604762221fc644e63e8ceecf5d43c9c08c17c716da` |
 
 ### Ming-3.0-asr-tiny overview
 
@@ -108,9 +118,11 @@ The registered frozen-slice baselines remain:
 | Qwen3-ASR 1.7B | 0.070674 |
 
 The public-board to Phonon-slice degradation factor was 1.216 for Voxtral and
-1.639 for Qwen3-ASR. Applying those factors to Ming audio-flash's 3.69% English
-average gives only a rough **4.5-6.1% Phonon fair-WER prediction**. Applying the
-same factors to Ming ASR tiny's 3.99% average gives roughly **4.9-6.5%**.
+1.639 for Qwen3-ASR. These are directional cross-protocol extrapolations, not a
+matched prediction: Ming's card averages and the two teacher leaderboard scores
+do not share one protocol. They give about **4.5-6.1%** for audio-flash's 3.69%
+English average and **4.9-6.5%** for ASR-tiny's 3.99% average. The result is no
+evidence that either Ming model beats Aqua; only a matched run can answer that.
 
 Therefore, audio-native architecture alone does not imply that Ming will beat
 Aqua raw at 3.29%. It is plausible that Ming beats all independent open teachers
@@ -154,10 +166,9 @@ Ming pilot it disappeared from ARP and SSH entirely. Until it returns, the
 matched no-context and no-leak hotword-context runs are blocked locally.
 
 Ming audio-flash is not a practical local runtime: roughly 256 GB of BF16
-weights and a reference eight times 80 GB serving profile. The earlier live
-provider survey found Prime's eight-H100 configuration at `$24/hour`; the
-wallet balance was `$49.01`. A real run must also budget model staging and
-setup, not just inference time.
+weights and a reference eight times 80 GB serving profile. Any rented run needs
+a fresh provider quote and must budget model staging and setup as well as
+inference time.
 
 Phonon private dictation audio must not be uploaded to a rented provider merely
 because a GPU is available. Public/synthetic work can use a rented provider
@@ -168,16 +179,45 @@ scope, retention, and consent decision.
 
 - `Ming-3.0-asr-tiny` is the useful Phonon candidate: it fits one 3090 Ti, has
   a proven pinned runtime, and directly supports hotwords/dialogue context.
-- `Ming-3.0-audio-flash` is primarily interesting for long-form, noisy,
-  multi-speaker, and audio-reasoning teachers. Its short-dictation advantage
+- `Ming-3.0-audio-flash` is primarily interesting for long-form, multi-speaker,
+  and audio-reasoning teachers. Its short-dictation advantage
   over the much smaller specialized ASR model is modest and its deployment cost
   is large.
-- Architecture does not override the registered matched-slice gate. Promotion
-  requires full-slice fair/strict WER, exactness, per-row win/tie/loss against
-  Aqua, and a no-leak retrieved-hotword context arm.
+- Architecture does not override the registered matched-slice gate. The matched
+  quality requirements include full-slice fair/strict WER, exactness, per-row
+  win/tie/loss against Aqua, and a no-leak retrieved-hotword context arm; all
+  registered product, restraint, latency, packaging, and default-path regression
+  gates also remain applicable.
 - A realistic context arm must derive terms from the Aqua raw hypothesis and
-  local lexicon, never from the accepted reference. The staged runtime-shaped
-  retriever uses phonetic plus character similarity and returns ten terms.
+  local lexicon, never from the accepted reference. The tracked `vocab_v1`
+  retriever already provides no-reference phonetic-plus-character ranking with a
+  default top-30 list; a ten-term Ming prompt is a proposed experiment and needs
+  its own committed harness and receipt.
+
+## Verification
+
+Recorded UTC: 2026-10-19T21:17:58Z. Platforms: macOS main machine and B550
+Linux/CUDA. Source revision: `cd603bd2649b38e9ad4da0dc6505fee01714341f`;
+worktree dirty state: false when the survey branch was committed. Private-slice
+text and audio were not printed in the tracked receipt.
+
+| Check | Sanitized command or procedure | Result |
+| --- | --- | --- |
+| Public metadata | Python `urllib.request` GETs to `huggingface.co/api/models/...` for the four pinned revisions | exit 0 |
+| Public benchmark images | Download the five pinned card images, `sips -Z 2200`, then `alt-vision text` / `zai-vision text` with an exact extraction prompt | extraction completed; values marked provisional above |
+| Mac inventory | `python3 Ming-3.0-asr/tools/verify_repository.py --checkpoint <public-model>` | exit 0, PASS |
+| Mac shard hashes | `shasum -a 256 model-00001... model-00002...` | exit 0; values recorded above |
+| B550 shard hashes | `sha256sum model-00001... model-00002...` | exit 0; byte-identical to Mac |
+| Exact environment | pip install torch/torchaudio 2.11 cu130, then the pinned model requirements | exit 0; import versions recorded above |
+| Public CC0 smoke | official `examples/transcribe.py` on `english_common_voice.wav`, CUDA 0, BF16/SDPA/greedy | exit 0; seven generated tokens and a nonempty transcript |
+| Private 25-row pilot | resumeable teacher launch with no reference-derived prompt | launch exit 0; no score read before B550 outage |
+| B550 outage | independent `ssh` and TCP port-22 probes after the pilot | connection failures; host remains unreachable |
+| Repository gate | `just quality` at the survey revision | exit 0, PASS |
+
+The B550 runtime logs and any partial pilot output remain on the currently
+inaccessible host. They were not copied into Git or a rented provider. When
+B550 returns, the decisive receipt must add the pilot's exact completion
+metadata and `score_hyps.py` output before any quality claim is made.
 
 ## Non-claims
 

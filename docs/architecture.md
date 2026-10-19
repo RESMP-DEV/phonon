@@ -2210,16 +2210,17 @@ torch 2.11, transformers 5.12.1, torchaudio 2.11, and fla-core 0.5.2; total GPU
 memory was about 19.5 GiB beside the existing local embedding service. The much
 larger `Ming-3.0-audio-flash` is a 126B-total / 6.5B-active native audio-language
 MoE with roughly 256 GB of BF16 weights and a reference eight times 80 GB serving
-profile. Its advantage is strongest for long-form, noisy, multi-speaker, and
-audio-reasoning work, not necessarily short single-speaker dictation.
+profile. Its cited advantage is strongest for long-form and multi-speaker work,
+not necessarily short single-speaker dictation.
 
 Vendor benchmarks put audio-flash at 3.69% English average WER and ASR-tiny at
 3.99%. Applying Phonon's measured Qwen/Voxtral public-to-private degradation
-range predicts only roughly 4.5-6.5% fair WER here, versus Aqua raw's 3.29%.
-Thus audio-native architecture alone does not beat the registered baseline, but
-ASR-tiny's no-leak hotword mechanism is directly aligned with Phonon's technical
-vocabulary gap. A realistic context prompt must retrieve terms from Aqua raw and
-the local lexicon, never the accepted reference.
+range gives roughly 4.5-6.5% fair WER as a directional, unmatched-protocol
+estimate. This provides no evidence that either Ming model beats Aqua raw's
+3.29%; only the registered matched slice can answer that. ASR-tiny's no-leak
+hotword mechanism remains directly aligned with Phonon's technical-vocabulary
+gap. A realistic context prompt must retrieve terms from Aqua raw and the local
+lexicon, never the accepted reference.
 
 The matched score remains unmeasured: B550 disappeared from ARP and SSH during
 the first 25-row pilot, after the public runtime probe had succeeded. No private

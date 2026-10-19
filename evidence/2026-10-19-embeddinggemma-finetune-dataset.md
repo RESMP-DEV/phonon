@@ -55,6 +55,8 @@ Review remediation:
 - Output paths are checked for self-collision and pinned-source collision.
 - Local filesystem paths were removed from public records and replaced by
   relative seed paths.
+- Parquet and gzip seeds stream directly into reservoir sampling; a full
+  regeneration was byte-identical to `public-triplets-v2.jsonl` (`cmp` exit 0).
 
 ## Private scrub
 

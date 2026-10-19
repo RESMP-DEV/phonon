@@ -10,6 +10,7 @@ import math
 import random
 import sys
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -98,7 +99,7 @@ def safe_output(path: Path, root: Path) -> Path:
 
 
 def reservoir(
-    items: list[tuple[int, dict[str, Any]]], size: int, seed: str
+    items: Iterable[tuple[int, dict[str, Any]]], size: int, seed: str
 ) -> list[tuple[int, dict[str, Any]]]:
     """Select a deterministic bounded sample without loading text twice."""
     rng = random.Random(seed)
@@ -113,42 +114,53 @@ def reservoir(
     return selected
 
 
-def read_rows(path: Path) -> list[tuple[int, dict[str, Any]]]:
+def iter_rows(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
     """Read a bounded public source into row-index records."""
-    rows: list[tuple[int, dict[str, Any]]] = []
     if path.suffix == ".parquet":
         from pyarrow import parquet
 
+        row_index = 0
         for batch in parquet.ParquetFile(path).iter_batches(batch_size=1024):
             for row in batch.to_pylist():
-                rows.append((len(rows), row))
+                yield row_index, row
+                row_index += 1
     elif path.suffix == ".gz":
         with gzip.open(path, "rt", encoding="utf-8") as source:
-            for line in source:
+            for row_index, line in enumerate(source):
                 if line.strip():
-                    rows.append((len(rows), json.loads(line)))
+                    yield row_index, json.loads(line)
     else:
         raise SeedError(f"unsupported seed format: {path}")
-    return rows
 
 
-def eligible_rows(
-    rows: list[tuple[int, dict[str, Any]]], kind: str
-) -> tuple[list[tuple[int, dict[str, Any]]], int]:
-    """Apply source-specific positive-pair quality filters before sampling."""
+def eligible(row: dict[str, Any], kind: str) -> bool:
+    """Apply source-specific positive-pair quality filtering."""
     if kind != "stsb":
-        return rows, 0
-    eligible: list[tuple[int, dict[str, Any]]] = []
-    for item in rows:
-        score = item[1].get("score")
-        if (
-            isinstance(score, int | float)
-            and not isinstance(score, bool)
-            and math.isfinite(float(score))
-            and float(score) >= STSB_MIN_POSITIVE_SCORE
-        ):
-            eligible.append(item)
-    return eligible, len(rows) - len(eligible)
+        return True
+    score = row.get("score")
+    return (
+        isinstance(score, int | float)
+        and not isinstance(score, bool)
+        and math.isfinite(float(score))
+        and float(score) >= STSB_MIN_POSITIVE_SCORE
+    )
+
+
+def sample_rows(
+    path: Path, kind: str, size: int, seed: str
+) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    """Stream and sample one source while retaining quality-filter counts."""
+    filtered = 0
+
+    def eligible_stream() -> Iterator[tuple[int, dict[str, Any]]]:
+        nonlocal filtered
+        for item in iter_rows(path):
+            if eligible(item[1], kind):
+                yield item
+            else:
+                filtered += 1
+
+    return reservoir(eligible_stream(), size, seed), filtered
 
 
 def cyclic_different_candidate(
@@ -275,9 +287,10 @@ def build_public_seed_set(
         if not path.is_file():
             raise SeedError(f"missing pinned seed: {path}")
         file_hashes[name] = triplets.sha256_file(path)
-        eligible, filtered = eligible_rows(read_rows(path), kind)
+        sampled, filtered = sample_rows(
+            path, kind, per_source_limit, f"{name}:{revision}"
+        )
         quality_filtered[name] = filtered
-        sampled = reservoir(eligible, per_source_limit, f"{name}:{revision}")
         converted, invalid = convert(name, source, revision, relative, kind, sampled)
         records.extend(converted)
         rejected[name] = invalid

@@ -12,7 +12,7 @@ The local Aqua settings cache was read without printing entry values:
 
 - Dictionary observations: 782
 - Replacement observations: 65
-- Unique normalized lexical targets: 796
+- Unique normalized lexical targets: 797
 - Sources represented across unique targets: dictionary and replacement
 
 The full lexicon remains local under
@@ -135,12 +135,12 @@ After review hardening, the resumable local job completed successfully:
 A provenance-checked resume returned 1,442 already-present rows, generated zero,
 and validated the local artifact contract.
 
-The first full-coverage, whole-leakage-group exploratory plan retained 1,442
+The full-coverage, whole-leakage-group exploratory plan retained 1,442
 rows and 18 groups:
 
-- Train: 1,113 rows, 10 groups, 9.26 hours
+- Train: 1,111 rows, 10 groups, 9.25 hours
 - Dev: 191 rows, 2 groups, 1.59 hours
-- Test: 138 rows, 6 groups, 1.15 hours
+- Test: 140 rows, 6 groups, 1.17 hours
 - Text/audio embedding coverage: 100% / 100%
 - Initial 0.98 text and 0.995 audio cross-group near-duplicate pairs: 0
 
@@ -153,3 +153,18 @@ rows because the endpoint reports served model `glm-5.3` while the request uses
 `zai,glm-5.3`. After alias validation, a fresh two-row run produced 2/2
 successful strict-JSON records with served model `glm-5.3`, finish reason
 `stop`, and zero failures.
+
+Technical-token normalization was then corrected to preserve forms such as
+`C++` rather than collapsing them to a bare letter. The regenerated local
+lexicon contains 797 unique normalized targets, and the final full-coverage
+exploratory plan was rebuilt with that lexicon.
+
+The final full-coverage exploratory split currently has:
+
+- Train: 1,111 rows, 10 groups, 9.25 hours
+- Dev: 191 rows, 2 groups, 1.59 hours
+- Test: 140 rows, 6 groups, 1.17 hours
+
+The streaming GLM runner was exercised again after these repairs: two rows, two
+successful strict-JSON records, served model `glm-5.3`, finish reason `stop`,
+and zero failures in 17.854 seconds.

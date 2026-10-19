@@ -2138,7 +2138,7 @@ all permission flags unchanged. The exploratory 32-row fingerprint slice showed
 EmbeddingGemma 2 audio retrieving its matching text 32/32 times and justifies a
 full-pass comparison. The completed full pass then produced 1,442 text and
 1,442 audio vectors at 768 dimensions with 100% coverage; its exploratory
-whole-group plan allocates 1,113 train, 191 development, and 138 test rows
+whole-group plan allocates 1,111 train, 191 development, and 140 test rows
 across 18 leakage groups. Initial 0.98 text and 0.995 audio thresholds found no
 cross-group near-duplicate pair. This plan is not frozen and no row is
 authorized for training until threshold calibration, contamination checks, and a

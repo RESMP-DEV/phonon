@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -39,13 +40,15 @@ def parse_teachers(value: Any) -> dict[str, str]:
         except json.JSONDecodeError:
             return {"raw": value}
     if not isinstance(parsed, dict):
-        return {}
+        raise CurationError("unsupported teacher transcript container")
     result: dict[str, str] = {}
     for name, hypothesis in parsed.items():
         if isinstance(hypothesis, str) and hypothesis.strip():
             result[str(name)] = " ".join(hypothesis.split())
         elif isinstance(hypothesis, dict) and isinstance(hypothesis.get("text"), str):
             result[str(name)] = " ".join(hypothesis["text"].split())
+        else:
+            raise CurationError("unsupported teacher hypothesis format")
     return result
 
 
@@ -106,7 +109,7 @@ def existing_ids(path: Path, *, model: str) -> set[str]:
 
 
 def chat(
-    endpoint: str, model: str, prompt: str, timeout: float
+    endpoint: str, model: str, prompt: str, timeout: float, auth_token: str
 ) -> tuple[dict[str, Any], str, str]:
     """Make one bounded OpenAI-compatible chat request."""
     base = endpoint.rstrip("/").removesuffix("/v1")
@@ -124,7 +127,7 @@ def chat(
         ).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": "Bearer ccr-local",
+            "Authorization": f"Bearer {auth_token}",
         },
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -164,34 +167,43 @@ def reconcile(
     model: str,
     limit: int | None,
     timeout: float,
+    auth_token: str,
 ) -> dict[str, Any]:
     """Run resumable blind reconciliation over teacher-bearing rows."""
     output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     output.touch(mode=0o600, exist_ok=True)
     output.chmod(0o600)
     completed = existing_ids(output, model=model)
-    rows: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    for row in iter_parquet_rows(dataset):
-        if row["id"] in seen_ids:
-            continue
-        seen_ids.add(row["id"])
-        teachers = parse_teachers(row.get("teacher_transcripts"))
-        if teachers:
-            rows.append(
-                {
-                    "id": row["id"],
-                    "domain_tags": row.get("domain_tags") or [],
-                    "teachers": teachers,
-                }
-            )
-        if limit is not None and len(rows) >= limit:
-            break
-    pending = [row for row in rows if row["id"] not in completed]
-    generated = 0
-    failed = 0
+    seen_hashes: set[str] = set()
+    input_rows = already_present = generated = failed = 0
     started = time.monotonic()
-    for row in pending:
+    for source in iter_parquet_rows(dataset):
+        row_id = source.get("id")
+        audio_hash = source.get("sha256_audio")
+        if not isinstance(row_id, str) or not row_id:
+            raise CurationError("dataset row lacks a nonempty string id")
+        if not isinstance(audio_hash, str) or not audio_hash:
+            raise CurationError(f"row {row_id} lacks sha256_audio")
+        if row_id in seen_ids or audio_hash in seen_hashes:
+            continue
+        seen_ids.add(row_id)
+        seen_hashes.add(audio_hash)
+        teachers = parse_teachers(source.get("teacher_transcripts"))
+        if not teachers:
+            continue
+        row = {
+            "id": row_id,
+            "domain_tags": source.get("domain_tags") or [],
+            "teachers": teachers,
+        }
+        input_rows += 1
+        if limit is not None and input_rows > limit:
+            input_rows -= 1
+            break
+        if row_id in completed:
+            already_present += 1
+            continue
         prompt = USER_TEMPLATE.format(
             domain_tags=", ".join(map(str, row["domain_tags"])),
             teachers=json.dumps(row["teachers"], ensure_ascii=True, indent=2),
@@ -204,7 +216,9 @@ def reconcile(
             "prompt_schema_sha256": PROMPT_SCHEMA_SHA256,
         }
         try:
-            result, finish_reason, served_model = chat(endpoint, model, prompt, timeout)
+            result, finish_reason, served_model = chat(
+                endpoint, model, prompt, timeout, auth_token
+            )
         except (CurationError, OSError, TimeoutError) as error:
             record.update(
                 {
@@ -233,8 +247,8 @@ def reconcile(
         "model": model,
         "prompt_schema_version": PROMPT_SCHEMA_VERSION,
         "prompt_schema_sha256": PROMPT_SCHEMA_SHA256,
-        "input_rows": len(rows),
-        "already_present": len(rows) - len(pending),
+        "input_rows": input_rows,
+        "already_present": already_present,
         "generated": generated,
         "failed": failed,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
@@ -253,6 +267,9 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", default="zai,glm-5.3")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument(
+        "--auth-token", default=os.environ.get("PHONON_CCR_TOKEN", "ccr-local")
+    )
     return parser.parse_args(argv)
 
 
@@ -269,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
             model=arguments.model,
             limit=arguments.limit,
             timeout=arguments.timeout,
+            auth_token=arguments.auth_token,
         )
         print(json.dumps(receipt, indent=2, sort_keys=True))
         return 0

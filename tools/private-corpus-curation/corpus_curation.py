@@ -15,6 +15,7 @@ import math
 import os
 import re
 import sys
+import warnings
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
@@ -36,9 +37,14 @@ class CurationError(ValueError):
 
 
 def normalize_phrase(value: Any) -> str:
-    """Normalize a term or transcript for conservative lexical matching."""
+    """Normalize terms while preserving common technical-token punctuation."""
     return " ".join(
-        token for token in re.findall(r"[a-z0-9]+", str(value or "").lower()) if token
+        token
+        for token in re.findall(
+            r"[a-z0-9]+(?:[+#._/-]+[a-z0-9]+)*[+#]*",
+            str(value or "").lower(),
+        )
+        if token
     )
 
 
@@ -49,7 +55,8 @@ def sha256_text(value: str) -> str:
 def load_aqua_lexicon(settings_path: Path) -> dict[str, Any]:
     """Read Aqua dictionary/replacement values without printing them."""
     try:
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        settings_text = settings_path.read_text(encoding="utf-8")
+        settings = json.loads(settings_text)
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise CurationError(f"cannot read Aqua settings: {error}") from error
     dictionary = settings.get("dictionary")
@@ -87,7 +94,7 @@ def load_aqua_lexicon(settings_path: Path) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "source": "aqua_voice_settings",
         "settings_path": str(settings_path),
-        "settings_sha256": sha256_text(settings_path.read_text(encoding="utf-8")),
+        "settings_sha256": sha256_text(settings_text),
         "terms": terms,
     }
 
@@ -129,6 +136,7 @@ def safe_output_path(path: Path) -> Path:
         relative = None
     if relative is not None:
         if relative.parts and relative.parts[0] == "build":
+            reject_symlink_ancestors(path.absolute(), REPO_ROOT / "build")
             return resolved
         raise CurationError("repository output must stay under build/")
     try:
@@ -137,7 +145,21 @@ def safe_output_path(path: Path) -> Path:
         raise CurationError(
             "output must be under the local Phonon research share or build/"
         ) from error
+    reject_symlink_ancestors(path.absolute(), RESEARCH_ROOT)
     return resolved
+
+
+def reject_symlink_ancestors(path: Path, root: Path) -> None:
+    """Reject symlinked output components inside a private output root."""
+    current = path
+    while current != root:
+        if current.is_symlink():
+            raise CurationError(f"symlinked output component: {current}")
+        if root not in current.parents:
+            raise CurationError("output path is outside its declared root")
+        current = current.parent
+    if root.is_symlink():
+        raise CurationError("private output root must not be a symbolic link")
 
 
 def validate_output_aliases(output: Path, protected: Iterable[Path]) -> None:
@@ -242,6 +264,8 @@ def load_embeddings(path: Path | None) -> dict[str, dict[str, list[float]]]:
             row = json.loads(line)
         except json.JSONDecodeError as error:
             raise CurationError(f"embedding line {line_number} is invalid") from error
+        if not isinstance(row, dict):
+            raise CurationError(f"embedding line {line_number} is not an object")
         vector = row.get("vector")
         modalities: list[tuple[str, list[Any]]] = []
         if isinstance(vector, list):
@@ -252,7 +276,7 @@ def load_embeddings(path: Path | None) -> dict[str, dict[str, list[float]]]:
                 modalities.append((modality, nested))
         if not modalities:
             raise CurationError(f"embedding line {line_number} lacks a vector")
-        if not isinstance(row["id"], str) or any(
+        if not isinstance(row.get("id"), str) or any(
             modality not in {"text", "audio"}
             or not values
             or not all(
@@ -334,6 +358,11 @@ def vector_similarity_pairs(
                     )
                 )
     except ImportError:
+        warnings.warn(
+            "NumPy unavailable; embedding similarity uses slow O(n^2) Python loops",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         for index, left in enumerate(identifiers):
             for right in identifiers[index + 1 :]:
                 similarity = cosine(normalized[left], normalized[right])
@@ -667,7 +696,9 @@ def optimize_component_splits(
         dimensions,
     )
     improved = True
-    while improved:
+    iteration = 0
+    max_iterations = max(100, len(component_by_root) * len(targets) * 100)
+    while improved and iteration < max_iterations:
         improved = False
         for root in sorted(component_by_root):
             source = current[root]
@@ -690,6 +721,13 @@ def optimize_component_splits(
                     break
             if improved:
                 break
+        iteration += 1
+    if improved:
+        warnings.warn(
+            "grouped split optimization reached its iteration bound",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return current
 
 
@@ -809,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
         write_private_json(arguments.report, report)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
-    except (CurationError, OSError, json.JSONDecodeError) as error:
+    except Exception as error:  # noqa: BLE001 - private-input CLI failure boundary
         print(f"FAIL private-corpus-curation: {error}", file=sys.stderr)
         return 2
 

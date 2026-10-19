@@ -57,6 +57,13 @@ def test_aqua_lexicon_import_is_private_and_aggregate_safe(tmp_path: Path) -> No
     assert len(lexicon["terms"]) == 3
 
 
+def test_technical_token_punctuation_is_preserved() -> None:
+    """Technical spelling distinctions survive lexical normalization."""
+    assert curation.normalize_phrase("C++") == "c++"
+    assert curation.normalize_phrase("GPU-accelerated") == "gpu-accelerated"
+    assert curation.normalize_phrase("RTX 6000") == "rtx 6000"
+
+
 def test_exact_id_and_audio_deduplication(tmp_path: Path) -> None:
     lexicon = curation.load_aqua_lexicon(settings(tmp_path))
     rows = [

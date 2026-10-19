@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.request
@@ -31,7 +32,10 @@ MODEL_CONTRACT = "artifact-contract.json"
 
 
 def parquet_rows(
-    datasets: Sequence[Path], modality: str, limit: int | None = None
+    datasets: Sequence[Path],
+    modality: str,
+    limit: int | None = None,
+    stats: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Load one unique row ID/audio hash with only the needed private fields."""
     rows: list[dict[str, Any]] = []
@@ -50,6 +54,10 @@ def parquet_rows(
             seen_ids.add(row_id)
             seen_hashes.add(audio_hash)
             if modality == "text" and not reference_text(source):
+                if stats is not None:
+                    stats["filtered_empty_text"] = (
+                        stats.get("filtered_empty_text", 0) + 1
+                    )
                 continue
             row = {
                 "id": row_id,
@@ -204,6 +212,8 @@ class OpenAICompatibleEmbedder:
         request = json.dumps({"model": self.model, "input": list(texts)}).encode(
             "utf-8"
         )
+        if len(request) > 8 * 1024 * 1024:
+            raise CurationError("embedding request exceeds the 8 MiB native bound")
         req = urllib.request.Request(
             f"{self.base_url}/v1/embeddings",
             data=request,
@@ -376,6 +386,7 @@ def run_embeddings(
     finally:
         if hasattr(provider, "model"):
             provider.model = None  # type: ignore[assignment]
+        shutil.rmtree(audio_cache, ignore_errors=True)
     return {
         "provider": provider_name,
         "model": model_name,
@@ -419,7 +430,13 @@ def main(argv: list[str] | None = None) -> int:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
         output = safe_output_path(arguments.out)
         validate_output_aliases(output, arguments.dataset)
-        rows = parquet_rows(arguments.dataset, arguments.modality, arguments.limit)
+        row_stats: dict[str, int] = {}
+        rows = parquet_rows(
+            arguments.dataset,
+            arguments.modality,
+            arguments.limit,
+            row_stats,
+        )
         receipt = run_embeddings(
             arguments.provider,
             rows,
@@ -432,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
             precision=arguments.precision,
             model_path=arguments.model_path,
         )
+        receipt["filtered_empty_text"] = row_stats.get("filtered_empty_text", 0)
         print(json.dumps(receipt, indent=2, sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 - private-input CLI failure boundary

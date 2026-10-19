@@ -2201,6 +2201,34 @@ Modal-synthetic-only boundary and remains a separate explicit cleanup decision;
 the GPU probe did not upload private data. The sanitized receipt is
 `evidence/2026-10-19-embeddinggemma-gpu-provider-sizing.md`.
 
+### 2026-10-19: Ming ASR survey and contextual-teacher gate
+
+Surveyed inclusionAI's new Ming releases. `Ming-3.0-asr-tiny` is an 8.6B-total /
+about-2B-active audio-only MoE ASR model with explicit hotword and dialogue
+context prompts. Its exact pinned runtime succeeded on one RTX 3090 Ti using
+torch 2.11, transformers 5.12.1, torchaudio 2.11, and fla-core 0.5.2; total GPU
+memory was about 19.5 GiB beside the existing local embedding service. The much
+larger `Ming-3.0-audio-flash` is a 126B-total / 6.5B-active native audio-language
+MoE with roughly 256 GB of BF16 weights and a reference eight times 80 GB serving
+profile. Its cited advantage is strongest for long-form and multi-speaker work,
+not necessarily short single-speaker dictation.
+
+Vendor benchmarks put audio-flash at 3.69% English average WER and ASR-tiny at
+3.99%. Applying Phonon's measured Qwen/Voxtral public-to-private degradation
+range gives roughly 4.5-6.5% fair WER as a directional, unmatched-protocol
+estimate. This provides no evidence that either Ming model beats Aqua raw's
+3.29%; only the registered matched slice can answer that. ASR-tiny's no-leak
+hotword mechanism remains directly aligned with Phonon's technical-vocabulary
+gap. A realistic context prompt must retrieve terms from Aqua raw and the local
+lexicon, never the accepted reference.
+
+The matched score remains unmeasured: B550 disappeared from ARP and SSH during
+the first 25-row pilot, after the public runtime probe had succeeded. No private
+data was uploaded. `Ming-3.0-audio-flash` cannot be used for private audio on a
+rented provider without an explicit provider, data-scope, retention, and consent
+decision. The sanitized survey receipt is
+`evidence/2026-10-19-ming-asr-survey.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

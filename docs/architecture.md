@@ -2150,16 +2150,22 @@ separate permission promotion complete. The sanitized pilot receipt is
 Added `tools/embedding-finetune`. The public lane deterministically converts
 pinned AllNLI, Quora, STSB, sentence-compression, Simple Wiki, SQuAD, and
 CodeSearchNet Python seeds into one validated contrastive triplet schema with
-source revisions and file hashes. The first local public set contains 9,996
-records: 6,996 text, 2,000 QA, and 1,000 code examples.
+source revisions and file hashes. STSB positives require a normalized
+similarity score of at least 0.8, and QA/code negatives rotate across differing
+groups instead of reusing the first eligible source row. The corrected public
+v2 set contains 9,996 records: 6,996 text, 2,000 QA, and 1,000 code examples;
+its QA lane has 1,733 distinct explicit negatives and its code lane has 991.
 
 The private lane combines the 1,442-row consensus corpus, complete
 EmbeddingGemma 2 text/audio vectors, the Aqua lexicon, seven existing teachers,
 and verified embedded audio. It emits teacher-to-reference, text-to-audio,
 dictionary-term context, and spoken-replacement triplets while preserving the
-whole-group split. The first scrub produced 3,161 private records: 2,440 train,
-410 development, and 311 test. All private outputs are mode `0600`; 1,442
-hash-addressed audio files remain local.
+whole-group split. The corrected private v2 scrub produced 3,238 records:
+2,482 train, 428 development, and 328 test. It covers 122 dictionary terms with
+321 term-context records and uses 24 distinct replacement negatives. Private
+JSONL and reports are mode `0600`, output directories are mode `0700`, and
+1,442 hash-addressed audio files remain local behind portable
+`audio://<sha256>.wav` references rather than absolute filesystem paths.
 
 This creates adaptation candidates only. The source YouTube permission gate and
 frozen-evaluation contamination checks remain in force, and no fine-tuning run

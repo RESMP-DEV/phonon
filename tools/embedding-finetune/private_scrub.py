@@ -36,6 +36,7 @@ from glm_reconcile import parse_teachers
 MODEL_ID = "google/embeddinggemma-2"
 MODEL_REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b"
 DIMENSION = 768
+VALID_SPLITS = frozenset({"train", "dev", "test"})
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ class PrivateRow:
     teachers: dict[str, str]
     text_vector: np.ndarray
     audio_vector: np.ndarray
+    train_allowed: bool
+    eval_allowed: bool
 
 
 class ScrubError(ValueError):
@@ -68,6 +71,7 @@ def load_split_manifest(path: Path) -> dict[str, dict[str, str]]:
     if not isinstance(rows, list):
         raise ScrubError("split manifest must contain a rows array")
     result: dict[str, dict[str, str]] = {}
+    group_splits: dict[str, str] = {}
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
             raise ScrubError(f"split row {index} lacks id")
@@ -76,6 +80,12 @@ def load_split_manifest(path: Path) -> dict[str, dict[str, str]]:
         for field in ("split", "group", "audio_sha256"):
             if not isinstance(row.get(field), str):
                 raise ScrubError(f"split row {row['id']} lacks {field}")
+        if row["split"] not in VALID_SPLITS or not row["group"].strip():
+            raise ScrubError(f"split row {row['id']} has an invalid split or group")
+        previous_split = group_splits.get(row["group"])
+        if previous_split is not None and previous_split != row["split"]:
+            raise ScrubError(f"split group {row['group']} spans multiple splits")
+        group_splits[row["group"]] = row["split"]
         result[row["id"]] = row
     return result
 
@@ -171,6 +181,8 @@ def load_private_rows(
             raise ScrubError(f"embedded audio hash mismatch for {row_id}")
         duration = source.get("duration_seconds")
         reference = reference_text(source)
+        train_allowed = source.get("train_allowed") is True
+        eval_allowed = source.get("eval_allowed") is True
         if (
             not isinstance(duration, int | float)
             or not math.isfinite(float(duration))
@@ -191,6 +203,8 @@ def load_private_rows(
                 teachers=parse_teachers(source.get("teacher_transcripts")),
                 text_vector=text_vectors[row_id],
                 audio_vector=audio_vectors[row_id],
+                train_allowed=train_allowed,
+                eval_allowed=eval_allowed,
             )
         )
     return rows, dict(stats)
@@ -210,6 +224,11 @@ def materialize_audio(row: PrivateRow, directory: Path) -> Path:
     temporary.replace(path)
     path.chmod(0o600)
     return path
+
+
+def audio_uri(row: PrivateRow) -> str:
+    """Return a portable content-addressed reference for local audio."""
+    return f"audio://{row.audio_hash}.wav"
 
 
 def token_set(value: str) -> set[str]:
@@ -235,7 +254,7 @@ def choose_teacher(row: PrivateRow) -> str | None:
     candidates = {
         name: hypothesis
         for name, hypothesis in row.teachers.items()
-        if hypothesis.strip() != row.reference.strip()
+        if hypothesis.strip() and hypothesis.strip() != row.reference.strip()
     }
     if not candidates:
         return None
@@ -310,8 +329,11 @@ def build_private_triplets(
     rows_by_split: dict[str, list[PrivateRow]] = defaultdict(list)
     for row in rows:
         rows_by_split[row.split].append(row)
+    output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    output_dir.chmod(0o700)
     audio_dir = output_dir / "audio"
     audio_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    audio_dir.chmod(0o700)
     outputs: dict[str, list[dict[str, Any]]] = {
         split: [] for split in ("train", "dev", "test")
     }
@@ -360,16 +382,16 @@ def build_private_triplets(
         else:
             negative_row, similarity = audio_negative
             negative_similarities.append(similarity)
-            positive_path = materialize_audio(row, audio_dir)
-            negative_path = materialize_audio(negative_row, audio_dir)
+            materialize_audio(row, audio_dir)
+            materialize_audio(negative_row, audio_dir)
             outputs[row.split].append(
                 {
                     "schema_version": triplets.SCHEMA_VERSION,
                     "kind": "text_audio",
                     **source_record(row, source, source_revision),
                     "anchor": row.reference,
-                    "positive": str(positive_path),
-                    "negative": str(negative_path),
+                    "positive": audio_uri(row),
+                    "negative": audio_uri(negative_row),
                     "negative_row_id": negative_row.row_id,
                     "negative_similarity": similarity,
                 }
@@ -378,6 +400,7 @@ def build_private_triplets(
 
     term_use: Counter = Counter()
     for row in rows:
+        text_candidates = negative_candidates(row, rows_by_split, "text_vector")
         counts = term_counts(row.reference, terms)
         present = [
             terms[index]["normalized"]
@@ -386,9 +409,11 @@ def build_private_triplets(
         ]
         for term in sorted(present):
             if term_use[term] >= max_term_examples:
-                break
+                continue
+            if normalize_phrase(row.reference) == term:
+                continue
             negative = choose_negative(
-                negative_candidates(row, rows_by_split, "text_vector"),
+                text_candidates,
                 minimum=minimum_negative,
                 maximum=maximum_negative,
                 forbidden_term=term,
@@ -421,6 +446,7 @@ def build_private_triplets(
     ]
     for term in replacement_terms:
         anchor_tokens = token_set(term["spoken_source"])
+        anchor_normalized = term["normalized"]
         ranked = sorted(
             (
                 candidate
@@ -429,6 +455,12 @@ def build_private_triplets(
             ),
             key=lambda candidate: (
                 -len(anchor_tokens & token_set(candidate.get("spoken_source") or "")),
+                int(
+                    hashlib.sha256(
+                        (anchor_normalized + "\0" + candidate["normalized"]).encode()
+                    ).hexdigest()[:16],
+                    16,
+                ),
                 candidate["normalized"],
             ),
         )
@@ -489,6 +521,7 @@ def write_private_outputs(
 ) -> None:
     """Write split JSONL files with user-only permissions."""
     output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    output_dir.chmod(0o700)
     for split, records in records_by_split.items():
         triplets.write_jsonl(output_dir / f"{split}.jsonl", records, private=True)
 
@@ -557,16 +590,23 @@ def main(argv: list[str] | None = None) -> int:
             **scrub_report,
             "permission_gate": {
                 "source_rows_promoted": 0,
-                "all_source_permissions_remain_false": True,
+                "train_permission_rows": sum(row.train_allowed for row in rows),
+                "eval_permission_rows": sum(row.eval_allowed for row in rows),
+                "all_source_permissions_remain_false": bool(rows)
+                and all(not row.train_allowed and not row.eval_allowed for row in rows),
                 "fine_tune_eligible": False,
+                "frozen_evaluation_verified": False,
                 "reason": "frozen-evaluation contamination and permission promotion remain incomplete",
             },
             "privacy": {
-                "emits_transcripts": False,
-                "emits_dictionary_phrases": False,
-                "emits_row_ids": False,
-                "row_ids_and_text_only_in_local_triplets": True,
-                "output_permissions": "0600",
+                "report_emits_transcripts": False,
+                "report_emits_dictionary_phrases": False,
+                "report_emits_row_ids": False,
+                "triplets_contain_transcripts": True,
+                "triplets_contain_dictionary_phrases": True,
+                "triplets_contain_row_ids": True,
+                "audio_references": "portable content-addressed URIs",
+                "output_permissions": "0600 files and 0700 directories",
             },
         }
         triplets.write_json(output_dir / "report.json", report, private=True)

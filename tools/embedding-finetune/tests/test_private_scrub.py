@@ -31,6 +31,8 @@ def private_row(
         teachers={"teacher": f"{reference} hypothesis"},
         text_vector=array,
         audio_vector=array,
+        train_allowed=False,
+        eval_allowed=False,
     )
 
 
@@ -70,6 +72,35 @@ def test_split_manifest_rejects_duplicate_ids(tmp_path: Path) -> None:
         assert "duplicate split row id" in str(error)
     else:
         raise AssertionError("duplicate split row accepted")
+
+
+def test_split_manifest_rejects_group_spanning_splits(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {"id": "a", "split": "train", "group": "g", "audio_sha256": "a"},
+                    {"id": "b", "split": "dev", "group": "g", "audio_sha256": "b"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        scrub.load_split_manifest(path)
+    except scrub.ScrubError as error:
+        assert "spans multiple splits" in str(error)
+    else:
+        raise AssertionError("cross-split leakage group accepted")
+
+
+def test_choose_teacher_rejects_empty_hypothesis() -> None:
+    row = private_row("a", "g", "train", reference="text", vector=[1.0] + [0.0] * 767)
+    row.teachers["empty"] = " "
+
+    assert scrub.choose_teacher(row) == "teacher"
 
 
 def test_private_builder_emits_core_kinds(tmp_path: Path) -> None:
@@ -124,7 +155,17 @@ def test_private_builder_emits_core_kinds(tmp_path: Path) -> None:
         max_term_examples=4,
     )
     kinds = {record["kind"] for record in records["train"]}
+    audio_records = [
+        record for record in records["train"] if record["kind"] == "text_audio"
+    ]
 
     assert {"teacher_consistency", "text_audio", "replacement"} <= kinds
     assert report["written_by_split"]["train"] >= 3
     assert (tmp_path / "audio").is_dir()
+    assert tmp_path.stat().st_mode & 0o777 == 0o700
+    assert (tmp_path / "audio").stat().st_mode & 0o777 == 0o700
+    assert all(
+        record["positive"].startswith("audio://")
+        and record["negative"].startswith("audio://")
+        for record in audio_records
+    )

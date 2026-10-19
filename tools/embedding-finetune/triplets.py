@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from time import time_ns
 from typing import Any
@@ -22,6 +23,7 @@ VALID_KINDS = frozenset(
         "replacement",
     }
 )
+AUDIO_URI = re.compile(r"audio://[0-9a-f]{64}\.wav")
 
 
 class TripletError(ValueError):
@@ -51,9 +53,10 @@ def validate_triplet(row: dict[str, Any]) -> None:
             raise TripletError(f"triplet field {field} must be nonempty text/path")
     if row["kind"] == "text_audio":
         for field in ("positive", "negative"):
-            path = Path(row[field])
-            if not path.is_absolute():
-                raise TripletError("text_audio paths must be absolute")
+            if AUDIO_URI.fullmatch(row[field]) is None:
+                raise TripletError(
+                    "text_audio fields must be portable audio://<sha256>.wav URIs"
+                )
     if len({row["anchor"], row["positive"], row["negative"]}) != 3:
         raise TripletError("anchor, positive, and negative must be distinct")
 

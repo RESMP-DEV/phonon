@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import math
 import random
 import sys
 from collections import Counter
@@ -15,6 +16,7 @@ from typing import Any
 import triplets
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+STSB_MIN_POSITIVE_SCORE = 0.8
 SPECS = {
     "all_nli_train": (
         "sentence-transformers/all-nli",
@@ -130,8 +132,38 @@ def read_rows(path: Path) -> list[tuple[int, dict[str, Any]]]:
     return rows
 
 
+def eligible_rows(
+    rows: list[tuple[int, dict[str, Any]]], kind: str
+) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    """Apply source-specific positive-pair quality filters before sampling."""
+    if kind != "stsb":
+        return rows, 0
+    eligible: list[tuple[int, dict[str, Any]]] = []
+    for item in rows:
+        score = item[1].get("score")
+        if (
+            isinstance(score, int | float)
+            and not isinstance(score, bool)
+            and math.isfinite(float(score))
+            and float(score) >= STSB_MIN_POSITIVE_SCORE
+        ):
+            eligible.append(item)
+    return eligible, len(rows) - len(eligible)
+
+
+def cyclic_different_candidate(
+    sampled: list[tuple[int, dict[str, Any]]], index: int, field: str
+) -> dict[str, Any] | None:
+    """Choose a rotated negative while preserving the source grouping rule."""
+    for offset in range(1, len(sampled)):
+        candidate = sampled[(index + offset) % len(sampled)][1]
+        if candidate.get(field) != sampled[index][1].get(field):
+            return candidate
+    return None
+
+
 def base_record(
-    name: str, source: str, revision: str, path: Path, row_index: int
+    name: str, source: str, revision: str, relative: str, row_index: int
 ) -> dict[str, Any]:
     """Build non-text triplet provenance."""
     return {
@@ -139,7 +171,7 @@ def base_record(
         "source": source,
         "source_revision": revision,
         "seed_name": name,
-        "seed_path": str(path),
+        "seed_relative": relative,
         "seed_row_index": row_index,
     }
 
@@ -148,7 +180,7 @@ def convert(
     name: str,
     source: str,
     revision: str,
-    path: Path,
+    relative: str,
     kind: str,
     sampled: list[tuple[int, dict[str, Any]]],
 ) -> tuple[list[dict[str, Any]], int]:
@@ -156,7 +188,7 @@ def convert(
     output: list[dict[str, Any]] = []
     rejected = 0
     for index, (row_index, row) in enumerate(sampled):
-        base = base_record(name, source, revision, path, row_index)
+        base = base_record(name, source, revision, relative, row_index)
         triplet: dict[str, Any] | None = None
         if kind == "triplet":
             triplet = {
@@ -167,6 +199,15 @@ def convert(
                 "negative": str(row.get("negative") or ""),
             }
         elif kind == "stsb":
+            score = row.get("score")
+            if (
+                not isinstance(score, int | float)
+                or isinstance(score, bool)
+                or not math.isfinite(float(score))
+                or float(score) < STSB_MIN_POSITIVE_SCORE
+            ):
+                rejected += 1
+                continue
             other = sampled[(index + 1) % len(sampled)][1]
             triplet = {
                 **base,
@@ -187,14 +228,7 @@ def convert(
                     "negative": str(other[1]),
                 }
         elif kind == "squad":
-            other = next(
-                (
-                    candidate
-                    for _, candidate in sampled
-                    if candidate.get("title") != row.get("title")
-                ),
-                None,
-            )
+            other = cyclic_different_candidate(sampled, index, "title")
             if other is not None:
                 triplet = {
                     **base,
@@ -204,14 +238,7 @@ def convert(
                     "negative": str(other.get("context") or ""),
                 }
         elif kind == "code":
-            other = next(
-                (
-                    candidate
-                    for _, candidate in sampled
-                    if candidate.get("repository_name") != row.get("repository_name")
-                ),
-                None,
-            )
+            other = cyclic_different_candidate(sampled, index, "repository_name")
             if other is not None:
                 triplet = {
                     **base,
@@ -241,14 +268,17 @@ def build_public_seed_set(
     safe_output(output, seed_root)
     records: list[dict[str, Any]] = []
     rejected = Counter()
+    quality_filtered = Counter()
     file_hashes: dict[str, str] = {}
     for name, (source, revision, relative, kind) in SPECS.items():
         path = seed_root / relative
         if not path.is_file():
             raise SeedError(f"missing pinned seed: {path}")
         file_hashes[name] = triplets.sha256_file(path)
-        sampled = reservoir(read_rows(path), per_source_limit, f"{name}:{revision}")
-        converted, invalid = convert(name, source, revision, path, kind, sampled)
+        eligible, filtered = eligible_rows(read_rows(path), kind)
+        quality_filtered[name] = filtered
+        sampled = reservoir(eligible, per_source_limit, f"{name}:{revision}")
+        converted, invalid = convert(name, source, revision, relative, kind, sampled)
         records.extend(converted)
         rejected[name] = invalid
     unique: list[dict[str, Any]] = []
@@ -270,6 +300,7 @@ def build_public_seed_set(
         "kind_counts": dict(sorted(Counter(r["kind"] for r in unique).items())),
         "written": len(unique),
         "invalid": dict(sorted(rejected.items())),
+        "quality_filtered": dict(sorted(quality_filtered.items())),
         "duplicate_triplets_removed": len(records) - len(unique),
         "file_sha256": dict(sorted(file_hashes.items())),
         "emits_text": True,
@@ -286,16 +317,37 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def validate_output_aliases(
+    seed_root: Path, output: Path, report: Path
+) -> tuple[Path, Path]:
+    """Reject output collisions before a pinned seed or result can be replaced."""
+    resolved_output = safe_output(output, seed_root)
+    resolved_report = safe_output(report, seed_root)
+    source_paths = {
+        (seed_root / relative).resolve() for _, (_, _, relative, _) in SPECS.items()
+    }
+    if (
+        resolved_output == resolved_report
+        or resolved_output in source_paths
+        or resolved_report in source_paths
+    ):
+        raise SeedError(
+            "public outputs must be distinct and must not overwrite pinned seeds"
+        )
+    return resolved_output, resolved_report
+
+
 def main(argv: list[str] | None = None) -> int:
     """Convert pinned public seeds and print an aggregate-only report."""
     try:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
-        safe_output(arguments.out, arguments.seed_root)
-        safe_output(arguments.report, arguments.seed_root)
-        report = build_public_seed_set(
-            arguments.seed_root, arguments.out, arguments.per_source_limit
+        output, report_path = validate_output_aliases(
+            arguments.seed_root, arguments.out, arguments.report
         )
-        triplets.write_json(arguments.report, report, private=False)
+        report = build_public_seed_set(
+            arguments.seed_root, output, arguments.per_source_limit
+        )
+        triplets.write_json(report_path, report, private=False)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 - public-data CLI failure boundary

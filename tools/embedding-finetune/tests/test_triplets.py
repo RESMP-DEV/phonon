@@ -35,6 +35,18 @@ def test_missing_and_duplicate_fields_are_rejected() -> None:
         triplets.validate_triplet(duplicate)
 
 
+def test_text_audio_requires_portable_hash_uri() -> None:
+    valid = triplet()
+    valid["kind"] = "text_audio"
+    valid["positive"] = "audio://" + "a" * 64 + ".wav"
+    valid["negative"] = "audio://" + "b" * 64 + ".wav"
+    triplets.validate_triplet(valid)
+
+    invalid = valid | {"negative": "/Users/example/private.wav"}
+    with pytest.raises(triplets.TripletError, match="portable audio"):
+        triplets.validate_triplet(invalid)
+
+
 def test_private_jsonl_is_user_only_and_atomic(tmp_path: Path) -> None:
     output = tmp_path / "private.jsonl"
     triplets.write_jsonl(output, [triplet()], private=True)

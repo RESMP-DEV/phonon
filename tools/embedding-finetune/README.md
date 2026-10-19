@@ -15,9 +15,9 @@ pinned multimodal embedding model.
 - SQuAD train/validation question-context pairs
 - CodeSearchNet Python docstring-code pairs
 
-It deterministically samples each source, generates hard negatives where the
-source supplies only pairs, validates one shared schema, and records source
-revisions plus file hashes.
+It deterministically samples each source, keeps only high-similarity STSB
+positives, rotates QA/code negatives across differing groups, validates one
+shared schema, and records source revisions plus file hashes.
 
 ## Private scrubber
 
@@ -34,14 +34,16 @@ It emits four private triplet kinds:
 
 - `teacher_consistency`: best teacher hypothesis to reference text.
 - `text_audio`: reference text to matching audio, with same-split cross-group
-  audio hard negatives.
+  audio hard negatives. The JSONL stores portable
+  `audio://<sha256>.wav` URIs; the audio directory owns the local bytes.
 - `term_context`: dictionary term to a containing transcript, with a similar
   transcript that does not contain that term.
 - `replacement`: spoken Aqua replacement source to exact written target, with
   another replacement as the negative.
 
-All private outputs remain under the local research share with mode `0600`;
-audio files are hash-addressed under a mode-0700 directory.
+All private JSONL and reports remain under the local research share with mode
+`0600`; output and audio directories are mode `0700`, and audio files are
+hash-addressed with mode `0600`.
 
 ## Current gate
 

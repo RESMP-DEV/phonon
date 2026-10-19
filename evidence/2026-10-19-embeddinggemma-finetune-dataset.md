@@ -2,10 +2,10 @@
 
 ## Scope
 
-This receipt records the first public-seed inventory and private scrub for an
-EmbeddingGemma 2 contrastive adaptation dataset. Public seed text is stored in
-the local research share. Private transcripts, dictionary values, row IDs, and
-audio remain absent from this receipt and Git.
+This receipt records the public-seed inventory, private scrub, and review
+repair for an EmbeddingGemma 2 contrastive adaptation dataset. Public seed text
+is stored in the local research share. Private transcripts, dictionary values,
+row IDs, and audio remain absent from this receipt and Git.
 
 ## Official training contract
 
@@ -40,10 +40,21 @@ The deterministic converter sampled up to 1,000 records per source:
 - `public_code`: 1,000
 - Invalid records: four
 - Duplicate triplets: zero
-- Public output size: 13,402,023 bytes
+- Public output size: 10,380,485 bytes
 
 Every source revision and file SHA-256 is recorded in the local
-`public-triplets-v1.report.json`.
+`public-triplets-v2.report.json`.
+
+Review remediation:
+
+- STSB is filtered before sampling so only pairs with normalized similarity
+  `>= 0.8` can become positives; 4,343 low-similarity source rows were filtered.
+- SQuAD and CodeSearchNet negatives rotate across differing titles or
+  repositories. The generated QA lane has 1,733 distinct explicit negatives
+  (maximum reuse four); the code lane has 991 (maximum reuse two).
+- Output paths are checked for self-collision and pinned-source collision.
+- Local filesystem paths were removed from public records and replaced by
+  relative seed paths.
 
 ## Private scrub
 
@@ -58,29 +69,40 @@ The scrubber used:
 
 It wrote:
 
-- Train: 2,440 triplets
-- Dev: 410 triplets
-- Test: 311 triplets
-- Total: 3,161 triplets
+- Train: 2,482 triplets
+- Dev: 428 triplets
+- Test: 328 triplets
+- Total: 3,238 triplets
 
 By kind:
 
 - `teacher_consistency`: 1,442
 - `text_audio`: 1,442
-- `term_context`: 244
+- `term_context`: 321
 - `replacement`: 33
 
 Quality observations:
 
-- Rows represented by at least one dictionary term: 91 unique terms
+- Rows represented by at least one dictionary term: 122 unique terms
 - Replacement sources available: 36; 33 passed distinctness filtering
+- Replacement negative targets: 24 distinct values; maximum reuse two
 - Hard-negative cosine range: 0.717187 to 0.906652
-- Mean hard-negative cosine: 0.829769
+- Mean hard-negative cosine: 0.830375
 - Invalid generated triplets: 0
 - Rows containing a URL or home-path marker: 0
 - Hash-addressed audio files: 1,442
 - Audio bytes: 1,383,060,878
-- JSONL and report permissions: `0600`
+- JSONL and report permissions: `0600`; output directory permissions: `0700`
+- Text-audio records use portable `audio://<sha256>.wav` references
+
+Review remediation:
+
+- The split manifest now rejects a leakage group that spans multiple splits.
+- Per-term caps continue instead of aborting all later terms in the same row.
+- Empty teacher hypotheses cannot be selected.
+- Replacement negatives use deterministic overlap plus varied hash ranking.
+- Private report privacy flags distinguish aggregate report contents from the
+  intentionally local training JSONL.
 
 ## Non-claims
 
@@ -93,11 +115,12 @@ private audio already supplies the first cross-modal lane.
 
 ## Verification
 
-The implementation's focused test suite passed eight tests. The live public
-converter completed with exit code 0 and wrote 9,996 validated records. The live
-private scrubber completed with exit code 0, wrote 3,161 validated records, and
-reported zero invalid generated triplets. A subsequent full-file validation pass
-found zero URL/home-path markers in the private JSONL. The repository common
-quality gate passed with 122 Python tests plus repository contracts, Ruff,
-formatting, diff hygiene, and shell checks; the machine receipt records the
-exact final head under `build/reports/quality/receipt.json`.
+The repaired implementation's focused test suite passed 14 tests. The live
+public v2 converter completed with exit code 0, wrote 9,996 validated records,
+and emitted no home-path markers. The live private v2 scrubber completed with
+exit code 0, wrote 3,238 validated records, and reported zero invalid generated
+triplets. A subsequent full-file aggregate validation pass found zero URL or
+home-path markers in the private JSONL, verified all text-audio references were
+portable hash URIs, and verified the file/directory permission matrix. The
+repository common quality gate result for the final reviewed head is recorded
+under `build/reports/quality/receipt.json`.

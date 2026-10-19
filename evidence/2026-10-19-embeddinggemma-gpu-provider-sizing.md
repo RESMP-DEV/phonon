@@ -38,15 +38,18 @@ text-only forward then has no gradient.
 ## On-silicon measurements
 
 All runs used synthetic random token IDs, the in-batch ranking objective,
-BF16 weights, and AdamW. `steps` is the completed measured sample, not a full
-training epoch.
+BF16 weights, and AdamW. The `full` rows are **pure-BF16 full-parameter runs**:
+optimizer moments also remained BF16. They are not a mixed-precision FP32-master
+recipe. `steps` is a short measured sample, not a full training epoch; the
+historical timing mean includes the first cold step, so provider epoch costs are
+planning estimates rather than steady-state acceptance measurements.
 
 ### RTX 3090 Ti, B550
 
 | Mode | Batch x seq | Grad ckpt | Trainable | Peak alloc | Peak reserved | sec/step | Triplets/sec |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| full | 8 x 512 | no | 576.61M | 22.441 GiB | 23.150 GiB | 0.825 | 9.70 |
-| full | 16 x 512 | no | 576.61M | OOM | OOM | - | - |
+| full (pure BF16) | 8 x 512 | no | 576.61M | 22.441 GiB | 23.150 GiB | 0.825 | 9.70 |
+| full (pure BF16) | 16 x 512 | no | 576.61M | OOM | OOM | - | - |
 | LoRA r32 | 4 x 512 | no | 10.09M | 11.297 GiB | 11.738 GiB | 0.449 | 8.92 |
 | LoRA r32 | 8 x 512 | no | 10.09M | 21.394 GiB | 21.715 GiB | 0.793 | 10.09 |
 | LoRA r32 | 8 x 512 | yes | 10.09M | 4.659 GiB | 6.023 GiB | 1.088 | 7.35 |
@@ -120,9 +123,9 @@ Measured recommendation:
   (`$0.032` higher).
 - T4 fits in memory but is 3.6x slower than A10G and is not cost efficient.
 - L40S is unnecessary for LoRA and is not yet qualified for full fine-tuning.
-- Full fine-tuning at batch 8 requires at least the measured 23.15 GiB reserved;
-  A10G/L4/T4 do not meet that floor. This is a measurement, not a promotion of
-  full fine-tuning.
+- Pure-BF16 full-parameter training at batch 8 requires at least the measured
+  23.15 GiB reserved; A10G/L4/T4 do not meet that floor. This is a measurement,
+  not a promotion of full fine-tuning or a claim about FP32-master training.
 
 A viable provider image was proved with
 `pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime`, plus

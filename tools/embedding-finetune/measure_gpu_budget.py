@@ -10,10 +10,12 @@ Two training shapes are measured because they have very different memory floors:
 
 - ``lora`` freezes the backbone and trains adapters on the text tower, so
   activation memory (batch x 3 triplet columns x seq) dominates.
-- ``full`` trains every backbone parameter, so fp32 optimizer state dominates.
+  ``full`` is qualified as pure-BF16 full-parameter training: parameters and AdamW
+  state remain BF16. It is not a mixed-precision FP32-master recipe.
 
-``--grad-checkpoint`` is the decisive lever: measured peak allocated memory drops
-from 21.39 GiB to 4.66 GiB at batch 8 / seq 512, at roughly 1.4x the step time.
+The ``:ckpt`` suffix on a ``--cases`` entry is the decisive gradient-checkpoint
+lever: measured peak allocated memory drops from 21.39 GiB to 4.66 GiB at
+``8:512:lora:ckpt`` versus ``8:512:lora``, at roughly 1.4x step time.
 """
 
 from __future__ import annotations
@@ -116,17 +118,22 @@ def run_case(
 ) -> dict[str, Any]:
     """Measure one configuration and return aggregate VRAM/throughput facts."""
     torch = load_torch()
-    torch.cuda.set_device(device)
-    torch.zeros(1, device=device)
+    cuda_device = torch.device(device)
+    torch.cuda.set_device(cuda_device)
+    torch.zeros(1, device=cuda_device)
     torch.cuda.empty_cache()
     gc.collect()
-    torch.cuda.reset_peak_memory_stats(torch.device(device))
+    torch.cuda.reset_peak_memory_stats(cuda_device)
 
     model, adapted = build_model(device, seq, mode, rank)
     model.train()
     if adapted is not None:
         adapted.train()
     if grad_checkpoint and adapted is not None:
+        if not hasattr(adapted, "gradient_checkpointing_enable"):
+            raise MeasureError(
+                "installed PEFT model does not support gradient checkpointing"
+            )
         adapted.gradient_checkpointing_enable()
     elif grad_checkpoint:
         raise MeasureError("grad checkpointing requires lora mode in this probe")
@@ -143,6 +150,7 @@ def run_case(
     features = {"input_ids": ids, "attention_mask": attention}
 
     elapsed: list[float] = []
+    cold_start_seconds: float | None = None
     steps = 0
     first_loss: float | None = None
     deadline = time.monotonic() + seconds
@@ -159,10 +167,14 @@ def run_case(
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
-        elapsed.append(time.monotonic() - started)
+        step_elapsed = time.monotonic() - started
+        if cold_start_seconds is None:
+            cold_start_seconds = step_elapsed
+        else:
+            elapsed.append(step_elapsed)
         steps += 1
 
-    if steps == 0:
+    if not elapsed:
         raise MeasureError("no training step completed before the time budget")
 
     result = {
@@ -174,18 +186,19 @@ def run_case(
         "trainable_params": trainable,
         "total_params": total,
         "steps": steps,
+        "cold_start_sec": round(cold_start_seconds, 4),
         "first_loss": round(first_loss, 4) if first_loss is not None else None,
         "sec_per_step": round(sum(elapsed) / len(elapsed), 4),
         "triplets_per_sec": round(steps * batch / sum(elapsed), 2),
         "peak_alloc_gib": round(
-            torch.cuda.max_memory_allocated(torch.device(device)) / 2**30, 3
+            torch.cuda.max_memory_allocated(cuda_device) / 2**30, 3
         ),
         "peak_reserved_gib": round(
-            torch.cuda.max_memory_reserved(torch.device(device)) / 2**30, 3
+            torch.cuda.max_memory_reserved(cuda_device) / 2**30, 3
         ),
-        "gpu": torch.cuda.get_device_name(device),
+        "gpu": torch.cuda.get_device_name(cuda_device),
         "vram_gib": round(
-            torch.cuda.get_device_properties(device).total_memory / 2**30, 2
+            torch.cuda.get_device_properties(cuda_device).total_memory / 2**30, 2
         ),
     }
     del model, adapted, features, ids, attention
@@ -202,8 +215,16 @@ def parse_cases(raw: str) -> list[tuple[int, int, str, bool]]:
         parts = item.split(":")
         if len(parts) not in (3, 4) or parts[2] not in ("lora", "full"):
             raise MeasureError(f"bad case spec: {item}")
-        grad_checkpoint = len(parts) == 4 and parts[3] == "ckpt"
-        cases.append((int(parts[0]), int(parts[1]), parts[2], grad_checkpoint))
+        if len(parts) == 4 and (parts[2] != "lora" or parts[3] != "ckpt"):
+            raise MeasureError(f"bad case spec: {item}")
+        grad_checkpoint = len(parts) == 4
+        try:
+            batch, seq = int(parts[0]), int(parts[1])
+        except ValueError as error:
+            raise MeasureError(f"bad case spec: {item}") from error
+        if batch <= 0 or seq <= 0:
+            raise MeasureError(f"bad case spec: {item}")
+        cases.append((batch, seq, parts[2], grad_checkpoint))
     if not cases:
         raise MeasureError("no cases requested")
     return cases
@@ -228,11 +249,11 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     """Measure each configuration and print one JSON record per line."""
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    torch = load_torch()
-    if not torch.cuda.is_available():
-        print("FAIL gpu-budget: CUDA is unavailable on this host", file=sys.stderr)
-        return 2
     try:
+        torch = load_torch()
+        if not torch.cuda.is_available():
+            print("FAIL gpu-budget: CUDA is unavailable on this host", file=sys.stderr)
+            return 2
         cases = parse_cases(arguments.cases)
     except MeasureError as error:
         print(f"FAIL gpu-budget: {error}", file=sys.stderr)
@@ -259,7 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "lora_r": arguments.lora_rank if mode == "lora" else None,
                 "grad_ckpt": grad_checkpoint,
                 "oom": True,
-                "gpu": torch.cuda.get_device_name(arguments.device),
+                "gpu": torch.cuda.get_device_name(torch.device(arguments.device)),
             }
         except Exception as error:  # noqa: BLE001 - probe failure boundary
             record = {
@@ -278,6 +299,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.out is not None:
         arguments.out.parent.mkdir(parents=True, exist_ok=True)
         arguments.out.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    if not any("error" not in record and not record.get("oom") for record in results):
+        return 3
     return 0
 
 

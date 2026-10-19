@@ -42,7 +42,17 @@ def test_parse_cases_accepts_modes_and_rejects_bad_specs() -> None:
     ]
     assert probe.parse_cases("8:512:lora:ckpt") == [(8, 512, "lora", True)]
 
-    for bad in ("8:512:bogus", "8:lora", "", "8:512:lora:ckpt:extra"):
+    for bad in (
+        "8:512:bogus",
+        "8:lora",
+        "",
+        "8:512:lora:ckpt:extra",
+        "8:512:lora:invalid",
+        "8:512:full:ckpt",
+        "eight:512:lora",
+        "8:zero:lora",
+        "0:512:lora",
+    ):
         with pytest.raises(probe.MeasureError):
             probe.parse_cases(bad)
 

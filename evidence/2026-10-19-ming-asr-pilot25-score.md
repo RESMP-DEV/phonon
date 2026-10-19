@@ -87,21 +87,20 @@ measurement. Only the WER/exactness columns are comparable across lanes.
 ## Interpretation
 
 - **Raw acoustic lane: effectively tied.** On fair WER, no-context Ming (0.0573)
-  is statistically indistinguishable from Aqua raw (0.0556) on these 25 rows; the
-  per-row split (2/14/9) leans slightly to Aqua but the total edit distance is
-  33 versus 32. This is a 25-row subset, not the 500-row gate, so it is
+  shows a similar fair WER to Aqua raw (0.0556) on this subset; the per-row split
+  (2/14/9) leans slightly to Aqua but the total edit distance is 33 versus 32. This is a 25-row subset, not the 500-row gate, so it is
   directional only. It already refutes any assumption that a specialized open
   ASR model automatically beats the Aqua raw acoustic lane on this short
   technical-dictation distribution.
-- **The strict-LC gap is the judgment-lane signal, not an acoustic defect.** Ming
-  fair WER (0.0573) is close to Aqua, but strict-LC WER diverges sharply (0.2761
-  versus 0.0932, about 3x). Fair normalization removes casing, punctuation, and
-  filler/formatting differences; strict-LC retains them. The gap therefore
-  measures exactly the intended-text cleanup distance between Ming's verbatim
-  acoustic output and Aqua's *accepted* text. This is direct empirical support
-  for the architecture's judgment / correction-teacher framing: Ming's value is
-  not lower raw WER, it is the correction lane that must close this formatting
-  and preference distance.
+- **The strict-LC gap is consistent with a judgment-lane signal.** Ming fair WER
+  (0.0573) is close to Aqua, but strict-LC WER diverges sharply (0.2761 versus
+  0.0932, about 3x). Fair normalization removes casing, punctuation, and
+  filler/formatting differences; strict-LC retains them. The score gap is
+  consistent with intended-text cleanup, but these aggregate scores do not
+  establish that cause or exclude lexical and acoustic contributions. Treat this
+  as support for investigating the architecture's judgment / correction-teacher
+  framing, not as proof that Ming's gap is only formatting and preference
+  distance.
 - **No-leak hotwords did not help on this subset.** Injecting the top-10
   Aqua-raw-retrieved hotwords made fair WER worse (0.0920 versus 0.0573), changed
   only 6 of 25 rows, and was net-negative per row (2 better / 4 worse). Candidate

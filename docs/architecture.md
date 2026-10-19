@@ -2302,10 +2302,11 @@ acoustic lane Ming is effectively tied with Aqua on fair WER, so a specialized
 open ASR model does not automatically beat the Aqua raw lane on this short
 technical-dictation distribution; this is a 25-row subset, not the 500-row gate,
 and is directional only. Second, the strict-LC gap (0.276 versus 0.093, about 3x)
-against a near-tied fair WER is the empirical signature of the judgment /
-correction-teacher lane defined above: the distance is formatting and preference,
-not acoustics. That directly supports building the intended-text correction lane
-rather than chasing raw WER. The no-leak hotwords arm was net-negative on this
+against a near-tied fair WER is consistent with the judgment /
+correction-teacher lane defined above. The aggregate scores do not isolate
+formatting and preference differences from lexical or acoustic differences, so
+this remains an interpretation rather than an established cause. It supports
+investigating the intended-text correction lane rather than chasing raw WER. The no-leak hotwords arm was net-negative on this
 subset (fair WER 0.092, changed 6 of 25 rows, 2 better / 4 worse), recorded as a
 negative result to re-test on the full slice rather than as evidence against the
 hotword mechanism. The sanitized aggregate-only receipt is

@@ -2224,9 +2224,13 @@ lexicon, never the accepted reference.
 
 The matched score remains unmeasured: B550 disappeared from ARP and SSH during
 the first 25-row pilot, after the public runtime probe had succeeded. No private
-data was uploaded. `Ming-3.0-audio-flash` cannot be used for private audio on a
-rented provider without an explicit provider, data-scope, retention, and consent
-decision. The sanitized survey receipt is
+data was uploaded. A later read-only re-probe found B550 back online with both
+3090 Ti GPUs idle, and recovered the pilot's `run.log`: it had crashed at import
+(`ModuleNotFoundError: metaphone` in the hotword retriever), producing zero rows,
+so there was never a score to read. The fix is to install `metaphone` into the
+pinned environment and relaunch. `Ming-3.0-audio-flash` cannot be used for
+private audio on a rented provider without an explicit provider, data-scope,
+retention, and consent decision. The sanitized survey receipt is
 `evidence/2026-10-19-ming-asr-survey.md`.
 
 The strategic Ming lane is **judgment / correction teacher**, not a WER-only
@@ -2242,19 +2246,36 @@ compliance, semantically important acoustic-content preservation, technical-term
 recovery, and calibrated rejection. The immediate experiment is disagreement-rich
 pilot review, followed by full-slice raw and intended-text gates.
 
-The same survey found no official Ming FP4 checkpoint, but inclusionAI's Ling
-3.0 Bailing V3 family has an official mixed dynamic-FP8/MXFP4 recipe: routed
-experts use E2M1 weights with E8M0 group-32 scales while sensitive attention,
-router, embedding, head, and modality-tower tensors stay unquantized. The Ming
-SGLang audio runtime registers the audio architecture for FlashInfer MXFP4
-selection, although its explicit test covers causal/VL rather than audio. On
-Ming ASR-tiny, this recipe gives a conservative 6.6 GiB weight estimate versus
-16.52 GiB BF16. Tetra has four SM12.0 RTX PRO 6000 Blackwell GPUs and can host
-the experiment, but a live read-only probe found all four already occupied by a
-root vLLM TP4 deployment. The backbone's ordinary MLA/MoE shape and the
-modality-aware exclusion list make severe FP4 sensitivity unlikely, but
-quantized Ming remains a proposed, unmeasured lane until public and private
-matched outputs pass.
+A follow-up quantization pass corrected two framing errors and pinned the
+evidence. inclusionAI publishes no Ming FP4 checkpoint, but its Ling 3.0 Bailing
+V3 family has an official mixed dynamic-FP8/MXFP4 recipe (routed experts E2M1
+weights with E8M0 group-32 scales; MLA/attention, routers, embeddings, head, and
+modality towers preserved), pinned at
+`inclusionAI/Ling-3.0-flash-fp4@3bae1cf4…` and verified from its
+`quantization_config`. Separately, `mlx-community` now ships genuinely quantized
+Ming exports (`Ming-3.0-asr-tiny-4bit@89acb1a…`, 4-bit affine group-64, plus
+audio-tiny 4-bit/8-bit), which are MLX-only and open a Mac-side quantized
+ASR-tiny judgment lane, not a CUDA one.
+
+The decisive correction: the pinned Ming SGLang branch
+(`inclusionAI/sglang_ling_v3@bba86277…`, branch `ling_v3_audio_for_pr`) registers
+its FlashInfer MXFP4 override for `BailingMoeV3ForCausalLM`,
+`BailingMoeV3VLForConditionalGeneration`, and
+`BailingMoeV3AudioForConditionalGeneration` only. Ming **ASR-tiny** is a different
+architecture, `MingV3ASRForConditionalGeneration` (`model_type ming_v3_asr`),
+loaded via HF `auto_map` custom code, and is absent from that branch. So the
+SGLang MXFP4 lane covers audio-tiny/audio-flash, **not** ASR-tiny; a CUDA
+quantized ASR-tiny needs a compressed-tensors/GPTQ export or a custom-code MXFP4
+loader that does not yet exist. The branch also has no FP4-audio load test (only
+CPU RoPE/config regressions), so even the audio-class FP4 path is unproved. On
+ASR-tiny the recipe's arithmetic still gives a conservative 6.6 GiB weight
+estimate versus 16.51 GiB BF16 (the earlier "16.52" was a rounding error; 5.1 GiB
+is an absolute floor the recipe does not reach). Tetra has four SM12.0 RTX PRO
+6000 Blackwell GPUs but a live read-only probe found all four occupied by a root
+vLLM TP4 deployment. The MLA/MoE shape and modality-aware exclusions make severe
+FP4 sensitivity unlikely, but quantized Ming remains a proposed, unmeasured lane
+until matched public and private outputs pass, and it must be routed per
+architecture rather than assumed to be one SGLang path.
 
 ## Contracts to preserve
 

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import corpus_curation as curation
+from pytest import MonkeyPatch
 
 
 def settings(tmp_path: Path) -> Path:
@@ -56,26 +57,31 @@ def test_aqua_lexicon_import_is_private_and_aggregate_safe(tmp_path: Path) -> No
     assert len(lexicon["terms"]) == 3
 
 
-def test_exact_id_and_audio_deduplication() -> None:
-    lexicon = curation.load_aqua_lexicon(settings(Path("/tmp")))
+def test_exact_id_and_audio_deduplication(tmp_path: Path) -> None:
+    lexicon = curation.load_aqua_lexicon(settings(tmp_path))
     rows = [
         row("a", "g1"),
         row("a", "g1"),
         row("b", "g2", audio_hash="same"),
         row("c", "g3", audio_hash="same"),
+        row("d", "g3"),
     ]
     manifest, report = curation.build_plan(rows, lexicon, {})
 
-    assert report["input_rows"] == 4
-    assert report["kept_rows"] == 2
+    assert report["input_rows"] == 5
+    assert report["kept_rows"] == 3
     assert report["duplicate_ids"] == 1
     assert report["duplicate_audio_hashes"] == 1
-    assert len(manifest) == 2
-    assert len({item["id"] for item in manifest}) == 2
+    assert len(manifest) == 3
+    assert len({item["id"] for item in manifest}) == 3
+    split_of_group = {item["group"]: item["split"] for item in manifest}
+    assert split_of_group["g2"] == split_of_group["g3"]
 
 
-def test_near_duplicate_cross_group_edges_do_not_cross_splits() -> None:
-    lexicon = curation.load_aqua_lexicon(settings(Path("/tmp")))
+def test_near_duplicate_cross_group_edges_do_not_cross_splits(
+    tmp_path: Path,
+) -> None:
+    lexicon = curation.load_aqua_lexicon(settings(tmp_path))
     rows = [
         row("a", "g1", text="kernel one"),
         row("b", "g2", text="kernel two"),
@@ -105,8 +111,8 @@ def test_near_duplicate_cross_group_edges_do_not_cross_splits() -> None:
     assert "kernel one" not in json.dumps(report)
 
 
-def test_manifest_keeps_leakage_groups_intact() -> None:
-    lexicon = curation.load_aqua_lexicon(settings(Path("/tmp")))
+def test_manifest_keeps_leakage_groups_intact(tmp_path: Path) -> None:
+    lexicon = curation.load_aqua_lexicon(settings(tmp_path))
     rows = [row(f"row-{index}", f"g{index % 4}") for index in range(12)]
     manifest, _ = curation.build_plan(
         rows,
@@ -121,7 +127,10 @@ def test_manifest_keeps_leakage_groups_intact() -> None:
         split_by_group[item["group"]] = item["split"]
 
 
-def test_output_paths_reject_tracked_repo_and_symlinks(tmp_path: Path) -> None:
+def test_output_paths_reject_tracked_repo_and_symlinks(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.setattr(curation, "RESEARCH_ROOT", tmp_path)
     outside = tmp_path / "report.json"
     assert curation.safe_output_path(outside) == outside.resolve()
 
@@ -141,3 +150,43 @@ def test_output_paths_reject_tracked_repo_and_symlinks(tmp_path: Path) -> None:
         pass
     else:
         raise AssertionError("symlink output accepted")
+
+
+def test_output_paths_reject_locations_outside_research_root(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.setattr(curation, "RESEARCH_ROOT", tmp_path)
+    try:
+        curation.safe_output_path(Path("/tmp") / "phonon-report.json")
+    except curation.CurationError:
+        pass
+    else:
+        raise AssertionError("arbitrary filesystem output accepted")
+
+
+def test_multiword_terms_use_token_boundaries(tmp_path: Path) -> None:
+    """A longer number does not falsely match a multiword term."""
+    lexicon = curation.load_aqua_lexicon(settings(tmp_path))
+    terms = lexicon["terms"]
+    counts = curation.term_counts("rtx 60000 pro blackwell", terms)
+
+    assert sum(counts) == 0
+
+
+def test_load_embeddings_rejects_mixed_dimensions(tmp_path: Path) -> None:
+    """One modality must use one vector dimension throughout the file."""
+    path = tmp_path / "embeddings.jsonl"
+    path.write_text(
+        json.dumps({"id": "a", "text": [1.0]})
+        + "\n"
+        + json.dumps({"id": "b", "text": [1.0, 0.0]})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    try:
+        curation.load_embeddings(path)
+    except curation.CurationError as error:
+        assert "mixes text dimensions" in str(error)
+    else:
+        raise AssertionError("mixed dimensions accepted")

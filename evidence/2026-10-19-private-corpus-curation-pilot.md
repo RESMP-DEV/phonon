@@ -14,8 +14,6 @@ The local Aqua settings cache was read without printing entry values:
 - Replacement observations: 65
 - Unique normalized lexical targets: 796
 - Sources represented across unique targets: dictionary and replacement
-- Local lexicon SHA over normalized phrases:
-  `e0bd7118e08f6a719a7eb7df9aa4aa7e0873440c997e487a164bbb260efbcfeb`
 
 The full lexicon remains local under
 `~/.local/share/phonon-research/private-corpus-curation/20261019/`.
@@ -97,3 +95,61 @@ outperforms Nomic on the full corpus, does not calibrate final duplicate
 thresholds, and does not establish GLM reconciliation quality. It also does not
 remove the private YouTube permission gate or compare source groups against
 every frozen evaluation manifest.
+
+## Execution provenance
+
+The pilot began at repository revision
+`51f728fa4298569962020c4759dc917e5b5d0012` with the new files uncommitted, as
+expected for a first live implementation. The following aggregate-only live
+commands completed successfully before the first implementation commit:
+
+- Aqua lexicon import: exit 0, mode `0600`
+- Nomic text pilot: exit 0, 32 rows
+- EmbeddingGemma 2 text pilot: exit 0, 32 rows
+- EmbeddingGemma 2 audio pilot: exit 0, 32 rows
+- GLM-5.3 reconciliation pilot: exit 0, 2 rows
+- Real split planning: exit 0, aggregate report and local row manifest
+
+The first implementation commit is
+`a23e907ffe3df6ce78b74b8f882074fd8ab3f045`; its clean-head `just quality` gate
+passed. A later live run exposed duplicate embedding work, fixed by commit
+`8f5de513b5e6f8fc94bfaeb1e6f1ab3b9371cc42`; the final clean-head gate for that
+repair is recorded under the worktree's ignored
+`build/reports/quality/receipt.json`. Review hardening is recorded separately
+and does not reinterpret the pilot numbers above.
+
+## Full EmbeddingGemma 2 pass
+
+After review hardening, the resumable local job completed successfully:
+
+- Text rows: 1,442 / 1,442
+- Audio rows: 1,442 / 1,442
+- Dimensions: 768 for both modalities
+- Model: `google/embeddinggemma-2`
+- Revision: `914f7f89142e33e77833254d9c9b90c3cef7303b`
+- Local weight SHA-256:
+  `197a32965d4b1105faf060417baa899e193fb73cd401f42ec9295234d5553d79`
+- Output permissions: `0600`
+- Text/audio job exit statuses: 0 / 0
+
+A provenance-checked resume returned 1,442 already-present rows, generated zero,
+and validated the local artifact contract.
+
+The first full-coverage, whole-leakage-group exploratory plan retained 1,442
+rows and 18 groups:
+
+- Train: 1,113 rows, 10 groups, 9.26 hours
+- Dev: 191 rows, 2 groups, 1.59 hours
+- Test: 138 rows, 6 groups, 1.15 hours
+- Text/audio embedding coverage: 100% / 100%
+- Initial 0.98 text and 0.995 audio cross-group near-duplicate pairs: 0
+
+The split remains exploratory because final thresholds and frozen-evaluation
+contamination checks are incomplete. `freeze_eligible` remains false because
+every source row still carries both permission flags false.
+
+The stricter GLM prompt schema initially produced two preserved `CurationError`
+rows because the endpoint reports served model `glm-5.3` while the request uses
+`zai,glm-5.3`. After alias validation, a fresh two-row run produced 2/2
+successful strict-JSON records with served model `glm-5.3`, finish reason
+`stop`, and zero failures.

@@ -17,6 +17,7 @@ from corpus_curation import (
     iter_parquet_rows,
     safe_output_path,
     sha256_text,
+    validate_output_aliases,
 )
 
 SYSTEM_PROMPT = """You reconcile competing automatic speech-recognition hypotheses from technical lecture audio. Return strict JSON only. Choose the most acoustically and contextually likely exact spoken text. Preserve technical identifiers, hardware names, numbers, punctuation, and ordering. Do not invent content, summarize, or continue the lecture. If teachers conflict irreconcilably, choose the most reliable fragments and set confidence low."""
@@ -25,6 +26,8 @@ USER_TEMPLATE = """<task>Reconcile the teacher hypotheses for one clip.</task>
 <teachers>{teachers}</teachers>
 <output_schema>{{"decision":"keep|revise|discard","transcript":"...","confidence":0.0,"reason":"..."}}</output_schema>
 <rules>Return one JSON object. Use confidence between 0 and 1. Never include IDs, paths, or teacher names in the transcript.</rules>"""
+PROMPT_SCHEMA_VERSION = 1
+PROMPT_SCHEMA_SHA256 = sha256_text(SYSTEM_PROMPT + USER_TEMPLATE)
 
 
 def parse_teachers(value: Any) -> dict[str, str]:
@@ -72,24 +75,39 @@ def json_payload(content: str) -> dict[str, Any]:
     return value
 
 
-def existing_ids(path: Path) -> set[str]:
-    """Read resumable output IDs without retaining records."""
+def existing_ids(path: Path, *, model: str) -> set[str]:
+    """Validate resumable provenance and return completed row IDs."""
     completed: set[str] = set()
     if not path.exists():
         return completed
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), 1
+    ):
         if not line.strip():
             continue
         row = json.loads(line)
         if not isinstance(row.get("id"), str):
             raise CurationError("reconciliation output lacks id")
+        if (
+            row.get("schema_version") != PROMPT_SCHEMA_VERSION
+            or row.get("model") != model
+            or row.get("prompt_schema_sha256") != PROMPT_SCHEMA_SHA256
+            or row.get("status") not in {"ok", "error"}
+        ):
+            raise CurationError(
+                f"reconciliation output line {line_number} has mixed provenance"
+            )
+        if row["id"] in completed:
+            raise CurationError(
+                f"duplicate reconciliation output id on line {line_number}"
+            )
         completed.add(row["id"])
     return completed
 
 
 def chat(
     endpoint: str, model: str, prompt: str, timeout: float
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], str, str]:
     """Make one bounded OpenAI-compatible chat request."""
     base = endpoint.rstrip("/").removesuffix("/v1")
     request = urllib.request.Request(
@@ -111,11 +129,30 @@ def chat(
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    choices = payload.get("choices") or []
-    if not choices or not isinstance(choices[0].get("message", {}).get("content"), str):
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message = first.get("message") if isinstance(first, dict) else None
+    if not isinstance(message, dict) or not isinstance(message.get("content"), str):
         raise CurationError("GLM endpoint returned no message content")
-    return json_payload(choices[0]["message"]["content"]), choices[0].get(
-        "finish_reason", "unknown"
+    served_model = payload.get("model") if isinstance(payload, dict) else None
+    requested_alias = model.partition(",")[2] or model
+    served_alias = (
+        str(served_model).partition(",")[2] or str(served_model)
+        if served_model is not None
+        else None
+    )
+    if served_model not in {model, requested_alias} or served_alias not in {
+        model,
+        requested_alias,
+    }:
+        raise CurationError(f"GLM endpoint served {served_model!r}, not {model!r}")
+    finish_reason = choices[0].get("finish_reason")
+    if finish_reason != "stop":
+        raise CurationError(f"GLM request finished with {finish_reason!r}")
+    return (
+        json_payload(message["content"]),
+        str(finish_reason),
+        str(served_model),
     )
 
 
@@ -129,12 +166,16 @@ def reconcile(
     timeout: float,
 ) -> dict[str, Any]:
     """Run resumable blind reconciliation over teacher-bearing rows."""
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     output.touch(mode=0o600, exist_ok=True)
     output.chmod(0o600)
-    completed = existing_ids(output)
+    completed = existing_ids(output, model=model)
     rows: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for row in iter_parquet_rows(dataset):
+        if row["id"] in seen_ids:
+            continue
+        seen_ids.add(row["id"])
         teachers = parse_teachers(row.get("teacher_transcripts"))
         if teachers:
             rows.append(
@@ -148,31 +189,54 @@ def reconcile(
             break
     pending = [row for row in rows if row["id"] not in completed]
     generated = 0
+    failed = 0
     started = time.monotonic()
     for row in pending:
         prompt = USER_TEMPLATE.format(
             domain_tags=", ".join(map(str, row["domain_tags"])),
             teachers=json.dumps(row["teachers"], ensure_ascii=True, indent=2),
         )
-        result, finish_reason = chat(endpoint, model, prompt, timeout)
         record = {
             "id": row["id"],
+            "schema_version": PROMPT_SCHEMA_VERSION,
             "model": model,
             "prompt_sha256": sha256_text(prompt),
-            "finish_reason": finish_reason,
-            **result,
+            "prompt_schema_sha256": PROMPT_SCHEMA_SHA256,
         }
+        try:
+            result, finish_reason, served_model = chat(endpoint, model, prompt, timeout)
+        except (CurationError, OSError, TimeoutError) as error:
+            record.update(
+                {
+                    "status": "error",
+                    "error": type(error).__name__,
+                    "finish_reason": "error",
+                }
+            )
+            failed += 1
+        else:
+            record.update(
+                {
+                    "status": "ok",
+                    "served_model": served_model,
+                    "finish_reason": finish_reason,
+                    **result,
+                }
+            )
+            generated += 1
         with output.open("a", encoding="utf-8") as handle:
             handle.write(
                 json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
             )
-        generated += 1
     return {
         "endpoint": endpoint,
         "model": model,
+        "prompt_schema_version": PROMPT_SCHEMA_VERSION,
+        "prompt_schema_sha256": PROMPT_SCHEMA_SHA256,
         "input_rows": len(rows),
         "already_present": len(rows) - len(pending),
         "generated": generated,
+        "failed": failed,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "prompt_sha256": sha256_text(SYSTEM_PROMPT + USER_TEMPLATE),
         "blind_to_reference_labels": True,
@@ -197,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
         safe_output_path(arguments.out)
+        validate_output_aliases(arguments.out, [arguments.dataset])
         receipt = reconcile(
             arguments.dataset,
             arguments.out,

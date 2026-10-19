@@ -12,12 +12,14 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from time import time_ns
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +28,7 @@ LABEL_FIELDS = ("insert_text", "normalized_text", "verbatim_text")
 DEFAULT_SPLIT_FRACTIONS = {"train": 0.8, "dev": 0.1, "test": 0.1}
 SUPPORTED_DIMENSIONS = (128, 256, 512, 768)
 EMBEDDING_DIMENSION = 768
+RESEARCH_ROOT = Path.home() / ".local" / "share" / "phonon-research"
 
 
 class CurationError(ValueError):
@@ -97,7 +100,7 @@ def lexicon_aggregate(lexicon: dict[str, Any]) -> dict[str, Any]:
     return {
         "term_count": len(terms),
         "source_counts": dict(sorted(sources.items())),
-        "normalized_join_sha256": sha256_text("\n".join(normalized)),
+        "normalized_count": len(normalized),
         "emits_phrases": False,
     }
 
@@ -105,12 +108,12 @@ def lexicon_aggregate(lexicon: dict[str, Any]) -> dict[str, Any]:
 def write_private_json(path: Path, value: Any) -> None:
     """Write private JSON locally and constrain permissions to this user."""
     safe_output_path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    temporary.chmod(0o600)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time_ns()}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode=0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
     temporary.replace(path)
     path.chmod(0o600)
 
@@ -123,10 +126,18 @@ def safe_output_path(path: Path) -> Path:
     try:
         relative = resolved.relative_to(REPO_ROOT)
     except ValueError:
-        return resolved
-    if relative.parts and relative.parts[0] == "build":
-        return resolved
-    raise CurationError("output must be outside the repository or under build/")
+        relative = None
+    if relative is not None:
+        if relative.parts and relative.parts[0] == "build":
+            return resolved
+        raise CurationError("repository output must stay under build/")
+    try:
+        resolved.relative_to(RESEARCH_ROOT.resolve())
+    except ValueError as error:
+        raise CurationError(
+            "output must be under the local Phonon research share or build/"
+        ) from error
+    return resolved
 
 
 def validate_output_aliases(output: Path, protected: Iterable[Path]) -> None:
@@ -193,7 +204,7 @@ def term_counts(text: str, terms: Sequence[dict[str, Any]]) -> list[float]:
     if not normalized:
         return [0.0] * len(terms)
     tokens = normalized.split()
-    token_text = " ".join(tokens)
+    token_ngrams: dict[int, Counter[str]] = {}
     counts: list[float] = []
     for term in terms:
         needle = term["normalized"]
@@ -204,7 +215,13 @@ def term_counts(text: str, terms: Sequence[dict[str, Any]]) -> list[float]:
         if width == 1:
             counts.append(float(tokens.count(needle)))
         else:
-            counts.append(float(token_text.count(needle)))
+            ngrams = token_ngrams.setdefault(width, Counter())
+            if not ngrams:
+                ngrams.update(
+                    " ".join(tokens[index : index + width])
+                    for index in range(len(tokens) - width + 1)
+                )
+            counts.append(float(ngrams[needle]))
     return counts
 
 
@@ -217,6 +234,7 @@ def load_embeddings(path: Path | None) -> dict[str, dict[str, list[float]]]:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise CurationError(f"cannot read embeddings: {error}") from error
+    dimensions: dict[str, int] = {}
     for line_number, line in enumerate(lines, 1):
         if not line.strip():
             continue
@@ -245,10 +263,31 @@ def load_embeddings(path: Path | None) -> dict[str, dict[str, list[float]]]:
         ):
             raise CurationError(f"embedding line {line_number} is malformed")
         for modality, values in modalities:
+            dimension = len(values)
+            previous = dimensions.setdefault(modality, dimension)
+            if previous != dimension:
+                raise CurationError(
+                    f"embedding line {line_number} mixes {modality} dimensions"
+                )
             result.setdefault(row["id"], {})[modality] = [
                 float(value) for value in values
             ]
     return result
+
+
+def load_embedding_files(
+    paths: Sequence[Path] | None,
+) -> dict[str, dict[str, list[float]]]:
+    """Load repeatable embedding files and reject cross-file conflicts."""
+    combined: dict[str, dict[str, list[float]]] = {}
+    for path in paths or []:
+        for row_id, modalities in load_embeddings(path).items():
+            existing = combined.setdefault(row_id, {})
+            for modality, vector in modalities.items():
+                if modality in existing and existing[modality] != vector:
+                    raise CurationError(f"conflicting {modality} vectors for {row_id}")
+                existing[modality] = vector
+    return combined
 
 
 def normalize_vector(vector: Sequence[float]) -> list[float]:
@@ -279,7 +318,7 @@ def vector_similarity_pairs(
         import numpy as np
 
         matrix = np.asarray(
-            [normalized[row_id] for row_id in identifiers], dtype=np.float32
+            [normalized[row_id] for row_id in identifiers], dtype=np.float64
         )
         for index, row_id in enumerate(identifiers):
             if index + 1 >= len(identifiers):
@@ -331,6 +370,7 @@ def build_plan(
     text_threshold: float = 0.98,
     audio_threshold: float = 0.995,
     fractions: dict[str, float] | None = None,
+    require_complete_embeddings: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Deduplicate rows and assign leakage groups to content-balanced splits."""
     fractions = fractions or DEFAULT_SPLIT_FRACTIONS
@@ -338,9 +378,11 @@ def build_plan(
         sum(fractions.values()), 1.0, abs_tol=1e-9
     ):
         raise CurationError("split fractions must contain train/dev/test summing to 1")
+    embedding_requested = bool(embeddings)
 
-    seen_ids: set[str] = set()
-    seen_hashes: set[str] = set()
+    seen_ids: dict[str, str] = {}
+    seen_hashes: dict[str, str] = {}
+    exact_links: list[tuple[str, str]] = []
     kept: list[dict[str, Any]] = []
     duplicate_ids = duplicate_hashes = 0
     for row in rows:
@@ -350,20 +392,22 @@ def build_plan(
             raise CurationError("every dataset row needs a nonempty string id")
         if not isinstance(audio_hash, str) or not audio_hash:
             raise CurationError(f"row {row_id} lacks sha256_audio")
+        group = str(row.get("leakage_group") or row.get("_dataset") or row_id)
         if row_id in seen_ids:
             duplicate_ids += 1
+            exact_links.append((seen_ids[row_id], group))
             continue
-        seen_ids.add(row_id)
+        seen_ids[row_id] = group
         if audio_hash in seen_hashes:
             duplicate_hashes += 1
+            exact_links.append((seen_hashes[audio_hash], group))
             continue
-        seen_hashes.add(audio_hash)
-        group = row.get("leakage_group") or row.get("_dataset") or row_id
+        seen_hashes[audio_hash] = group
         kept.append(
             {
                 "id": row_id,
                 "dataset": row["_dataset"],
-                "group": str(group),
+                "group": group,
                 "duration": max(0.0, float(row.get("duration_seconds") or 0.0)),
                 "text": reference_text(row),
                 "audio_hash": audio_hash,
@@ -385,6 +429,13 @@ def build_plan(
         {row["id"]: row["audio_vector"] for row in kept if row["audio_vector"]},
         audio_threshold,
     )
+    text_coverage = sum(row["text_vector"] is not None for row in kept) / len(kept)
+    audio_coverage = sum(row["audio_vector"] is not None for row in kept) / len(kept)
+    embedding_coverage_complete = text_coverage == 1.0 and audio_coverage == 1.0
+    if require_complete_embeddings and not embedding_coverage_complete:
+        raise CurationError(
+            "complete text and audio embeddings are required to freeze this split"
+        )
     id_to_group = {row["id"]: row["group"] for row in kept}
     cross_text = [
         pair for pair in text_pairs if id_to_group[pair[0]] != id_to_group[pair[1]]
@@ -393,14 +444,24 @@ def build_plan(
         pair for pair in audio_pairs if id_to_group[pair[0]] != id_to_group[pair[1]]
     ]
 
-    union_find = UnionFind(sorted(id_to_group.values()))
+    exact_groups = {group for link in exact_links for group in link}
+    union_find = UnionFind(sorted({*id_to_group.values(), *exact_groups}))
+    for left_group, right_group in exact_links:
+        union_find.union(left_group, right_group)
     for left, right, _ in (*cross_text, *cross_audio):
         union_find.union(id_to_group[left], id_to_group[right])
     components: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in kept:
         components[union_find.find(row["group"])].append(row)
 
-    global_centroid = aggregate_feature(kept, len(lexicon.get("terms", [])))
+    embedding_dimensions = {
+        field: len(next(row[field] for row in kept if row[field]))
+        for field in ("text_vector", "audio_vector")
+        if any(row[field] for row in kept)
+    }
+    global_centroid = aggregate_feature(
+        kept, len(lexicon.get("terms", [])), embedding_dimensions
+    )
     targets = {name: fraction for name, fraction in fractions.items()}
     totals = {name: 0.0 for name in targets}
     assignments: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -424,9 +485,12 @@ def build_plan(
         component_duration = sum(row["duration"] for row in component)
         choices = {}
         for split, target in targets.items():
-            candidate_rows = [row for rows in assignments.values() for row in rows]
-            candidate_rows.extend(component)
-            centroid = aggregate_feature(candidate_rows, len(lexicon.get("terms", [])))
+            candidate_rows = [*assignments[split], *component]
+            centroid = aggregate_feature(
+                candidate_rows,
+                len(lexicon.get("terms", [])),
+                embedding_dimensions,
+            )
             distance = 1.0 - cosine(global_centroid, centroid)
             overshoot = max(
                 0.0, totals[split] + component_duration - target * total_duration * 1.25
@@ -451,6 +515,7 @@ def build_plan(
             len(lexicon.get("terms", [])),
             total_duration,
             targets,
+            embedding_dimensions,
         )
     assignments = defaultdict(list)
     for root, split in component_splits.items():
@@ -489,6 +554,12 @@ def build_plan(
             "text": sum(row["text_vector"] is not None for row in kept),
             "audio": sum(row["audio_vector"] is not None for row in kept),
         },
+        "embedding_coverage": {
+            "requested": embedding_requested,
+            "text": text_coverage,
+            "audio": audio_coverage,
+            "complete": embedding_coverage_complete,
+        },
         "near_duplicate_pairs": {
             "text_threshold": text_threshold,
             "audio_threshold": audio_threshold,
@@ -503,10 +574,14 @@ def build_plan(
             "train_permission_rows": sum(row["train_allowed"] for row in kept),
             "eval_permission_rows": sum(row["eval_allowed"] for row in kept),
             "permission_gate_remains": any(not row["train_allowed"] for row in kept),
+            "freeze_eligible": embedding_coverage_complete
+            and all(row["train_allowed"] for row in kept),
         },
     }
     for split, split_rows in sorted(assignments.items()):
-        centroid = aggregate_feature(split_rows, len(lexicon.get("terms", [])))
+        centroid = aggregate_feature(
+            split_rows, len(lexicon.get("terms", [])), embedding_dimensions
+        )
         report["splits"][split] = {
             "rows": len(split_rows),
             "groups": len({row["group"] for row in split_rows}),
@@ -540,6 +615,7 @@ def split_cost(
     term_count: int,
     total_duration: float,
     targets: dict[str, float],
+    dimensions: dict[str, int],
 ) -> float:
     """Score duration, semantic, and rare-term imbalance for one allocation."""
     by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -555,10 +631,16 @@ def split_cost(
         for split, target in targets.items()
     )
     global_centroid = aggregate_feature(
-        [row for rows in by_split.values() for row in rows], term_count
+        [row for rows in by_split.values() for row in rows],
+        term_count,
+        dimensions,
     )
     semantic_error = sum(
-        1.0 - cosine(global_centroid, aggregate_feature(by_split[split], term_count))
+        1.0
+        - cosine(
+            global_centroid,
+            aggregate_feature(by_split[split], term_count, dimensions),
+        )
         for split in targets
     )
     coverages = [rare_term_coverage(by_split[split], term_count) for split in targets]
@@ -572,11 +654,17 @@ def optimize_component_splits(
     term_count: int,
     total_duration: float,
     targets: dict[str, float],
+    dimensions: dict[str, int],
 ) -> dict[str, str]:
     """Improve a grouped allocation with deterministic whole-component moves."""
     current = dict(initial)
     current_cost = split_cost(
-        component_by_root, current, term_count, total_duration, targets
+        component_by_root,
+        current,
+        term_count,
+        total_duration,
+        targets,
+        dimensions,
     )
     improved = True
     while improved:
@@ -589,7 +677,12 @@ def optimize_component_splits(
                 candidate = dict(current)
                 candidate[root] = destination
                 cost = split_cost(
-                    component_by_root, candidate, term_count, total_duration, targets
+                    component_by_root,
+                    candidate,
+                    term_count,
+                    total_duration,
+                    targets,
+                    dimensions,
                 )
                 if cost + 1e-12 < current_cost:
                     current, current_cost = candidate, cost
@@ -600,7 +693,11 @@ def optimize_component_splits(
     return current
 
 
-def aggregate_feature(rows: Sequence[dict[str, Any]], term_count: int) -> list[float]:
+def aggregate_feature(
+    rows: Sequence[dict[str, Any]],
+    term_count: int,
+    dimensions: dict[str, int] | None = None,
+) -> list[float]:
     """Combine lexical, text, and audio features into one unit-normalized vector."""
     parts: list[list[float]] = []
     lexical = [0.0] * term_count
@@ -613,16 +710,16 @@ def aggregate_feature(rows: Sequence[dict[str, Any]], term_count: int) -> list[f
     else:
         lexical = [1.0 / math.sqrt(term_count)] * term_count if term_count else [1.0]
     parts.append(lexical)
-    for field in ("text_vector", "audio_vector"):
+    dimensions = dimensions or {}
+    for field, dimension in dimensions.items():
         vectors = [row[field] for row in rows if row.get(field)]
         if vectors:
-            dimension = len(vectors[0])
             mean = [
                 sum(vector[index] for vector in vectors) / len(vectors)
                 for index in range(dimension)
             ]
         else:
-            mean = [1.0 if index == 0 else 0.0 for index in range(EMBEDDING_DIMENSION)]
+            mean = [1.0 if index == 0 else 0.0 for index in range(dimension)]
         parts.append(mean)
     combined: list[float] = []
     for part in parts:
@@ -665,11 +762,12 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     plan = subparsers.add_parser("plan", help="deduplicate and plan grouped splits")
     plan.add_argument("--dataset", type=Path, action="append", required=True)
     plan.add_argument("--lexicon", type=Path, required=True)
-    plan.add_argument("--embeddings", type=Path)
+    plan.add_argument("--embeddings", type=Path, action="append")
     plan.add_argument("--manifest", type=Path, required=True)
     plan.add_argument("--report", type=Path, required=True)
     plan.add_argument("--text-threshold", type=float, default=0.98)
     plan.add_argument("--audio-threshold", type=float, default=0.995)
+    plan.add_argument("--require-complete-embeddings", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -678,14 +776,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
         if arguments.command == "lexicon":
+            validate_output_aliases(
+                safe_output_path(arguments.out), [arguments.settings]
+            )
             lexicon = load_aqua_lexicon(arguments.settings)
             write_private_json(arguments.out, lexicon)
             print(json.dumps(lexicon_aggregate(lexicon), indent=2, sort_keys=True))
             return 0
 
         protected = [*arguments.dataset, arguments.lexicon]
-        if arguments.embeddings:
-            protected.append(arguments.embeddings)
+        protected.extend(arguments.embeddings)
         for output in (arguments.manifest, arguments.report):
             validate_output_aliases(safe_output_path(output), protected)
         lexicon = json.loads(arguments.lexicon.read_text(encoding="utf-8"))
@@ -694,13 +794,14 @@ def main(argv: list[str] | None = None) -> int:
         rows = [
             row for dataset in arguments.dataset for row in iter_parquet_rows(dataset)
         ]
-        embeddings = load_embeddings(arguments.embeddings)
+        embeddings = load_embedding_files(arguments.embeddings)
         manifest, report = build_plan(
             rows,
             lexicon,
             embeddings,
             text_threshold=arguments.text_threshold,
             audio_threshold=arguments.audio_threshold,
+            require_complete_embeddings=arguments.require_complete_embeddings,
         )
         write_private_json(
             arguments.manifest, {"schema_version": SCHEMA_VERSION, "rows": manifest}

@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -18,11 +20,14 @@ from corpus_curation import (
     normalize_vector,
     reference_text,
     safe_output_path,
+    validate_output_aliases,
 )
 
 MODEL_ID = "google/embeddinggemma-2"
 MODEL_REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b"
 MODEL_DIMENSION = 768
+MODEL_WEIGHTS = "model.safetensors"
+MODEL_CONTRACT = "artifact-contract.json"
 
 
 def parquet_rows(
@@ -58,8 +63,73 @@ def parquet_rows(
     return rows
 
 
-def existing_ids(path: Path) -> set[str]:
-    """Read resumable output IDs without retaining vectors in memory."""
+def file_sha256(path: Path) -> str:
+    """Hash a local artifact before attributing a pinned upstream identity."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def artifact_descriptor(model_path: str) -> dict[str, Any]:
+    """Validate a local EmbeddingGemma artifact against its local contract."""
+    if model_path == MODEL_ID:
+        return {
+            "model": MODEL_ID,
+            "revision": MODEL_REVISION,
+            "artifact": None,
+            "artifact_sha256": None,
+        }
+    root = Path(model_path).resolve()
+    weights = root / MODEL_WEIGHTS
+    contract_path = root / MODEL_CONTRACT
+    if not weights.is_file() or not contract_path.is_file():
+        raise CurationError(
+            "local EmbeddingGemma model path lacks weights or artifact contract"
+        )
+    try:
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise CurationError(
+            f"invalid EmbeddingGemma artifact contract: {error}"
+        ) from error
+    expected = {"model", "revision", "weights_sha256", "files_sha256"}
+    if (
+        not isinstance(contract, dict)
+        or set(contract) != expected
+        or contract["model"] != MODEL_ID
+        or contract["revision"] != MODEL_REVISION
+        or not isinstance(contract["files_sha256"], dict)
+    ):
+        raise CurationError("EmbeddingGemma artifact contract does not match the pin")
+    observed = file_sha256(weights)
+    if observed != contract["weights_sha256"]:
+        raise CurationError("EmbeddingGemma artifact weights do not match contract")
+    observed_files = {
+        str(path.relative_to(root)): file_sha256(path)
+        for path in root.rglob("*")
+        if path.is_file() and ".cache" not in path.parts and path.name != MODEL_CONTRACT
+    }
+    if observed_files != contract["files_sha256"]:
+        raise CurationError("EmbeddingGemma artifact files do not match contract")
+    return {
+        "model": MODEL_ID,
+        "revision": MODEL_REVISION,
+        "artifact": str(root),
+        "artifact_sha256": observed,
+    }
+
+
+def existing_ids(
+    path: Path,
+    *,
+    model: str,
+    revision: str,
+    modality: str,
+    dimension: int = MODEL_DIMENSION,
+) -> set[str]:
+    """Validate resumable provenance and return completed row IDs."""
     completed: set[str] = set()
     if not path.exists():
         return completed
@@ -76,6 +146,15 @@ def existing_ids(path: Path) -> set[str]:
             ) from error
         if not isinstance(row.get("id"), str):
             raise CurationError(f"embedding output line {line_number} lacks id")
+        if (
+            row.get("model") != model
+            or row.get("revision") != revision
+            or row.get("modality") != modality
+            or row.get("dimension") != dimension
+        ):
+            raise CurationError(
+                f"embedding output line {line_number} has mixed model provenance"
+            )
         if row["id"] in completed:
             raise CurationError(f"duplicate embedding output id on line {line_number}")
         completed.add(row["id"])
@@ -91,6 +170,7 @@ def append_record(
     revision: str,
     modality: str,
     elapsed_ms: float,
+    artifact_sha256: str | None,
 ) -> None:
     """Append one validated normalized-vector record."""
     normalized = normalize_vector([float(value) for value in vector])
@@ -101,6 +181,7 @@ def append_record(
         "modality": modality,
         "dimension": len(normalized),
         "elapsed_ms": round(elapsed_ms, 3),
+        "artifact_sha256": artifact_sha256,
         "vector": normalized,
     }
     with path.open("a", encoding="utf-8") as output:
@@ -202,11 +283,16 @@ def materialize_audio(row: dict[str, Any], cache: Path) -> Path:
     digest = row.get("sha256_audio")
     if not isinstance(data, bytes | bytearray) or not isinstance(digest, str):
         raise CurationError(f"row {row.get('id')} lacks embedded audio bytes")
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise CurationError(f"row {row.get('id')} has an audio hash mismatch")
     path = cache / f"{digest}.wav"
     if not path.exists():
         temporary = cache / f".{digest}.{time.time_ns()}.tmp"
-        temporary.write_bytes(data)
-        temporary.chmod(0o600)
+        descriptor = os.open(
+            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode=0o600
+        )
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
         temporary.replace(path)
         path.chmod(0o600)
     return path
@@ -228,19 +314,23 @@ def run_embeddings(
     """Generate or resume embeddings and return an aggregate-only receipt."""
     if batch_size < 1:
         raise CurationError("batch size must be positive")
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     output.touch(mode=0o600, exist_ok=True)
-    completed = existing_ids(output)
-    pending = [row for row in rows if row["id"] not in completed]
-    started = time.monotonic()
     provider: OpenAICompatibleEmbedder | EmbeddingGemma2
-    model_name: str
-    revision: str
     if provider_name == "nomic":
-        provider = OpenAICompatibleEmbedder(base_url, nomic_model)
         model_name = nomic_model
         revision = "live-lm-studio"
+        artifact = {
+            "model": model_name,
+            "revision": revision,
+            "artifact": None,
+            "artifact_sha256": None,
+        }
+        provider = OpenAICompatibleEmbedder(base_url, nomic_model)
     elif provider_name == "embeddinggemma2":
+        artifact = artifact_descriptor(model_path)
+        model_name = artifact["model"]
+        revision = artifact["revision"]
         provider = EmbeddingGemma2(
             device=device, precision=precision, model_path=model_path
         )
@@ -248,6 +338,12 @@ def run_embeddings(
         revision = MODEL_REVISION
     else:
         raise CurationError(f"unknown embedding provider: {provider_name}")
+    output.chmod(0o600)
+    completed = existing_ids(
+        output, model=model_name, revision=revision, modality=modality
+    )
+    pending = [row for row in rows if row["id"] not in completed]
+    started = time.monotonic()
 
     audio_cache = output.parent / ".audio-cache"
     audio_cache.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -274,6 +370,7 @@ def run_embeddings(
                     revision=revision,
                     modality=modality,
                     elapsed_ms=(time.monotonic() - batch_started) * 1000,
+                    artifact_sha256=artifact["artifact_sha256"],
                 )
             batches += 1
     finally:
@@ -283,6 +380,7 @@ def run_embeddings(
         "provider": provider_name,
         "model": model_name,
         "revision": revision,
+        "artifact_sha256": artifact["artifact_sha256"],
         "modality": modality,
         "input_rows": len(rows),
         "already_present": len(rows) - len(pending),
@@ -320,9 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         arguments = parse_arguments(argv if argv is not None else sys.argv[1:])
         output = safe_output_path(arguments.out)
-        for dataset in arguments.dataset:
-            if output == dataset.resolve() or dataset.resolve() in output.parents:
-                raise CurationError("embedding output must not overwrite a dataset")
+        validate_output_aliases(output, arguments.dataset)
         rows = parquet_rows(arguments.dataset, arguments.modality, arguments.limit)
         receipt = run_embeddings(
             arguments.provider,

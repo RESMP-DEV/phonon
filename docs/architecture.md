@@ -2145,6 +2145,27 @@ authorized for training until threshold calibration, contamination checks, and a
 separate permission promotion complete. The sanitized pilot receipt is
 `evidence/2026-10-19-private-corpus-curation-pilot.md`.
 
+### 2026-10-19: EmbeddingGemma adaptation-data scrub
+
+Added `tools/embedding-finetune`. The public lane deterministically converts
+pinned AllNLI, Quora, STSB, sentence-compression, Simple Wiki, SQuAD, and
+CodeSearchNet Python seeds into one validated contrastive triplet schema with
+source revisions and file hashes. The first local public set contains 9,996
+records: 6,996 text, 2,000 QA, and 1,000 code examples.
+
+The private lane combines the 1,442-row consensus corpus, complete
+EmbeddingGemma 2 text/audio vectors, the Aqua lexicon, seven existing teachers,
+and verified embedded audio. It emits teacher-to-reference, text-to-audio,
+dictionary-term context, and spoken-replacement triplets while preserving the
+whole-group split. The first scrub produced 3,161 private records: 2,440 train,
+410 development, and 311 test. All private outputs are mode `0600`; 1,442
+hash-addressed audio files remain local.
+
+This creates adaptation candidates only. The source YouTube permission gate and
+frozen-evaluation contamination checks remain in force, and no fine-tuning run
+has begun. The sanitized receipt is
+`evidence/2026-10-19-embeddinggemma-finetune-dataset.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

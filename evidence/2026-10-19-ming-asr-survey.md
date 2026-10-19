@@ -219,6 +219,126 @@ inaccessible host. They were not copied into Git or a rented provider. When
 B550 returns, the decisive receipt must add the pilot's exact completion
 metadata and `score_hyps.py` output before any quality claim is made.
 
+## Quantization survey
+
+### Official release state
+
+No official Ming ASR/audio MXFP4, NVFP4, GPTQ, AWQ, GGUF, or compressed-tensors
+checkpoint was present in the live 2026-10-19 Hugging Face search. The only
+non-BF16 Ming exports found were BF16 MLX conversions:
+
+- `lucasnewman/Ming-3.0-asr-tiny-bf16`
+- `mlx-community/Ming-3.0-audio-tiny-bf16`
+
+The MLX exports preserve BF16 model weights. Their audio encoders and MoE
+routers remain floating point; neither is a quantized artifact.
+
+There is nevertheless a strong same-family precedent. inclusionAI publishes
+mixed FP8/MXFP4 checkpoints for the Bailing V3 language backbone used by Ming:
+
+| Model | Revision | Safetensors size | Quantization |
+| --- | --- | ---:| --- |
+| `inclusionAI/Ling-3.0-flash-fp4` | `3bae1cf4011b48475b2cc038fff283af49053ebc` | 65.54 GiB | dynamic block-FP8 dense weights, MXFP4 routed experts |
+| `inclusionAI/Ling-3.0-flash-VL-fp4` | `8dca6a0d4dde1ddc79cfe79506173bbf375393ac` | 64.80 GiB | same text recipe; vision tower and projector excluded |
+
+The official recipe is **not all-layer NVFP4**. It uses:
+
+- dense/shared projections: dynamic FP8 E4M3 with 128x128 blocks;
+- routed experts: MXFP4 E2M1 weights, group size 32, E8M0 scales;
+- preserved attention/MLA projections, MoE gates, embeddings, LM head, and the
+  VL tower/projector.
+
+The official Ling FP4 quality table reports:
+
+| Benchmark | BF16 | Mixed FP8/MXFP4 |
+| --- | ---:| ---:|
+| GPQA Diamond | 84.97 | 83.68 |
+| IFBench | 74.49 | 73.87 |
+| SciCode | 41.24 | 38.43 |
+| ArcPrize | 68.75 | 68.06 |
+
+This is same-family evidence only. It is not Ming ASR evidence and does not
+measure technical-vocabulary recovery.
+
+### Runtime support and caveat
+
+The pinned Ming SGLang branch registers
+`BailingMoeV3AudioForConditionalGeneration` in its Bailing V3 model override.
+When a mixed checkpoint reports FP8 quantization plus `is_fp4_experts`, that
+override selects the FlashInfer MXFP4 MoE runner on SM100 and SM120. The audio
+model constructs its Whisper audio encoder and `linear_proj_audio` outside the
+language model's `quant_config`, so the intended boundary is mixed-precision
+language backbone with an unquantized audio path.
+
+The relevant SGLang unit test explicitly covers the causal and VL architectures,
+not the audio architecture. This is a real gap: an audio mixed-FP4 checkpoint is
+plausible but not proved until a live Ming audio model loads and transcribes.
+
+NVFP4 is not the closest proven path for this family. No Bailing V3 NVFP4
+artifact was found. A new NVFP4 export would additionally require loader and
+MoE-runner validation on this audio architecture. MXFP4 is the evidence-backed
+route on Tetra's SM120 hardware.
+
+### Size estimates
+
+The local Ming ASR-tiny safetensors headers were grouped without reading tensor
+values:
+
+| Group | Parameters | BF16 bytes |
+| --- | ---:| ---:|
+| routed experts | 7,247,757,312 | 13.500 GiB |
+| everything else | 1,618,043,680 | 3.014 GiB |
+
+Applying the official family recipe gives a conservative **6.6 GiB** if all
+non-expert tensors remain BF16, or about **5.1 GiB** if eligible dense tensors
+use dynamic FP8. This excludes runtime, KV/cache, and file-metadata overhead.
+The current BF16 checkpoint is 16.52 GiB.
+
+BF16 Ming audio-flash is 241.52 GiB. The same Bailing V3 text backbone in
+official Ling FP4 form is 65.54 GiB; adding the BF16 audio path suggests an
+unmeasured audio-flash mixed-FP4 checkpoint around **67-72 GiB**, not including
+runtime or KV cache. This is an estimate, not a claim that such an export
+currently exists.
+
+### Live Tetra state
+
+Read-only SSH probe on 2026-10-19:
+
+- four `NVIDIA RTX PRO 6000 Blackwell Workstation Edition` GPUs;
+- compute capability 12.0 (SM120-class Blackwell);
+- driver 615.71.09;
+- 97,887 MiB visible per GPU;
+- PCIe/NODE topology, no reported NVLink;
+- 1.6 TB free on `/home`.
+
+All four GPUs are currently occupied by a root vLLM TP4 deployment of
+`/work/heretic-native`, served as `deepseek-v41-local`, using about 89.1 GiB
+per GPU. A separate embedding service uses about 1.7 GiB. Tetra is therefore
+not currently available for a Ming quantization smoke test, and this survey did
+not interrupt either process.
+
+### Recommended experiment
+
+When Tetra becomes idle, the first target should be **Ming ASR-tiny mixed
+FP8/MXFP4 on one GPU**, not audio-flash. Its quantized weight floor is small
+enough to leave ample runtime space. The export should copy the official Ling
+FP4 exclusion policy, add the Ming audio encoder and `linear_proj_audio` to the
+exclusions, and preserve routers and sensitive MLA/attention projections.
+
+Acceptance must be paired against the already proven BF16 runtime:
+
+1. strict checkpoint inventory and tensor-dtype audit;
+2. same public CC0 English and Chinese samples;
+3. exact-output comparison where possible;
+4. the frozen 25-row Phonon pilot;
+5. only then the full 500-row fair/strict WER and per-row win/tie/loss gate.
+
+An audio-flash export is a later experiment. BF16 audio-flash may already fit
+Tetra's four-GPU aggregate for short-context ASR, but a mixed-FP4 export would
+reduce pressure dramatically and potentially permit a one-GPU text-only teacher.
+Neither path should be claimed until the SGLang audio model loads and the
+matched quality gate passes.
+
 ## Non-claims
 
 This survey does not establish a Phonon WER score for either Ming model, approve

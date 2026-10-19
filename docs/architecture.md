@@ -2229,6 +2229,17 @@ rented provider without an explicit provider, data-scope, retention, and consent
 decision. The sanitized survey receipt is
 `evidence/2026-10-19-ming-asr-survey.md`.
 
+The same survey found no official Ming FP4 checkpoint, but inclusionAI's Ling
+3.0 Bailing V3 family has an official mixed dynamic-FP8/MXFP4 recipe: routed
+experts use E2M1 weights with E8M0 group-32 scales while sensitive attention,
+router, embedding, head, and modality-tower tensors stay unquantized. The Ming
+SGLang audio runtime registers the audio architecture for FlashInfer MXFP4
+selection, although its explicit test covers causal/VL rather than audio. On
+Ming ASR-tiny, this recipe gives a conservative 6.6 GiB weight estimate versus
+16.52 GiB BF16. Tetra has four SM12.0 RTX PRO 6000 Blackwell GPUs and can host
+the experiment, but a live read-only probe found all four already occupied by a
+root vLLM TP4 deployment. Quantized Ming remains a proposed, unmeasured lane.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

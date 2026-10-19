@@ -2172,6 +2172,35 @@ frozen-evaluation contamination checks remain in force, and no fine-tuning run
 has begun. The sanitized receipt is
 `evidence/2026-10-19-embeddinggemma-finetune-dataset.md`.
 
+### 2026-10-19: EmbeddingGemma GPU provider sizing
+
+Added `tools/embedding-finetune/measure_gpu_budget.py`, a synthetic-only CUDA
+probe for measured GPU selection. It never reads private JSONL, Aqua values,
+manifests, or audio. On a 3090 Ti, pure-BF16 full-parameter training at batch 8
+/ sequence 512 used 22.441 GiB allocated and 23.150 GiB reserved; optimizer
+moments also remained BF16, so this is not an FP32-master recipe. LoRA r32
+without checkpointing used 21.394 GiB at the same batch, while gradient
+checkpointing reduced that to 4.659 GiB and retained roughly 73 percent
+throughput. The text tower must be
+targeted explicitly; a bare `linear` LoRA target matches only the audio tower
+and produces zero gradient for text-only batches.
+
+Live rented-GPU measurements found Modal A10G the price/performance winner for
+the checkpointed LoRA shape: 4.01 triplets/sec at `$1.10/hour`, or `$0.951` per
+12,478-triplet epoch. Modal L4 cost `$0.983` per epoch and T4 cost `$1.842`;
+T4 fits in memory but is not cost efficient. A10G, L4, and T4 cannot fit the
+measured pure-BF16 full-parameter shape. B550 is free and fastest when stable, but it
+rebooted repeatedly during the survey, so long runs require detached
+checkpointing, automatic resume, and reboot monitoring. The proven rented image
+is PyTorch 2.7.1/CUDA 12.6 with transformers 5.20.2, sentence-transformers 6.1,
+PEFT 0.21, and Pillow.
+
+A privacy audit also found an undocumented legacy Modal volume holding 2,000
+real Aqua audio files and transcript fields. This conflicts with the standing
+Modal-synthetic-only boundary and remains a separate explicit cleanup decision;
+the GPU probe did not upload private data. The sanitized receipt is
+`evidence/2026-10-19-embeddinggemma-gpu-provider-sizing.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

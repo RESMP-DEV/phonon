@@ -2277,41 +2277,54 @@ FP4 sensitivity unlikely, but quantized Ming remains a proposed, unmeasured lane
 until matched public and private outputs pass, and it must be routed per
 architecture rather than assumed to be one SGLang path.
 
-### 2026-10-19: Ming ASR-tiny matched 25-row pilot score
+### 2026-10-19: Ming ASR-tiny matched slice gate (rejected as raw engine)
 
-B550 returned and the 25-row Ming ASR-tiny pilot was recovered, repaired, and
-completed. The first pass had crashed at import because the pinned environment
-lacked the hotword retriever's `metaphone` and `rapidfuzz` dependencies (neither
-is in the model `requirements.txt`); installing both into the same
-torch-2.11/transformers-5.12.1 env and re-running unblocked it. Both context arms
-then ran on one RTX 3090 Ti at about 18.8 GiB and roughly 2.9 real-time factor,
-greedy BF16/SDPA, on the identical first 25 frozen-slice rows.
+B550 returned and the Ming ASR-tiny evaluation was recovered, repaired, and run
+to the registered gate. The first pass had crashed at import because the pinned
+environment lacked the hotword retriever's `metaphone` and `rapidfuzz`
+dependencies (neither is in the model `requirements.txt`); installing both into
+the same torch-2.11/transformers-5.12.1 env unblocked it. A 25-row pilot then
+ran both context arms (no-context, no-leak top-10 hotwords), and both arms were
+afterwards run over the complete 500-row frozen slice in parallel on the two
+3090 Ti GPUs, greedy BF16/SDPA, about 18.8-19.0 GiB each and roughly 2.9
+real-time factor.
 
-Matched aggregate scores against the accepted reference (fair WER uses the
-English normalizer; strict-LC retains casing/punctuation/fillers):
+Matched aggregate scores against the accepted reference on all 500 rows (fair
+WER uses the English normalizer; strict-LC retains casing/punctuation/fillers):
 
 | Lane | fair WER | strict-LC WER | fair exact |
-| --- | ---:| ---:| ---:|
-| Aqua raw (control) | 0.0556 | 0.0932 | 0.72 |
-| Ming ASR-tiny, no-context | 0.0573 | 0.2761 | 0.56 |
-| Ming ASR-tiny, no-leak hotwords (top-10) | 0.0920 | 0.2614 | 0.48 |
+| --- | ---: | ---: | ---: |
+| Aqua raw (control) | 0.0329 | 0.0552 | 0.674 |
+| Ming ASR-tiny, no-context | 0.0901 | 0.2758 | 0.358 |
+| Ming ASR-tiny, no-leak hotwords | 0.1051 | 0.2639 | 0.302 |
 
-No-context Ming per-row versus Aqua raw is 2 win / 14 tie / 9 loss (33 versus 32
-total edits). Two findings matter for the architecture. First, on the raw
-acoustic lane Ming is effectively tied with Aqua on fair WER, so a specialized
-open ASR model does not automatically beat the Aqua raw lane on this short
-technical-dictation distribution; this is a 25-row subset, not the 500-row gate,
-and is directional only. Second, the strict-LC gap (0.276 versus 0.093, about 3x)
-against a near-tied fair WER is consistent with the judgment /
-correction-teacher lane defined above. The aggregate scores do not isolate
-formatting and preference differences from lexical or acoustic differences, so
-this remains an interpretation rather than an established cause. It supports
-investigating the intended-text correction lane rather than chasing raw WER. The no-leak hotwords arm was net-negative on this
-subset (fair WER 0.092, changed 6 of 25 rows, 2 better / 4 worse), recorded as a
-negative result to re-test on the full slice rather than as evidence against the
-hotword mechanism. The sanitized aggregate-only receipt is
-`evidence/2026-10-19-ming-asr-pilot25-score.md`; per-row transcripts and lexicon
+The Aqua raw control reproduces the registered frozen-slice baseline exactly
+(0.032912 fair WER), which validates the harness and row set. Per-row on all
+500 rows, Ming no-context against Aqua raw is 4 win / 233 tie / 263 Aqua win,
+with 1040 total edits versus 380: Aqua raw carries roughly 2.7x fewer errors.
+The hotwords arm changed 227 rows and was net-negative (77 better / 295 tie /
+128 worse) and worse on fair WER than no-context, so the retrieved-hotword
+mechanism is not supported for this model on this slice.
+
+Two architecture consequences. First, the 25-row pilot had shown an apparent
+near-tie (0.0573 versus 0.0556) that the full gate overturned; the pilot subset
+was unrepresentative, and subset-level readings of this slice must not be
+cited. Second, the earlier directional estimate of roughly 4.5-6.5% fair WER
+from public-to-private degradation factors was wrong for this model on this
+distribution, so cross-protocol extrapolation from public benchmarks is not
+reliable evidence here. On the registered gate Ming ASR-tiny is **not
+promotable** as a Phonon raw acoustic engine and the no-leak hotword arm is
+rejected for it.
+
+This also revises the judgment / correction-teacher hypothesis recorded above.
+That hypothesis remains architecturally sound, but this evidence does not
+support it: the teacher would have to be competitive on the raw lane before a
+judgment lane could be attributed to its correction ability rather than to a
+stronger acoustic model. The lane stays an open question and needs a candidate
+that passes the raw gate first. The sanitized aggregate-only receipt is
+`evidence/2026-10-19-ming-asr-slice-score.md`; per-row transcripts and lexicon
 terms stayed on B550 and were not committed or uploaded.
+
 
 ## Contracts to preserve
 

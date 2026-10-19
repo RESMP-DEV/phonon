@@ -187,7 +187,7 @@ missing `metaphone` dependency in the pinned environment, diagnosed above.
 > **Superseded (2026-10-19T23:15Z).** B550 returned, the missing `metaphone` /
 > `rapidfuzz` dependencies were installed into the pinned env, and both 25-row
 > arms completed and were scored. The matched aggregate result is recorded in
-> `evidence/2026-10-19-ming-asr-pilot25-score.md`; the "zero rows / no score"
+> `evidence/2026-10-19-ming-asr-slice-score.md`; the "zero rows / no score"
 > status above applies only to the first pass.
 
 Ming audio-flash is not a practical local runtime: roughly 256 GB of BF16

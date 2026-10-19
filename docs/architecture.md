@@ -2113,6 +2113,34 @@ relevant frozen evaluation manifests. The sanitized receipt is
 `evidence/2026-10-18-private-youtube-audio-audit.md`; the aggregate-only machine
 reports remain under the local research share.
 
+### 2026-10-19: private corpus fingerprint and grouped-split lane
+
+Private curation now has a dedicated research harness. It imports the Aqua
+dictionary locally, maps it to a normalized lexical-frequency fingerprint, reads
+canonical private Parquets, removes duplicate IDs and audio hashes, computes
+text/audio embeddings, builds cross-group near-duplicate components, and assigns
+whole leakage groups rather than clips. A deterministic local-search objective
+balances duration, combined lexical/embedding centroids, and rare-term coverage
+across train/dev/test. Row-level manifests remain local and mode `0600`; tracked
+receipts contain aggregates only.
+
+The primary embedding candidate is pinned `google/embeddinggemma-2` at
+`914f7f89142e33e77833254d9c9b90c3cef7303b`. It is a 740M Apache-2.0 multimodal
+model with a unified 768-dimensional text/audio/vision space and 8K shared
+context. Live text and audio inference succeeded on the consensus corpus. The
+local Nomic endpoint remains the baseline. A blind GLM-5.3 reconciliation lane
+also accepts teacher hypotheses and coarse domain tags only, requires strict
+JSON, and never receives the reference label in its prompt.
+
+The first real planner run reduced the 1,700 consensus observations to 1,442
+unique rows, removed 258 duplicate IDs, preserved 18 leakage groups, and kept
+all permission flags unchanged. The exploratory 32-row fingerprint slice showed
+EmbeddingGemma 2 audio retrieving its matching text 32/32 times and justifies a
+full-pass comparison. This plan is not frozen and no row is authorized for
+training until full vectors, threshold calibration, contamination checks, and a
+separate permission promotion complete. The sanitized pilot receipt is
+`evidence/2026-10-19-private-corpus-curation-pilot.md`.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

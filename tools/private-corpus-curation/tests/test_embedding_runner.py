@@ -67,3 +67,21 @@ def test_openai_provider_exposes_common_text_interface() -> None:
     )
 
     assert callable(provider.encode_text)
+
+
+def test_existing_ids_rejects_duplicate_resume_rows(tmp_path: Path) -> None:
+    path = tmp_path / "embeddings.jsonl"
+    path.write_text(
+        json.dumps({"id": "row-a", "modality": "text", "vector": [1.0]})
+        + "\n"
+        + json.dumps({"id": "row-a", "modality": "text", "vector": [1.0]})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    try:
+        runner.existing_ids(path)
+    except runner.CurationError as error:
+        assert "duplicate embedding output id" in str(error)
+    else:
+        raise AssertionError("duplicate resume row accepted")

@@ -28,20 +28,30 @@ MODEL_DIMENSION = 768
 def parquet_rows(
     datasets: Sequence[Path], modality: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
-    """Load exactly the private fields needed by one embedding modality."""
+    """Load one unique row ID/audio hash with only the needed private fields."""
     rows: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_hashes: set[str] = set()
     for dataset in datasets:
         for source in iter_parquet_rows(dataset):
+            row_id = source.get("id")
+            audio_hash = source.get("sha256_audio")
+            if not isinstance(row_id, str) or not row_id:
+                raise CurationError("dataset row lacks a nonempty string id")
+            if not isinstance(audio_hash, str) or not audio_hash:
+                raise CurationError(f"row {row_id} lacks sha256_audio")
+            if row_id in seen_ids or audio_hash in seen_hashes:
+                continue
+            seen_ids.add(row_id)
+            seen_hashes.add(audio_hash)
             if modality == "text" and not reference_text(source):
                 continue
             row = {
-                "id": source.get("id"),
+                "id": row_id,
                 "text": reference_text(source),
                 "audio": source.get("audio"),
                 "sha256_audio": source.get("sha256_audio"),
             }
-            if not isinstance(row["id"], str) or not row["id"]:
-                raise CurationError("dataset row lacks a nonempty string id")
             rows.append(row)
             if limit is not None and len(rows) >= limit:
                 return rows
@@ -66,6 +76,8 @@ def existing_ids(path: Path) -> set[str]:
             ) from error
         if not isinstance(row.get("id"), str):
             raise CurationError(f"embedding output line {line_number} lacks id")
+        if row["id"] in completed:
+            raise CurationError(f"duplicate embedding output id on line {line_number}")
         completed.add(row["id"])
     return completed
 

@@ -27,6 +27,7 @@ PYTHON_LINT_PATHS = (
     "tests",
     "tools/aqua_baseline.py",
     "tools/lexicon-benchmark",
+    "tools/private-corpus-curation",
     "tools/private-dataset-audit",
     "tools/tests",
 )
@@ -35,6 +36,7 @@ PYTHON_FORMAT_PATHS = (
     "sidecar",
     "tests",
     "tools/lexicon-benchmark",
+    "tools/private-corpus-curation",
     "tools/private-dataset-audit",
     "tools/tests",
 )
@@ -298,6 +300,7 @@ def quality_checks(
                 "tests",
                 "tools/tests",
                 "tools/lexicon-benchmark/tests",
+                "tools/private-corpus-curation/tests",
                 "tools/private-dataset-audit/tests",
                 "scripts/tests",
                 "-q",

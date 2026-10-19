@@ -184,6 +184,12 @@ RTX 3090 Ti GPUs idle). The matched no-context and no-leak hotword-context runs
 are therefore no longer blocked by reachability; they are blocked only by the
 missing `metaphone` dependency in the pinned environment, diagnosed above.
 
+> **Superseded (2026-10-19T23:15Z).** B550 returned, the missing `metaphone` /
+> `rapidfuzz` dependencies were installed into the pinned env, and both 25-row
+> arms completed and were scored. The matched aggregate result is recorded in
+> `evidence/2026-10-19-ming-asr-pilot25-score.md`; the "zero rows / no score"
+> status above applies only to the first pass.
+
 Ming audio-flash is not a practical local runtime: roughly 256 GB of BF16
 weights and a reference eight times 80 GB serving profile. Any rented run needs
 a fresh provider quote and must budget model staging and setup as well as

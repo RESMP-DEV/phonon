@@ -2277,6 +2277,41 @@ FP4 sensitivity unlikely, but quantized Ming remains a proposed, unmeasured lane
 until matched public and private outputs pass, and it must be routed per
 architecture rather than assumed to be one SGLang path.
 
+### 2026-10-19: Ming ASR-tiny matched 25-row pilot score
+
+B550 returned and the 25-row Ming ASR-tiny pilot was recovered, repaired, and
+completed. The first pass had crashed at import because the pinned environment
+lacked the hotword retriever's `metaphone` and `rapidfuzz` dependencies (neither
+is in the model `requirements.txt`); installing both into the same
+torch-2.11/transformers-5.12.1 env and re-running unblocked it. Both context arms
+then ran on one RTX 3090 Ti at about 18.8 GiB and roughly 2.9 real-time factor,
+greedy BF16/SDPA, on the identical first 25 frozen-slice rows.
+
+Matched aggregate scores against the accepted reference (fair WER uses the
+English normalizer; strict-LC retains casing/punctuation/fillers):
+
+| Lane | fair WER | strict-LC WER | fair exact |
+| --- | ---:| ---:| ---:|
+| Aqua raw (control) | 0.0556 | 0.0932 | 0.72 |
+| Ming ASR-tiny, no-context | 0.0573 | 0.2761 | 0.56 |
+| Ming ASR-tiny, no-leak hotwords (top-10) | 0.0920 | 0.2614 | 0.48 |
+
+No-context Ming per-row versus Aqua raw is 2 win / 14 tie / 9 loss (33 versus 32
+total edits). Two findings matter for the architecture. First, on the raw
+acoustic lane Ming is effectively tied with Aqua on fair WER, so a specialized
+open ASR model does not automatically beat the Aqua raw lane on this short
+technical-dictation distribution; this is a 25-row subset, not the 500-row gate,
+and is directional only. Second, the strict-LC gap (0.276 versus 0.093, about 3x)
+against a near-tied fair WER is the empirical signature of the judgment /
+correction-teacher lane defined above: the distance is formatting and preference,
+not acoustics. That directly supports building the intended-text correction lane
+rather than chasing raw WER. The no-leak hotwords arm was net-negative on this
+subset (fair WER 0.092, changed 6 of 25 rows, 2 better / 4 worse), recorded as a
+negative result to re-test on the full slice rather than as evidence against the
+hotword mechanism. The sanitized aggregate-only receipt is
+`evidence/2026-10-19-ming-asr-pilot25-score.md`; per-row transcripts and lexicon
+terms stayed on B550 and were not committed or uploaded.
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

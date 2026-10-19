@@ -2229,6 +2229,19 @@ rented provider without an explicit provider, data-scope, retention, and consent
 decision. The sanitized survey receipt is
 `evidence/2026-10-19-ming-asr-survey.md`.
 
+The strategic Ming lane is **judgment / correction teacher**, not a WER-only
+engine. Enhanced dataset construction separates three outputs: a raw acoustic
+transcription, an intended-text judgment, and a correction-preference decision.
+The judgment lane may consume candidate ASR outputs, Aqua raw, local lexicon and
+history, and an abstract preference contract that permits cleanup such as filler
+handling, expansion, formatting, and technical-term recovery; it must not copy
+the private Aqua prompt or private examples into Git. WER remains the matched
+metric for raw acoustic candidates, while the teacher is promoted only on
+intended-text win/tie/loss against accepted Aqua output, preference-rule
+compliance, semantically important acoustic-content preservation, technical-term
+recovery, and calibrated rejection. The immediate experiment is disagreement-rich
+pilot review, followed by full-slice raw and intended-text gates.
+
 The same survey found no official Ming FP4 checkpoint, but inclusionAI's Ling
 3.0 Bailing V3 family has an official mixed dynamic-FP8/MXFP4 recipe: routed
 experts use E2M1 weights with E8M0 group-32 scales while sensitive attention,
@@ -2238,7 +2251,10 @@ selection, although its explicit test covers causal/VL rather than audio. On
 Ming ASR-tiny, this recipe gives a conservative 6.6 GiB weight estimate versus
 16.52 GiB BF16. Tetra has four SM12.0 RTX PRO 6000 Blackwell GPUs and can host
 the experiment, but a live read-only probe found all four already occupied by a
-root vLLM TP4 deployment. Quantized Ming remains a proposed, unmeasured lane.
+root vLLM TP4 deployment. The backbone's ordinary MLA/MoE shape and the
+modality-aware exclusion list make severe FP4 sensitivity unlikely, but
+quantized Ming remains a proposed, unmeasured lane until public and private
+matched outputs pass.
 
 ## Contracts to preserve
 

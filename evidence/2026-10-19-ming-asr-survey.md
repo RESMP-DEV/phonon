@@ -183,11 +183,32 @@ scope, retention, and consent decision.
   and audio-reasoning teachers. Its short-dictation advantage
   over the much smaller specialized ASR model is modest and its deployment cost
   is large.
+- Ming is not being considered merely as another WER engine. Its Phonon role is
+  a **judgment / correction-teacher lane** for enhanced dataset construction:
+  one or more raw acoustic transcriptions, the Aqua raw hypothesis, local
+  lexicon/history, and the user's preference contract enter the judgment; the
+  output is an intended-text correction plus enough structured disagreement
+  information to rank or reject the row. The private Aqua prompt text is not
+  reproduced here. Its semantics include, abstractly, cleanup and formatting
+  preferences such as filler handling, spelling, expansion, and technical-term
+  recovery rather than an unconditional one-to-one acoustic transcript.
+- Dataset construction therefore needs three separable labels: **raw acoustic
+  transcription**, **intended-text judgment**, and **correction preference
+  enforcement**. Aqua raw and Aqua accepted are evidence for these lanes, but
+  neither is treated as a universal acoustic truth: Aqua accepted encodes the
+  user's intended-text preference, while the raw lane is the acoustic control.
 - Architecture does not override the registered matched-slice gate. The matched
   quality requirements include full-slice fair/strict WER, exactness, per-row
   win/tie/loss against Aqua, and a no-leak retrieved-hotword context arm; all
   registered product, restraint, latency, packaging, and default-path regression
   gates also remain applicable.
+- WER remains useful for comparing raw acoustic lanes under a matched protocol.
+  It is insufficient for the judgment lane. Judgment acceptance also needs
+  preference/correction metrics: intended-text win/tie/loss against accepted
+  Aqua output, preservation of semantically important raw acoustic content,
+  correct filler/formatting preference application, technical-term recovery,
+  and calibrated uncertainty or rejection. Aggregate-only WER cannot promote
+  the teacher.
 - A realistic context arm must derive terms from the Aqua raw hypothesis and
   local lexicon, never from the accepted reference. The tracked `vocab_v1`
   retriever already provides no-reference phonetic-plus-character ranking with a
@@ -324,6 +345,12 @@ FP8/MXFP4 on one GPU**, not audio-flash. Its quantized weight floor is small
 enough to leave ample runtime space. The export should copy the official Ling
 FP4 exclusion policy, add the Ming audio encoder and `linear_proj_audio` to the
 exclusions, and preserve routers and sensitive MLA/attention projections.
+The architecture rationale is favorable: the Bailing V3 backbone is an MLA/MoE
+transformer, audio is an alternate conditioning modality, and the recipe
+quantizes routed experts while preserving the modality path, router, MLA,
+embeddings, and output head. That makes severe modality-induced sensitivity
+unlikely, but it is still an unmeasured hypothesis until matched outputs are
+compared.
 
 Acceptance must be paired against the already proven BF16 runtime:
 
@@ -331,7 +358,10 @@ Acceptance must be paired against the already proven BF16 runtime:
 2. same public CC0 English and Chinese samples;
 3. exact-output comparison where possible;
 4. the frozen 25-row Phonon pilot;
-5. only then the full 500-row fair/strict WER and per-row win/tie/loss gate.
+5. a preference-aware judgment pilot over disagreement-rich rows, with no
+   private Aqua prompt text or private example in its receipt;
+6. only then the full 500-row raw-lane fair/strict WER gate and intended-text
+   per-row win/tie/loss gate.
 
 An audio-flash export is a later experiment. BF16 audio-flash may already fit
 Tetra's four-GPU aggregate for short-context ASR, but a mixed-FP4 export would

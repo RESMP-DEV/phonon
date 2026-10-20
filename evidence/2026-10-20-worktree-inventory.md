@@ -27,9 +27,11 @@ directory was removed.
 Local-only reports, review artifacts, differing PR13 scaffold versions, the
 validated-insertion binary patch, its untracked probe, and two branch bundles
 were preserved under the ignored primary-checkout path
-`build/legacy-worktrees/20261020/`. Its machine manifest records 91 files,
-9,244,417 bytes, and SHA-256
-`4b0da7e265f469a970acf411ca3d3739b6b344cb7e4a9feefed3019482e5db84`.
+`build/legacy-worktrees/20261020/`. Its machine manifest inventories exactly 90
+payload files totaling 9,228,352 bytes and intentionally excludes itself to
+avoid a stale self-reference. The current manifest SHA-256 is
+`fcaec719b0316085992bb7a55d7271dd1725c3ab29309c310762e9c8fec8344c`; all 90
+payload size/hash entries were re-verified against the files.
 
 The private parquet audit artifact from the PR #25 review area was preserved
 locally and was not published. Compiler and package caches were not retained.
@@ -55,13 +57,16 @@ resume lanes without active checkouts.
 Dependabot PR #23 bumped `website` from Next.js 16.3.7 to 16.3.8. It was
 validated at head `a284dcff` under the project-pinned Node runtime:
 
-| Check | Result |
-| --- | --- |
-| Runtime | Node `v22.23.3`, npm `12.2.0` |
-| `npm ci` | exit 0 |
-| `npm test` | production Next build and rendered-HTML test pass, 1/1 |
-| `npm run lint` | exit 0 |
-| `npm audit --omit=dev --audit-level=high` | exit 0; no high findings |
+| Exact procedure under Node `v22.23.3` / npm `12.2.0` | Exit | Result |
+| --- | ---: | --- |
+| `npm ci` | 0 | 354 packages installed |
+| `npm test` | 0 | production Next build passed; rendered-HTML test 1/1 |
+| `npm run lint` | 0 | ESLint passed |
+| `npm audit --omit=dev --audit-level=high` | 0 | no high findings |
+
+The complete isolated Node 22 command chain completed in 24.877 seconds. Its
+log, exit marker, and runtime record are hashed in
+`build/reports/pr23/validation-hashes.txt`.
 
 The audit still reported two moderate PostCSS advisories inherited through
 Next.js; they were not introduced by this patch and remain dependency follow-up
@@ -70,18 +75,35 @@ logs and hashes remain under ignored `build/reports/pr23/`.
 
 ## Verification
 
-Recorded UTC: 2026-10-20T01:00Z-01:06Z. Platform: macOS main machine. Source
-revision at final common-gate verification: `4187466e`; dirty state false.
+Recorded UTC: 2026-10-20T01:00Z-01:20Z. Platform: macOS main machine. The
+consolidated machine receipt is
+`build/reports/worktree-inventory/receipt.json`; every row below is also
+written there with its exact command, exit code, elapsed time, and log path.
+The repository common gate is run at the final documentation head after commit;
+its machine receipt is `build/reports/quality/receipt.json` and its exact
+revision is reported on PR #35 before merge.
 
-| Check | Command or procedure | Result |
-| --- | --- | --- |
-| Integrated ancestry | `git merge-base --is-ancestor <branch> main` | passed for `merge/pr13` and `work/lexicon-local-sources` |
-| Exact squash-tree proof | `git diff --quiet <merge-commit> <branch-tip>` | passed for PR #25, PR #26, and PR #15 branch tips |
-| Process safety | `lsof +D <worktree>` before removal | no live working-directory owner |
-| Preservation integrity | hash manifest and `git bundle verify` | 91 files preserved; both bundles valid |
-| Worktree cleanup | normal `git worktree remove` for five worktrees | all succeeded without force |
-| Website dependency gate | Node 22.23.3 `npm ci`, `npm test`, `npm run lint`, focused audit | all exit 0 |
-| Repository common gate | `just quality` at `4187466e` | exit 0, PASS, clean source |
+| Check | Exact command or procedure | Exit | Elapsed | Log |
+| --- | --- | ---: | ---: | --- |
+| source-status | `git status --short --branch` | 0 | 16 ms | `build/reports/worktree-inventory/source-status.log` |
+| worktree-inventory | `git worktree list` | 0 | 10 ms | `build/reports/worktree-inventory/worktree-inventory.log` |
+| branch-inventory | `git branch -vv` | 0 | 12 ms | `build/reports/worktree-inventory/branch-inventory.log` |
+| PR13 ancestry | `git merge-base --is-ancestor 257f892… main` | 0 | 11 ms | `build/reports/worktree-inventory/pr13-ancestry.log` |
+| lexicon ancestry | `git merge-base --is-ancestor 02acd5a… main` | 0 | 12 ms | `build/reports/worktree-inventory/lexicon-ancestry.log` |
+| PR15 exact tree | `git diff --quiet e388b32… 80671a1…` | 0 | 10 ms | `build/reports/worktree-inventory/pr15-exact-tree.log` |
+| PR25 exact tree | `git diff --quiet 51f728f… f86e716…` | 0 | 11 ms | `build/reports/worktree-inventory/pr25-exact-tree.log` |
+| PR26 exact tree | `git diff --quiet a79b298… 7642a23…` | 0 | 11 ms | `build/reports/worktree-inventory/pr26-exact-tree.log` |
+| preservation manifest | hash and size verify all 90 payload entries | 0 | 41 ms | `build/reports/worktree-inventory/manifest-payload-verify.log` |
+| portable-harness bundle | `git bundle verify ml-portable-harness.bundle` | 0 | 9 ms | `build/reports/worktree-inventory/ml-bundle-verify.log` |
+| validated-insertion bundle | `git bundle verify work-validated-insertion.bundle` | 0 | 10 ms | `build/reports/worktree-inventory/validated-bundle-verify.log` |
+| PR23 artifact hashes | `shasum -a 256 -c build/reports/pr23/validation-hashes.txt` | 0 | 18 ms | `build/reports/worktree-inventory/pr23-hash-verify.log` |
+| public privacy scan | `rg` for private paths, row IDs, transcript/audio markers | 0 | 9 ms | `build/reports/worktree-inventory/privacy-scan.log` |
+| diff check | `git diff --check` | 0 | 12 ms | `build/reports/worktree-inventory/diff-check.log` |
+
+Before each removal, `lsof +D <worktree>` found no live working-directory
+owner. All five worktrees were then removed with normal, non-force
+`git worktree remove`; the failed verifier-path attempt and its repair are
+represented by the passing final machine receipt rather than hidden.
 
 ## Non-claims
 

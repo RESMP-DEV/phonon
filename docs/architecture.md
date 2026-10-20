@@ -2340,8 +2340,8 @@ branches without active checkouts.
 Before removing `validated-insertion`, its uncommitted repair patch and
 untracked insertion probe were preserved locally, alongside both branch bundles,
 PR reports, review artifacts, and the differing PR13 scaffold versions. The
-ignored manifest is
-`build/legacy-worktrees/20261020/manifest.json`; the sanitized inventory is
+ignored manifest inventories 90 payload files and excludes itself; the
+sanitized inventory is
 `evidence/2026-10-20-worktree-inventory.md`. No private parquet, transcript,
 row ID, dictionary value, or lexicon term was published.
 

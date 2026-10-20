@@ -43,6 +43,15 @@ in the ML project's own test surface.
 
 PR #34 merged as `27563a15b2ff330db3125e1eb715fc4986438f35`.
 
+Retained PR #34 evidence hashes:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `local-validation.log` | `ff0f71b004b492b3bde40fd11da0d9e8666582dfafb86b8cb4ce48df28f4ba3f` |
+| `runtime-validation.log` | `fbdf34052e439ac0c35b90598fb1be2cebaa35b4572d1443eddd814a22e64af0` |
+| `local-validation.exit` | `8b56c7c303900c3e9d89641d31c8840e3e37eae33f322f4351ac6837c08b7174` |
+| `runtime-validation.exit` | `19eaf43821a7660ec323a87c8457bf74823beb296c39f5e01aa8a683aa50f061` |
+
 ## PR #33: closed, constraint conflict
 
 `nemo-toolkit 2.3.0` requires `fsspec==2024.12.0`, and `lightning 2.4.0`

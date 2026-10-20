@@ -24,7 +24,9 @@ measured before any merge rather than trusting the PR title.
 
 `aiohttp` 3.13.5 to 3.14.4 with its `yarl` pin 1.24.2 to 1.25.1 was the only
 one of the three that did not remove packages: the lock still resolves 206
-packages, identical in count and content apart from those two versions.
+package blocks. No package block is added or removed. Besides the two version
+changes, the `aiohttp` 3.14.4 block adds one dependency edge to
+`typing-extensions`.
 
 Acceptance run at head `cc1abed87cb9b16845f9c7a2896089d90b81160c`:
 
@@ -52,39 +54,61 @@ Retained PR #34 evidence hashes:
 | `local-validation.exit` | `8b56c7c303900c3e9d89641d31c8840e3e37eae33f322f4351ac6837c08b7174` |
 | `runtime-validation.exit` | `19eaf43821a7660ec323a87c8457bf74823beb296c39f5e01aa8a683aa50f061` |
 
+The install/test/lint/audit chain completed in 3.79 seconds and the runtime
+import/CLI/tree chain completed in 0.999 second. Their full logs are the four
+hashed artifacts above.
+
 ## PR #33: closed, constraint conflict
 
 `nemo-toolkit 2.3.0` requires `fsspec==2024.12.0`, and `lightning 2.4.0`
 requires `fsspec[http]<2026.0,>=2022.5.0`. `fsspec 2026.6.0` therefore cannot
 satisfy the current graph. Forcing it with
 `uv lock --upgrade-package fsspec==2026.6.0` reduced the lock from 206 to 181
-packages and removed 25 existing entries, which is a dependency-set
-replacement rather than a version bump. The PR was closed with that evidence
-and a reopen condition.
+packages: 25 distinct packages disappear and none enter. This is a
+dependency-set replacement rather than a version bump. The retained probe log
+is `build/reports/pr33/probe.log`, SHA-256
+`1e24ed6d0235ece199a3fd6077322eaf8100b68ef90561746a4f2e4e027c83c5`. The PR
+was closed with that evidence and a reopen condition.
 
 ## PR #32: closed, constraint conflict
 
 `nemo-toolkit 2.3.0` constrains `hydra-core<=1.3.2,>1.3` for every relevant
 extra, so `hydra-core 1.3.7` is not installable while that NeMo dependency set
 remains. Forcing it with `uv lock --upgrade-package hydra-core==1.3.7`
-reduced the lock from 206 to 176 packages and removed 41 entries, including
-`bitsandbytes`, `peft`, `optuna`, `lhotse`, `lightning`, and `pydantic`. The PR
+reduces the lock from 206 to 176 packages: 40 distinct packages disappear, 10
+enter, and the existing `urllib3` name is rewritten (which produces 41 removal
+lines and 11 addition lines in the raw lock diff). The disappearing set
+includes `bitsandbytes`, `peft`, `optuna`, `lhotse`, `lightning`, and
+`pydantic`. The retained probe log is `build/reports/pr32/probe.log`,
+SHA-256
+`ff7b4dee0e0667d7444b92eb61e3ecb015bab0fbff04f7027ec9d4e386fd738a`. The PR
 was closed with that evidence and a reopen condition.
 
 ## Verification
 
-Recorded UTC: 2026-10-20T01:32Z-01:40Z. Platform: macOS main machine. Source
-revision at final common-gate verification: `27563a15`; dirty state false.
+Recorded UTC: 2026-10-20T01:32Z-01:56Z. Platform: macOS main machine. At
+documentation head `2e09375eead74eb773b909e1e94078d6e691fa2a`, `just quality`
+exited 0 with `source_dirty: false`; the read-only inventory receipt is
+`build/reports/dependabot-lock-triage/receipt.json`. Any later wording-only
+repair commit is gated again at its own clean head before merge.
 
-| Check | Command or procedure | Exit | Result |
-| --- | --- | ---: | --- |
-| PR34 lock consistency | `uv lock --check` in `ml/` | 0 | 206 packages |
-| PR34 sync and runtime | `uv sync`, `uv run python`, `uv run phonon --help` | 0 | install, import, and CLI all succeed |
-| PR34 artifact hashes | `shasum -a 256 build/reports/pr34/*` | 0 | four hashes recorded |
-| PR33 constraint probe | `uv lock --upgrade-package fsspec==2026.6.0` | 0 | 181 packages, 25 removals |
-| PR32 constraint probe | `uv lock --upgrade-package hydra-core==1.3.7` | 0 | 176 packages, 41 removals |
-| Upstream requirement read | PyPI JSON metadata for `nemo-toolkit` 2.3.0, `datasets` 5.0.1, `lightning` 2.4.0, `pytorch-lightning` 2.6.4 | 0 | exact pins and caps recorded above |
-| Repository common gate | `just quality` at `27563a15` | 0 | PASS, clean source |
+| Check | Command or procedure | Exit | Elapsed | Log |
+| --- | --- | ---: | ---: | --- |
+| source status | `git status --short --branch` | 0 | 18 ms | `build/reports/dependabot-lock-triage/source-status.log` |
+| PR34 package count | `git show 27563a15b2ff330db3125e1eb715fc4986438f35:ml/uv.lock` | 0 | 9 ms | `build/reports/dependabot-lock-triage/pr34-package-count.log` |
+| PR34 removed blocks | `git diff 944d7584143cdb496343fdb1ef148643b8615a85 27563a15b2ff330db3125e1eb715fc4986438f35 -- ml/uv.lock` | 0 | 15 ms | `build/reports/dependabot-lock-triage/pr34-package-block-removals.log` |
+| PR34 added blocks | `git diff 944d7584143cdb496343fdb1ef148643b8615a85 27563a15b2ff330db3125e1eb715fc4986438f35 -- ml/uv.lock` | 0 | 14 ms | `build/reports/dependabot-lock-triage/pr34-package-block-additions.log` |
+| PR34 artifact hashes | `shasum -a 256 -c build/reports/pr34/hashes.txt` | 0 | 13 ms | `build/reports/dependabot-lock-triage/pr34-hash-verify.log` |
+| PR33 probe hash | `shasum -a 256 build/reports/pr33/probe.log` | 0 | 12 ms | `build/reports/dependabot-lock-triage/pr33-probe-hash.log` |
+| PR32 probe hash | `shasum -a 256 build/reports/pr32/probe.log` | 0 | 13 ms | `build/reports/dependabot-lock-triage/pr32-probe-hash.log` |
+| referenced paths | `test -f` for receipt, lock, and PR34 hashes | 0 | 3 ms | `build/reports/dependabot-lock-triage/referenced-paths.log` |
+| privacy scan | `rg` for private paths, row IDs, transcript/audio markers | 0 | 6 ms | `build/reports/dependabot-lock-triage/privacy-scan.log` |
+| diff check | `git diff --check` | 0 | 8 ms | `build/reports/dependabot-lock-triage/diff-check.log` |
+
+The historical PR34 execution logs and the PR32/PR33 forced-lock probes are
+represented by their retained artifacts and hashes above. The upstream
+requirement statements were read from live PyPI JSON metadata during triage and
+independently cross-checked from locally cached uv wheel metadata by the review.
 
 ## Non-claims
 

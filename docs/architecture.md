@@ -2356,15 +2356,18 @@ the merge, the primary checkout was the only worktree, `main` was clean at
 
 Three Dependabot PRs rewrote the same `ml/uv.lock` at nearly the same time.
 Package-set deltas were measured before merge. PR #34 (`aiohttp` 3.13.5 to
-3.14.4 plus its `yarl` pin) preserved all 206 packages and passed lock
+3.14.4 plus its `yarl` pin) preserved all 206 package blocks and passed lock
 consistency, real `uv sync`, runtime import, project CLI, dependency-tree
-checks, and `just quality`; it merged as `27563a15`.
+checks, and `just quality`; its only dependency-edge change was adding
+`typing-extensions` to the `aiohttp` block. It merged as `27563a15`.
 
 PR #33 (`fsspec` 2026.6.0) and PR #32 (`hydra-core` 1.3.7) were closed as
 constraint conflicts, not ignored updates. NeMo Toolkit 2.3.0 pins
 `fsspec==2024.12.0` and constrains `hydra-core<=1.3.2,>1.3`; Lightning also
 caps `fsspec<2026.0`. Forcing either proposed version caused uv to remove 25
-or 41 packages respectively, including core research dependencies. Those PRs
+or 40 distinct packages respectively; the hydra-core probe also introduced ten
+replacement packages, including notebook/widgets-oriented dependencies, while
+dropping core research dependencies. Those PRs
 should reopen only after the NeMo/Lightning dependency set permits the newer
 versions and a lock regeneration preserves the package set. The sanitized
 receipt is `evidence/2026-10-20-dependabot-lock-triage.md`.

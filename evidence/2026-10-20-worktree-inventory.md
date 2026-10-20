@@ -55,7 +55,8 @@ resume lanes without active checkouts.
 ## Next.js workflow closeout
 
 Dependabot PR #23 bumped `website` from Next.js 16.3.7 to 16.3.8. It was
-validated at head `a284dcff` under the project-pinned Node runtime:
+validated at head `a284dcff` using Node `v22.23.3`, within the
+repository-declared Node `22.x` range:
 
 | Exact procedure under Node `v22.23.3` / npm `12.2.0` | Exit | Result |
 | --- | ---: | --- |
@@ -79,20 +80,22 @@ Recorded UTC: 2026-10-20T01:00Z-01:20Z. Platform: macOS main machine. The
 consolidated machine receipt is
 `build/reports/worktree-inventory/receipt.json`; every row below is also
 written there with its exact command, exit code, elapsed time, and log path.
-The repository common gate is run at the final documentation head after commit;
-its machine receipt is `build/reports/quality/receipt.json` and its exact
-revision is reported on PR #35 before merge.
+At documentation head `3d8d7767b64b1ddbd9c77e4687f07500a99c090d`, `just quality`
+exited 0 with `source_dirty: false`; its machine receipt is
+`build/reports/quality/receipt.json`. The wording-only repair commit that
+follows is gated again at its own clean head, with that final-head machine
+receipt replacing the same path before merge.
 
 | Check | Exact command or procedure | Exit | Elapsed | Log |
 | --- | --- | ---: | ---: | --- |
 | source-status | `git status --short --branch` | 0 | 16 ms | `build/reports/worktree-inventory/source-status.log` |
 | worktree-inventory | `git worktree list` | 0 | 10 ms | `build/reports/worktree-inventory/worktree-inventory.log` |
 | branch-inventory | `git branch -vv` | 0 | 12 ms | `build/reports/worktree-inventory/branch-inventory.log` |
-| PR13 ancestry | `git merge-base --is-ancestor 257f892… main` | 0 | 11 ms | `build/reports/worktree-inventory/pr13-ancestry.log` |
-| lexicon ancestry | `git merge-base --is-ancestor 02acd5a… main` | 0 | 12 ms | `build/reports/worktree-inventory/lexicon-ancestry.log` |
-| PR15 exact tree | `git diff --quiet e388b32… 80671a1…` | 0 | 10 ms | `build/reports/worktree-inventory/pr15-exact-tree.log` |
-| PR25 exact tree | `git diff --quiet 51f728f… f86e716…` | 0 | 11 ms | `build/reports/worktree-inventory/pr25-exact-tree.log` |
-| PR26 exact tree | `git diff --quiet a79b298… 7642a23…` | 0 | 11 ms | `build/reports/worktree-inventory/pr26-exact-tree.log` |
+| PR13 ancestry | `git merge-base --is-ancestor 257f892bbb8078e7f69fd0fe0aeef2adb0c9dfab main` | 0 | 11 ms | `build/reports/worktree-inventory/pr13-ancestry.log` |
+| lexicon ancestry | `git merge-base --is-ancestor 02acd5a68576dc210dd43458bb5fd52ba12826bf main` | 0 | 12 ms | `build/reports/worktree-inventory/lexicon-ancestry.log` |
+| PR15 exact tree | `git diff --quiet e388b32a83ea74d89f91392102147b127eb1f17a 80671a1d777996cdfa21837ce9c208334b04eb67` | 0 | 10 ms | `build/reports/worktree-inventory/pr15-exact-tree.log` |
+| PR25 exact tree | `git diff --quiet 51f728fa4298569962020c4759dc917e5b5d0012 f86e716252539e0a1fcfb5a5ca50242d9eca7cf4` | 0 | 11 ms | `build/reports/worktree-inventory/pr25-exact-tree.log` |
+| PR26 exact tree | `git diff --quiet a79b298adbde600b9b21be18daddf6ec25c2c783 7642a2386b9e4de6c42802abc8acf83fb857d40a` | 0 | 11 ms | `build/reports/worktree-inventory/pr26-exact-tree.log` |
 | preservation manifest | hash and size verify all 90 payload entries | 0 | 41 ms | `build/reports/worktree-inventory/manifest-payload-verify.log` |
 | portable-harness bundle | `git bundle verify ml-portable-harness.bundle` | 0 | 9 ms | `build/reports/worktree-inventory/ml-bundle-verify.log` |
 | validated-insertion bundle | `git bundle verify work-validated-insertion.bundle` | 0 | 10 ms | `build/reports/worktree-inventory/validated-bundle-verify.log` |

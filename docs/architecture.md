@@ -2327,6 +2327,32 @@ evaluation, which this run did not perform. The sanitized aggregate-only receipt
 terms stayed on B550 and were not committed or uploaded.
 
 
+### 2026-10-20: Worktree prune and workflow inventory
+
+Audited every remaining Phonon worktree before removal. `merge/pr13` was an
+ancestor of `main`; the PR #25 and PR #26 branch tips were exact tree matches to
+their squash merge commits; and the stale PR #15 local branch was also an exact
+tree match to its merge. Those integrated checkouts and local branches were
+removed. The broad `ml/portable-harness` lane and focused
+`work/validated-insertion` lane are **not** integrated and remain as explicit
+branches without active checkouts.
+
+Before removing `validated-insertion`, its uncommitted repair patch and
+untracked insertion probe were preserved locally, alongside both branch bundles,
+PR reports, review artifacts, and the differing PR13 scaffold versions. The
+ignored manifest inventories 90 payload files and excludes itself; the
+sanitized inventory is
+`evidence/2026-10-20-worktree-inventory.md`. No private parquet, transcript,
+row ID, dictionary value, or lexicon term was published.
+
+The then-open Next.js 16.3.8 dependency PR was also closed out under the
+project-pinned Node 22 runtime: install, production build/test, lint, and the
+high-threshold production audit passed. The two remaining moderate PostCSS
+advisories are dependency follow-up, not a regression from that patch. After
+the merge, the primary checkout was the only worktree, `main` was clean at
+`4187466e`, and `just quality` passed.
+
+
 ## Contracts to preserve
 
 - Local execution and user sovereignty outrank quality, personality, and performance.

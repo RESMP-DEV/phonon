@@ -2316,12 +2316,13 @@ reliable evidence here. On the registered gate Ming ASR-tiny is **not
 promotable** as a Phonon raw acoustic engine and the no-leak hotword arm is
 rejected for it.
 
-This also revises the judgment / correction-teacher hypothesis recorded above.
-That hypothesis remains architecturally sound, but this evidence does not
-support it: the teacher would have to be competitive on the raw lane before a
-judgment lane could be attributed to its correction ability rather than to a
-stronger acoustic model. The lane stays an open question and needs a candidate
-that passes the raw gate first. The sanitized aggregate-only receipt is
+This also bounds the judgment / correction-teacher hypothesis recorded above.
+That hypothesis remains architecturally sound, but this run does not evaluate
+it. A teacher can be evaluated on intended-text outputs from a fixed candidate
+ASR lane, including Aqua raw, using the intended-text gates above. This result
+rejects Ming ASR-tiny as a raw engine; it does not reject the teacher lane. The
+teacher lane therefore needs its own candidate and its own intended-text
+evaluation, which this run did not perform. The sanitized aggregate-only receipt is
 `evidence/2026-10-19-ming-asr-slice-score.md`; per-row transcripts and lexicon
 terms stayed on B550 and were not committed or uploaded.
 

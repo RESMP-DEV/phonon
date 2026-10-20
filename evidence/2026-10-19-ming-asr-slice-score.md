@@ -155,9 +155,11 @@ distribution.
   and filler differences that strict-LC retains, without establishing that
   cause. On the full 500 rows the fair-WER gap is also large (0.0901 versus
   0.0329), so the gate does not isolate a formatting-only distance: the model
-  also loses on the normalized acoustic lane. The judgment-lane hypothesis is
-  therefore not supported by this evidence, and is retained only as an open
-  architectural question for a different teacher, not as a finding about Ming.
+  also loses on the normalized acoustic lane. This run therefore does not
+  evaluate the judgment lane at all: a teacher can be judged on intended-text
+  outputs produced from a fixed candidate ASR lane, including Aqua raw, using
+  the intended-text gates. Rejecting Ming ASR-tiny on the raw gate rejects this
+  model as a raw engine, not the teacher lane.
 - **No-leak hotwords did not help (confirmed on the full gate).** On the pilot
   subset, top-10 Aqua-raw-retrieved hotwords made fair WER worse (0.0920 versus
   0.0573) and were net-negative per row (2 better / 4 worse), with candidate
@@ -169,7 +171,7 @@ distribution.
 
 ## Verification
 
-Recorded UTC: 2026-10-19T23:05Z-23:15Z. Platforms: macOS main machine (control)
+Recorded UTC: 2026-10-19T23:05Z-23:59Z. Platforms: macOS main machine (control)
 and B550 Linux/CUDA (execution). Source revision: this PR head; worktree dirty
 state: false at commit. Private slice text, row IDs, audio paths, and lexicon
 term values were not printed in this tracked receipt; only aggregate scores were
@@ -200,8 +202,10 @@ hotword arm for this model on this slice. It does not measure Aqua latency (the
 timing columns are Ming's generation metadata), does not qualify any model as a
 daily-driver engine, does not prove streaming behavior, and does not authorize
 any private-data upload to a rented provider. It does not evaluate the
-judgment / correction-teacher hypothesis, which needs a teacher that is
-competitive on the raw lane first; that lane remains an open architectural
-question. No quantized Ming model was run; all numbers here are the BF16
+judgment / correction-teacher lane: that lane is evaluated on intended-text
+outputs from a fixed candidate ASR lane (including Aqua raw) under the
+intended-text gates, which this run did not perform. The raw-gate rejection
+applies to Ming ASR-tiny as a raw engine and says nothing about the teacher
+lane. No quantized Ming model was run; all numbers here are the BF16
 checkpoint. The earlier 25-row pilot numbers are retained above for provenance
 but are not a valid basis for any conclusion.

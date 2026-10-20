@@ -134,6 +134,15 @@ Aqua raw at 3.29%. It is plausible that Ming beats all independent open teachers
 while still losing to Aqua on this short technical dictation distribution.
 Context/hotword prompting is the mechanism that could close that gap.
 
+> **Corrected by the matched gate (2026-10-19T23:59Z).** The extrapolation above
+> proved unreliable for this model on this distribution. The registered 500-row
+> matched run measured Ming ASR-tiny no-context at 0.0901 fair WER against Aqua
+> raw's 0.0329, and the no-leak hotword arm was worse still (0.1051), so the
+> predicted hotword mechanism did not close the gap on this slice. The matched
+> result is recorded in `evidence/2026-10-19-ming-asr-slice-score.md`; treat the
+> 4.5-6.5% projection and the hotword-closing expectation as disproved for
+> ASR-tiny rather than as an open hypothesis.
+
 ## Live B550 runtime probe
 
 The public model was downloaded to the main research share and transferred to
@@ -184,9 +193,11 @@ RTX 3090 Ti GPUs idle). The matched no-context and no-leak hotword-context runs
 are therefore no longer blocked by reachability; they are blocked only by the
 missing `metaphone` dependency in the pinned environment, diagnosed above.
 
-> **Superseded (2026-10-19T23:15Z).** B550 returned, the missing `metaphone` /
-> `rapidfuzz` dependencies were installed into the pinned env, and both 25-row
-> arms completed and were scored. The matched aggregate result is recorded in
+> **Superseded (2026-10-19T23:15Z-23:59Z).** B550 returned, the missing
+> `metaphone` / `rapidfuzz` dependencies were installed into the pinned env, and
+> both the 25-row pilot and the full 500-row gate completed and were scored. The
+> decisive matched result (Ming ASR-tiny rejected as a raw engine on the
+> registered gate) is recorded in
 > `evidence/2026-10-19-ming-asr-slice-score.md`; the "zero rows / no score"
 > status above applies only to the first pass.
 

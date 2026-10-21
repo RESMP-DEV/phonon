@@ -2392,6 +2392,24 @@ an explicit provider/data-scope/retention/consent decision, and the full
 registered 500-row slice remains the only decisive WER gate. The aggregate-only
 receipt is `evidence/2026-10-21-voice-intelligence-model-survey.md`.
 
+### 2026-10-21: Deepgram dataset-labeling reorientation
+
+The Deepgram CLI was updated to 0.4.0 and re-authenticated. Two additional
+read-only workers reoriented the survey from interaction and model ownership to
+offline dataset construction. Nova-3 pre-recorded, pinned to version
+`2025-07-31.0`, provides useful weak supervision and alignment: paired raw and
+smart-format transcript variants, word confidence and time bounds, diarization,
+utterances, paragraphs, entities, custom topics/intents, request IDs, and
+returned model metadata. It does not provide Nova-3 N-best alternatives or an
+arbitrary JSON-schema prompt; unknown prompt/schema parameters are ignored.
+
+Deepgram annotations are evidence for review, row selection, span alignment,
+and blind reconciliation, never the supervised target by themselves. Personal
+audio may use the hosted lane only with `mip_opt_out=true`, opaque tags, a
+recorded data-scope decision, and append-only local provenance. The aggregate
+receipt and proposed annotation sidecar are in
+`evidence/2026-10-21-deepgram-dataset-labeling.md`.
+
 
 ## Contracts to preserve
 

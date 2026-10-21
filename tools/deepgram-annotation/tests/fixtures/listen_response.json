@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "request_id": "6a1f9c31-5f9e-4b93-8f8c-51b45cd9f001",
+    "transaction_key": "hashed+id",
+    "sha256": "3b3ac9dbebb59df1fe5db9dcdffc85b2e5a1e2b6bf2b1fcbf6b6ee9f8b3f7fa1",
+    "created": "2026-10-21T17:30:00.000Z",
+    "duration": 2.4,
+    "channels": 1,
+    "models": ["general-nova-3", "whisper-large-v3"],
+    "model_info": {
+      "name": "general-nova-3",
+      "uuid": "2187e11a-3532-4498-b076-81fa530bdd49",
+      "arch": "nova-3"
+    },
+    "tags": ["phonon-dg-v1-test"]
+  },
+  "results": {
+    "channels": [
+      {
+        "alternatives": [
+          {
+            "transcript": "Hello world, CUDA is fast. The kernel compiled.",
+            "confidence": 0.98125,
+            "words": [
+              {"word": "hello", "start": 0.02, "end": 0.36, "confidence": 0.99, "punctuated_word": "Hello", "speaker": 0, "speaker_confidence": 0.97},
+              {"word": "world", "start": 0.40, "end": 0.71, "confidence": 0.97, "punctuated_word": "world,", "speaker": 0, "speaker_confidence": 0.97},
+              {"word": "cuda", "start": 0.80, "end": 1.10, "confidence": 0.99, "punctuated_word": "CUDA", "speaker": 0, "speaker_confidence": 0.97},
+              {"word": "is", "start": 1.14, "end": 1.22, "confidence": 0.96, "punctuated_word": "is", "speaker": 0, "speaker_confidence": 0.97},
+              {"word": "fast", "start": 1.26, "end": 1.55, "confidence": 0.95, "punctuated_word": "fast.", "speaker": 0, "speaker_confidence": 0.97},
+              {"word": "the", "start": 1.72, "end": 1.80, "confidence": 0.93, "punctuated_word": "The", "speaker": 1, "speaker_confidence": 0.88},
+              {"word": "kernel", "start": 1.84, "end": 2.06, "confidence": 0.97, "punctuated_word": "kernel", "speaker": 1, "speaker_confidence": 0.88},
+              {"word": "compiled", "start": 2.10, "end": 2.38, "confidence": 0.96, "punctuated_word": "compiled.", "speaker": 1, "speaker_confidence": 0.88}
+            ],
+            "paragraphs": {
+              "transcript": "Hello world, CUDA is fast. The kernel compiled.",
+              "paragraphs": [
+                {
+                  "sentences": [
+                    {"text": "Hello world, CUDA is fast.", "start": 0.02, "end": 1.55}
+                  ],
+                  "speaker": 0,
+                  "num_words": 5,
+                  "start": 0.02,
+                  "end": 1.55
+                },
+                {
+                  "sentences": [
+                    {"text": "The kernel compiled.", "start": 1.72, "end": 2.38}
+                  ],
+                  "speaker": 1,
+                  "num_words": 3,
+                  "start": 1.72,
+                  "end": 2.38
+                }
+              ]
+            },
+            "entities": [
+              {"label": "TECHNOLOGY", "value": "CUDA", "raw_value": "cuda", "confidence": 0.99, "start_word": 2.0, "end_word": 3.0}
+            ],
+            "summaries": [
+              {"summary": "Two speakers discuss GPU speed and compilation.", "start_word": 0.0, "end_word": 8.0}
+            ]
+          }
+        ]
+      }
+    ],
+    "utterances": [
+      {"start": 0.02, "end": 1.55, "confidence": 0.97, "channel": 1, "transcript": "Hello world, CUDA is fast.", "speaker": 0, "id": "u1",
+       "words": [
+         {"word": "hello", "start": 0.02, "end": 0.36, "confidence": 0.99, "punctuated_word": "Hello", "speaker": 0},
+         {"word": "world", "start": 0.40, "end": 0.71, "confidence": 0.97, "punctuated_word": "world,", "speaker": 0},
+         {"word": "cuda", "start": 0.80, "end": 1.10, "confidence": 0.99, "punctuated_word": "CUDA", "speaker": 0},
+         {"word": "is", "start": 1.14, "end": 1.22, "confidence": 0.96, "punctuated_word": "is", "speaker": 0},
+         {"word": "fast", "start": 1.26, "end": 1.55, "confidence": 0.95, "punctuated_word": "fast.", "speaker": 0}
+       ]},
+      {"start": 1.72, "end": 2.38, "confidence": 0.95, "channel": 1, "transcript": "The kernel compiled.", "speaker": 1, "id": "u2",
+       "words": [
+         {"word": "the", "start": 1.72, "end": 1.80, "confidence": 0.93, "punctuated_word": "The", "speaker": 1},
+         {"word": "kernel", "start": 1.84, "end": 2.06, "confidence": 0.97, "punctuated_word": "kernel", "speaker": 1},
+         {"word": "compiled", "start": 2.10, "end": 2.38, "confidence": 0.96, "punctuated_word": "compiled.", "speaker": 1}
+       ]}
+    ],
+    "summary": {"result": "Two speakers discuss GPU speed and compilation.", "short": "GPU discussion."},
+    "topics": {
+      "segments": [
+        {"text": "Hello world, CUDA is fast.", "start_word": 0.0, "end_word": 5.0,
+         "topics": [{"topic": "GPUs", "confidence_score": 0.72}]}
+      ]
+    },
+    "intents": {
+      "segments": [
+        {"text": "Hello world, CUDA is fast.", "start_word": 0.0, "end_word": 5.0,
+         "intents": [{"intent": "state_fact", "confidence_score": 0.81}]}
+      ]
+    },
+    "sentiments": {
+      "segments": [
+        {"text": "Hello world, CUDA is fast.", "start_word": 0.0, "end_word": 5.0, "sentiment": "positive", "sentiment_score": 0.55}
+      ],
+      "average": {"sentiment": "positive", "sentiment_score": 0.55}
+    }
+  }
+}

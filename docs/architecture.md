@@ -2372,6 +2372,26 @@ should reopen only after the NeMo/Lightning dependency set permits the newer
 versions and a lock regeneration preserves the package set. The sanitized
 receipt is `evidence/2026-10-20-dependabot-lock-triage.md`.
 
+### 2026-10-21: Voice-intelligence model survey
+
+Five scoped read-only workers surveyed current speech-to-speech, speech-to-text,
+text-to-speech, audio-in LLM, and open-weight candidates against Phonon's
+privacy and promotion gates. Artificial Analysis currently ranks Grok Voice 3.0
+first on its composite Speech-to-Speech Index; xAI's real contract combines
+`grok-voice-3.0`, a realtime reasoning/tool session, and
+`grok-voice-transcribe-2.0` batch/streaming STT with keyterms and Smart Turn.
+The immediate live audio-in route on this machine is OpenRouter, where synthetic
+`startup.wav` requests reached Qwen3.8 Omni Flash and GPT Audio Mini. Both
+returned plausible text in about 151-152 seconds, so they are teacher/probe
+surfaces rather than interactive product engines.
+
+The best local evaluation candidates are Voxtral Mini Realtime for streaming,
+MiniCPM-o-4.5 for a local single-model general candidate, and Qwen3-Omni as the
+quality ceiling. No candidate was promoted: hosted private audio still requires
+an explicit provider/data-scope/retention/consent decision, and the full
+registered 500-row slice remains the only decisive WER gate. The aggregate-only
+receipt is `evidence/2026-10-21-voice-intelligence-model-survey.md`.
+
 
 ## Contracts to preserve
 

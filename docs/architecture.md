@@ -2410,6 +2410,27 @@ recorded data-scope decision, and append-only local provenance. The aggregate
 receipt and proposed annotation sidecar are in
 `evidence/2026-10-21-deepgram-dataset-labeling.md`.
 
+### 2026-10-23: Dependabot wave and postcss override repair
+
+A live organization-wide search found three open Dependabot pull requests, all
+in this repository. Each was proven to be a same-package-set single-version
+change rather than a lockfile replacement, validated at its pinned head, and
+merged with clean review and check state: `gitpython` 3.2.1 (#37), `pillow`
+13.0.0 (#38), and `next` 16.4.1 (#39). Because both Python updates sit behind
+the optional `nemo` extra and the default `uv sync` never installs them, the
+acceptance included isolated consumer smokes and a removed-API audit of the
+installed matplotlib, mediapy, tensorboard, and wandb consumers. The website
+update was validated under the declared Node 22 engine as well as the machine's
+Node 26. Assembled main kept 206 uv packages and 436 npm packages, passed
+`just quality`, and passed the full Node 22 website chain.
+
+That validation also exposed a pre-existing moderate `postcss` advisory: the
+website override pinned 8.5.21, downgrading the exact 8.5.23 pin declared by
+`next@16.4.1`. The override now pins 8.5.23, which keeps the npm package set at
+436 entries, changes only `node_modules/postcss`, passes the full Node 22
+website chain, and clears `npm audit --omit=dev`. The complete evidence and
+non-claims are recorded in `evidence/2026-10-23-dependabot-triage.md`.
+
 
 ## Contracts to preserve
 

@@ -132,6 +132,14 @@ package-set proofs above are unaffected.
 
 ## Postcss override repair
 
+Checkout state for the checks in this section: base revision
+`bb0b769372aa4b0a0b71fca3a4e54f38eb507c47` with the override, lock,
+architecture, and evidence changes applied as a dirty working tree
+(`git status --short` showed exactly those four paths modified or added, plus
+ignored build artifacts). The committed repair head is
+`c980a5cd13a3025cc693e586ac036f71b9e56225`; the clean final-head re-run is
+recorded in the pull-request review evidence.
+
 The minimal repair changes `website/package.json`'s override from
 `"postcss": "8.5.21"` to `"postcss": "8.5.23"`, exactly matching the pin
 declared by `next@16.4.1`. The npm package set remains 436 entries with no

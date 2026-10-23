@@ -2413,11 +2413,13 @@ receipt and proposed annotation sidecar are in
 ### 2026-10-23: Dependabot wave and postcss override repair
 
 A live organization-wide search found three open Dependabot pull requests, all
-in this repository. Each was proven to be a same-package-set single-version
-change rather than a lockfile replacement, validated at its pinned head, and
-merged with clean review and check state: `gitpython` 3.2.1 (#37), `pillow`
-13.0.0 (#38), and `next` 16.4.1 (#39). Because both Python updates sit behind
-the optional `nemo` extra and the default `uv sync` never installs them, the
+in this repository. Each was proven to preserve the complete package set
+rather than replace it, validated at its pinned head, and merged with clean
+review and check state: `gitpython` 3.2.1 (#37) and `pillow` 13.0.0 (#38)
+each changed one version, while `next` 16.4.1 (#39) changed ten versions
+(`next` plus its nine `@next/*` platform packages). Because both Python
+updates sit behind the optional `nemo` extra and the default `uv sync` never
+installs them, the
 acceptance included isolated consumer smokes and a removed-API audit of the
 installed matplotlib, mediapy, tensorboard, and wandb consumers. The website
 update was validated under the declared Node 22 engine as well as the machine's

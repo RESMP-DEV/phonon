@@ -24,7 +24,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
 tar = "0.4"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # native-tls uses SChannel on Windows and Security.framework on macOS, so no
 # C toolchain is needed to build or to cross-check this crate.
 native-tls = "0.2"

@@ -126,7 +126,7 @@ def test_common_checks_have_stable_order_and_explicit_paths(
     assert "--no-project" in python_test_command
     assert "--with" in python_test_command
     assert "pytest" in python_test_command
-    assert "numpy" in python_test_command
+    assert "numpy>=2.0" in python_test_command
     assert str(scripts) in commands["ruff-check"]
     assert str(checker) in commands["ruff-format-check"]
     assert str(shell) in commands["shellcheck"]

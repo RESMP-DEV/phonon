@@ -2433,6 +2433,17 @@ website override pinned 8.5.21, downgrading the exact 8.5.23 pin declared by
 website chain, and clears `npm audit --omit=dev`. The complete evidence and
 non-claims are recorded in `evidence/2026-10-23-dependabot-triage.md`.
 
+### 2026-11-12: Quality-runner PyArrow floor
+
+The common quality runner created its ephemeral Python test environment with
+unpinned `numpy` and `pyarrow` requirements. PyArrow 26.0.1 requires NumPy 2 at
+runtime but does not encode that floor in package metadata, so uv selected
+NumPy 1.26.4 and test collection failed before repository code ran. The runner
+now requests `numpy>=2.0`, matching the actual PyArrow runtime contract and
+keeping the dependency pair deterministic without changing repository
+dependencies. The repaired gate and its focused contract test pass at the
+repair head.
+
 
 ## Contracts to preserve
 

@@ -297,7 +297,7 @@ def quality_checks(
                 "--with",
                 "pytest",
                 "--with",
-                "numpy",
+                "numpy>=2.0",
                 "--with",
                 "pyarrow",
                 "pytest",

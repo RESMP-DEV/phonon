@@ -2444,6 +2444,18 @@ keeping the dependency pair deterministic without changing repository
 dependencies. The repaired gate and its focused contract test pass at the
 repair head.
 
+### 2026-11-17: Next 16.4.5 website update
+
+The website dependency update from Next 16.4.1 to 16.4.5 preserves all 436 npm
+package keys, changes the ten Next/SWC family entries together, and keeps the
+production postcss override at Next's exact 8.5.23 pin. The common quality
+gate, website install, lint, production build, rendered-HTML test, dependency
+resolution, and production-only npm audit all pass. The update removes the two
+moderate Next cache-isolation advisories affecting 16.4.1; remaining npm audit
+findings are development-tooling-only and predate this update. The complete
+evidence and platform non-claims are in
+`evidence/2026-11-17-next-16-4-5.md`.
+
 
 ## Contracts to preserve
 
